@@ -1,0 +1,99 @@
+CREATE TABLE IF NOT EXISTS zones (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    office_name VARCHAR(255) NOT NULL,
+    office_address VARCHAR(255) DEFAULT NULL,
+    office_type TINYINT NOT NULL DEFAULT 2,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS circles (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    office_name VARCHAR(255) NOT NULL,
+    office_address VARCHAR(255) DEFAULT NULL,
+    office_type TINYINT NOT NULL DEFAULT 2,
+    zone_id INT DEFAULT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT NULL,
+    KEY idx_circles_zone (zone_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS divisions (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    office_name VARCHAR(255) NOT NULL,
+    office_address VARCHAR(255) DEFAULT NULL,
+    office_type TINYINT NOT NULL DEFAULT 2,
+    zone_id INT DEFAULT NULL,
+    circle_id INT DEFAULT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT NULL,
+    KEY idx_divisions_zone (zone_id),
+    KEY idx_divisions_circle (circle_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS users (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    email_id VARCHAR(255) NOT NULL UNIQUE,
+    officer_name VARCHAR(255) DEFAULT NULL,
+    password VARCHAR(255) NOT NULL,
+    office_type TINYINT NOT NULL DEFAULT 4,
+    office_role TINYINT NOT NULL DEFAULT 1,
+    zone_id INT DEFAULT NULL,
+    circle_id INT DEFAULT NULL,
+    division_id INT DEFAULT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT NULL,
+    KEY idx_users_zone (zone_id),
+    KEY idx_users_circle (circle_id),
+    KEY idx_users_division (division_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS fy (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    fiscal_years VARCHAR(7) NOT NULL,
+    now_flag TINYINT NOT NULL DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS revenue (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    fy_id INT NOT NULL,
+    division_id INT NOT NULL,
+    pkg INT NOT NULL DEFAULT 0,
+    est DECIMAL(10,2) NOT NULL DEFAULT 0,
+    pkg_live INT NOT NULL DEFAULT 0,
+    pkg_eval INT NOT NULL DEFAULT 0,
+    pkg_cont INT NOT NULL DEFAULT 0,
+    cont DECIMAL(10,2) NOT NULL DEFAULT 0,
+    note TEXT DEFAULT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT NULL,
+    KEY idx_revenue_fy_div (fy_id, division_id, id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS development (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    fy_id INT NOT NULL,
+    division_id INT NOT NULL,
+    pkg INT NOT NULL DEFAULT 0,
+    est DECIMAL(10,2) NOT NULL DEFAULT 0,
+    pkg_live INT NOT NULL DEFAULT 0,
+    pkg_eval INT NOT NULL DEFAULT 0,
+    pkg_cont INT NOT NULL DEFAULT 0,
+    cont DECIMAL(10,2) NOT NULL DEFAULT 0,
+    note TEXT DEFAULT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT NULL,
+    KEY idx_development_fy_div (fy_id, division_id, id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS logs (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    table_name VARCHAR(50) NOT NULL,
+    record_id INT NOT NULL,
+    summary VARCHAR(255) NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_logs_user (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
