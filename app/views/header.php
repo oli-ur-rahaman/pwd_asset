@@ -12,8 +12,7 @@
 <nav class="nav">
     <div class="nav-title">APP Monitoring</div>
     <div class="nav-links">
-        <a href="index.php?page=board">Board</a>
-        <a href="index.php?page=dashboard">Dashboard</a>
+        <a href="index.php?page=board">Dashboard</a>
         <?php if (can_view_logs()): ?>
             <a href="index.php?page=logs">Logs</a>
         <?php endif; ?>
