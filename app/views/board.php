@@ -4,13 +4,109 @@ $user = current_user();
 $fy = get_current_fy();
 $office_name = get_office_name_for_user($user);
 $today = date('Y-m-d');
-$division_list = get_divisions_for_user($user);
-$division_ids = array_column($division_list, 'id');
+$office_role = (int)($user['office_role'] ?? 1);
+$office_type = (int)($user['office_type'] ?? 4);
+$is_division = is_division_user();
+
+$all_zones = db()->query('SELECT id, office_name FROM zones ORDER BY office_name')->fetchAll();
+$all_circles = db()->query('SELECT id, office_name, zone_id FROM circles ORDER BY office_name')->fetchAll();
+$all_divisions = db()->query('SELECT id, office_name, zone_id, circle_id FROM divisions ORDER BY office_name')->fetchAll();
+
+$fy_list = get_fy_list();
+$saved_filters = $_SESSION['board_filters'] ?? [];
+$fy_selected_id = request_str('fy_id', $saved_filters['fy_id'] ?? '');
+$fy_selected = null;
+if ($fy_selected_id !== '') {
+    foreach ($fy_list as $fy_row) {
+        if ((int)$fy_row['id'] === (int)$fy_selected_id) {
+            $fy_selected = $fy_row;
+            break;
+        }
+    }
+}
+$fy = $fy_selected ?: $fy;
+
+$zone_filter = request_str('zone_id', $saved_filters['zone_id'] ?? 'all');
+$circle_filter = request_str('circle_id', $saved_filters['circle_id'] ?? 'all');
+$division_filter = request_str('division_id', $saved_filters['division_id'] ?? 'all');
+
+$zone_locked = false;
+$circle_locked = false;
+if ($office_role === 2 || $office_role === 3 || ($office_role === 1 && $office_type === 1)) {
+    // full access
+} elseif ($office_role === 1 && $office_type === 2 && !empty($user['zone_id'])) {
+    $zone_filter = (string)$user['zone_id'];
+    $zone_locked = true;
+} elseif ($office_role === 1 && $office_type === 3 && !empty($user['circle_id'])) {
+    $circle_filter = (string)$user['circle_id'];
+    $circle_locked = true;
+    foreach ($all_circles as $circle) {
+        if ((int)$circle['id'] === (int)$circle_filter) {
+            $zone_filter = (string)$circle['zone_id'];
+            $zone_locked = true;
+            break;
+        }
+    }
+}
+
+$_SESSION['board_filters'] = [
+    'fy_id' => $fy_selected_id,
+    'zone_id' => $zone_filter,
+    'circle_id' => $circle_filter,
+    'division_id' => $division_filter,
+];
+
+$circle_by_id = [];
+foreach ($all_circles as $circle) {
+    $circle_by_id[$circle['id']] = $circle;
+}
+$division_by_id = [];
+foreach ($all_divisions as $division) {
+    $division_by_id[$division['id']] = $division;
+}
+
+$allowed_divisions = [];
+if ($office_role === 2 || $office_role === 3 || ($office_role === 1 && $office_type === 1)) {
+    $allowed_divisions = $all_divisions;
+} else {
+    $allowed_divisions = get_divisions_for_user($user);
+}
+$allowed_division_ids = array_map(fn($d) => (int)$d['id'], $allowed_divisions);
+
+if ($division_filter !== 'all' && !in_array((int)$division_filter, $allowed_division_ids, true)) {
+    $division_filter = 'all';
+}
+
+if ($division_filter !== 'all' && isset($division_by_id[(int)$division_filter])) {
+    $division = $division_by_id[(int)$division_filter];
+    $circle_filter = (string)($division['circle_id'] ?? 'all');
+    $zone_filter = (string)($division['zone_id'] ?? 'all');
+}
+
+if ($circle_filter !== 'all' && isset($circle_by_id[(int)$circle_filter])) {
+    $zone_filter = (string)($circle_by_id[(int)$circle_filter]['zone_id'] ?? 'all');
+}
+
+if ($division_filter !== 'all') {
+    $division_ids = [(int)$division_filter];
+} elseif ($circle_filter !== 'all') {
+    $division_ids = array_map(
+        fn($d) => (int)$d['id'],
+        array_filter($allowed_divisions, fn($d) => (int)($d['circle_id'] ?? 0) === (int)$circle_filter)
+    );
+} elseif ($zone_filter !== 'all') {
+    $division_ids = array_map(
+        fn($d) => (int)$d['id'],
+        array_filter($allowed_divisions, fn($d) => (int)($d['zone_id'] ?? 0) === (int)$zone_filter)
+    );
+} else {
+    $division_ids = $allowed_division_ids;
+}
+
 $latest_revenue = $fy ? get_latest_records('revenue', (int)$fy['id'], $division_ids) : [];
 $latest_development = $fy ? get_latest_records('development', (int)$fy['id'], $division_ids) : [];
 $latest_rev = $fy && is_division_user() ? get_latest_record_for_division('revenue', (int)$fy['id'], (int)$user['division_id']) : null;
 $latest_dev = $fy && is_division_user() ? get_latest_record_for_division('development', (int)$fy['id'], (int)$user['division_id']) : null;
-$fy_list = get_fy_list();
 $month_options = $fy ? fy_month_options($fy['fiscal_years']) : [];
 $default_month = $fy ? current_month_val_for_fy($fy['fiscal_years']) : 1;
 $last_update_days = null;
@@ -41,6 +137,75 @@ if (is_division_user()) {
         <?php endif; ?>
     </div>
 </section>
+
+<?php if (!$is_division): ?>
+    <section class="card">
+        <h2>Filters</h2>
+        <form method="get" action="index.php" id="board-filters" class="grid board-filters-grid">
+            <input type="hidden" name="page" value="board">
+            <label>Fiscal Year
+                <select name="fy_id">
+                    <?php foreach ($fy_list as $fy_row): ?>
+                        <option value="<?= e((string)$fy_row['id']); ?>" <?= $fy && (int)$fy_row['id'] === (int)$fy['id'] ? 'selected' : ''; ?>>
+                            <?= e($fy_row['fiscal_years']); ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
+            </label>
+            <label>Zone
+                <select name="zone_id" <?= $zone_locked ? 'disabled' : ''; ?>>
+                    <option value="all">All</option>
+                    <?php foreach ($all_zones as $zone): ?>
+                        <option value="<?= e((string)$zone['id']); ?>" <?= (string)$zone_filter === (string)$zone['id'] ? 'selected' : ''; ?>>
+                            <?= e($zone['office_name']); ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
+                <?php if ($zone_locked): ?>
+                    <input type="hidden" name="zone_id" value="<?= e((string)$zone_filter); ?>">
+                <?php endif; ?>
+            </label>
+            <label>Circle
+                <select name="circle_id" <?= $circle_locked ? 'disabled' : ''; ?>>
+                    <option value="all">All</option>
+                    <?php foreach ($all_circles as $circle): ?>
+                        <?php
+                            $show = $zone_filter === 'all' || (int)$circle['zone_id'] === (int)$zone_filter;
+                        ?>
+                        <?php if ($show): ?>
+                            <option value="<?= e((string)$circle['id']); ?>" data-zone="<?= e((string)$circle['zone_id']); ?>" <?= (string)$circle_filter === (string)$circle['id'] ? 'selected' : ''; ?>>
+                                <?= e($circle['office_name']); ?>
+                            </option>
+                        <?php endif; ?>
+                    <?php endforeach; ?>
+                </select>
+                <?php if ($circle_locked): ?>
+                    <input type="hidden" name="circle_id" value="<?= e((string)$circle_filter); ?>">
+                <?php endif; ?>
+            </label>
+            <label>Division
+                <select name="division_id">
+                    <option value="all">All</option>
+                    <?php foreach ($all_divisions as $division): ?>
+                        <?php
+                            $zone_match = $zone_filter === 'all' || (int)$division['zone_id'] === (int)$zone_filter;
+                            $circle_match = $circle_filter === 'all' || (int)$division['circle_id'] === (int)$circle_filter;
+                            $allowed = true;
+                            if (!empty($division_ids)) {
+                                $allowed = in_array((int)$division['id'], $division_ids, true);
+                            }
+                        ?>
+                        <?php if ($zone_match && $circle_match && $allowed): ?>
+                            <option value="<?= e((string)$division['id']); ?>" data-zone="<?= e((string)($division['zone_id'] ?? '')); ?>" data-circle="<?= e((string)($division['circle_id'] ?? '')); ?>" <?= (string)$division_filter === (string)$division['id'] ? 'selected' : ''; ?>>
+                                <?= e($division['office_name']); ?>
+                            </option>
+                        <?php endif; ?>
+                    <?php endforeach; ?>
+                </select>
+            </label>
+        </form>
+    </section>
+<?php endif; ?>
 
 <section class="board-grid">
     <div class="card card-actions">

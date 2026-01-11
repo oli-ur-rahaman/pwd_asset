@@ -136,6 +136,65 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
+    const boardFilters = document.getElementById('board-filters');
+    if (boardFilters) {
+        const zoneSelect = boardFilters.querySelector('select[name="zone_id"]');
+        const circleSelect = boardFilters.querySelector('select[name="circle_id"]');
+        const divisionSelect = boardFilters.querySelector('select[name="division_id"]');
+        const fySelect = boardFilters.querySelector('select[name="fy_id"]');
+
+        const setSelectValue = (select, value) => {
+            if (!select) {
+                return;
+            }
+            const option = select.querySelector(`option[value="${value}"]`);
+            if (option) {
+                select.value = value;
+            }
+        };
+
+        if (zoneSelect) {
+            zoneSelect.addEventListener('change', () => {
+                setSelectValue(circleSelect, 'all');
+                setSelectValue(divisionSelect, 'all');
+                boardFilters.submit();
+            });
+        }
+
+        if (circleSelect) {
+            circleSelect.addEventListener('change', () => {
+                const selected = circleSelect.options[circleSelect.selectedIndex];
+                const zoneId = selected ? selected.getAttribute('data-zone') : null;
+                if (zoneId && zoneSelect && !zoneSelect.disabled) {
+                    setSelectValue(zoneSelect, zoneId);
+                }
+                setSelectValue(divisionSelect, 'all');
+                boardFilters.submit();
+            });
+        }
+
+        if (divisionSelect) {
+            divisionSelect.addEventListener('change', () => {
+                const selected = divisionSelect.options[divisionSelect.selectedIndex];
+                const zoneId = selected ? selected.getAttribute('data-zone') : null;
+                const circleId = selected ? selected.getAttribute('data-circle') : null;
+                if (zoneId && zoneSelect && !zoneSelect.disabled) {
+                    setSelectValue(zoneSelect, zoneId);
+                }
+                if (circleId && circleSelect && !circleSelect.disabled) {
+                    setSelectValue(circleSelect, circleId);
+                }
+                boardFilters.submit();
+            });
+        }
+
+        if (fySelect) {
+            fySelect.addEventListener('change', () => {
+                boardFilters.submit();
+            });
+        }
+    }
+
     const graphModal = document.getElementById('graph-modal');
     const graphChartCanvas = document.getElementById('board-chart');
     const graphFy = document.getElementById('graph-fy');

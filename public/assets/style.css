@@ -63,6 +63,7 @@ th, td { border: 1px solid #d7dee8; padding: 8px; text-align: center; }
 .preview-title { font-weight: 600; margin-bottom: 6px; }
 .center { text-align: center; }
 .board-grid { display: grid; gap: 16px; grid-template-columns: 1fr; }
+.board-filters-grid { display: grid; gap: 12px; grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .card-actions { position: relative; }
 .card-actions-bar { position: absolute; top: 10px; right: 10px; display: flex; gap: 8px; opacity: 0; transition: opacity 0.2s ease; }
 .card-actions:hover .card-actions-bar { opacity: 1; }
