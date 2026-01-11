@@ -278,16 +278,28 @@ document.addEventListener('DOMContentLoaded', () => {
                 `Date: ${graphDate ? graphDate.textContent : ''}`,
             ];
             const exportCanvas = document.createElement('canvas');
-            exportCanvas.width = graphChartCanvas.width;
-            exportCanvas.height = graphChartCanvas.height;
+            const margin = 40;
+            const headerHeight = 70;
+            exportCanvas.width = graphChartCanvas.width + margin * 2;
+            exportCanvas.height = graphChartCanvas.height + headerHeight + margin * 2;
             const ctx = exportCanvas.getContext('2d');
             ctx.fillStyle = '#ffffff';
             ctx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
-            ctx.drawImage(graphChartCanvas, 0, 0);
+            ctx.fillStyle = '#1f2a44';
+            ctx.font = '32px Arial';
+            const title = currentTable === 'revenue' ? 'Revenue Budget' : 'Development Budget';
+            const titleWidth = ctx.measureText(title).width;
+            ctx.fillText(title, (exportCanvas.width - titleWidth) / 2, margin + 28);
+            const fyLabel = graphFy ? graphFy.options[graphFy.selectedIndex].textContent : '';
+            const fyText = fyLabel ? `Fiscal Year: ${fyLabel}` : '';
+            ctx.font = '14px Arial';
+            const fyWidth = ctx.measureText(fyText).width;
+            ctx.fillText(fyText, (exportCanvas.width - fyWidth) / 2, margin + 50);
+            ctx.drawImage(graphChartCanvas, margin, headerHeight + margin);
             ctx.fillStyle = '#1f2a44';
             ctx.font = '12px Arial';
             const padding = 8;
-            let y = padding + 12;
+            let y = headerHeight + margin + padding + 12;
             meta.forEach((line) => {
                 const width = ctx.measureText(line).width;
                 ctx.fillText(line, exportCanvas.width - width - padding, y);

@@ -51,9 +51,16 @@ if ($action === 'add_record') {
         exit('No current fiscal year set.');
     }
 
+    $month_val = input_int('month_val', 1);
+    if (!is_month_allowed($fy['fiscal_years'], $month_val)) {
+        flash('error', 'Selected month is beyond the current fiscal year month.');
+        redirect('index.php?page=board');
+    }
+
     $data = [
         'fy_id' => (int)$fy['id'],
         'division_id' => (int)$user['division_id'],
+        'month_val' => $month_val,
         'pkg' => input_int('pkg'),
         'est' => input_float('est'),
         'pkg_live' => input_int('pkg_live'),

@@ -41,13 +41,19 @@ function get_latest_records(string $table, int $fy_id, ?array $division_ids = nu
     $sql = "SELECT d.office_name, r.*
         FROM {$table} r
         JOIN (
-            SELECT division_id, MAX(id) AS max_id
+            SELECT division_id, MAX(month_val) AS max_month
             FROM {$table}
             WHERE fy_id = ?
             GROUP BY division_id
-        ) t ON r.id = t.max_id
+        ) m ON r.division_id = m.division_id AND r.month_val = m.max_month
+        JOIN (
+            SELECT division_id, month_val, MAX(id) AS max_id
+            FROM {$table}
+            WHERE fy_id = ?
+            GROUP BY division_id, month_val
+        ) t ON r.id = t.max_id AND r.division_id = t.division_id AND r.month_val = t.month_val
         JOIN divisions d ON d.id = r.division_id";
-    $params = [$fy_id];
+    $params = [$fy_id, $fy_id];
     if ($division_ids) {
         $in = implode(',', array_fill(0, count($division_ids), '?'));
         $sql .= " WHERE r.division_id IN ({$in})";
@@ -62,8 +68,14 @@ function get_latest_records(string $table, int $fy_id, ?array $division_ids = nu
 
 function get_latest_record_for_division(string $table, int $fy_id, int $division_id): ?array
 {
-    $stmt = db()->prepare("SELECT * FROM {$table} WHERE fy_id = ? AND division_id = ? ORDER BY id DESC LIMIT 1");
+    $stmt = db()->prepare("SELECT MAX(month_val) FROM {$table} WHERE fy_id = ? AND division_id = ?");
     $stmt->execute([$fy_id, $division_id]);
+    $month_val = $stmt->fetchColumn();
+    if ($month_val === false || $month_val === null) {
+        return null;
+    }
+    $stmt = db()->prepare("SELECT * FROM {$table} WHERE fy_id = ? AND division_id = ? AND month_val = ? ORDER BY created_at DESC, id DESC LIMIT 1");
+    $stmt->execute([$fy_id, $division_id, (int)$month_val]);
     $row = $stmt->fetch();
     return $row ?: null;
 }
@@ -80,6 +92,7 @@ function fy_months(string $fy): array
         $current = clone $start;
         $current->modify('+' . $i . ' months');
         $months[] = [
+            'label_index' => $i + 1,
             'label' => $current->format('M/y'),
             'start' => $current->format('Y-m-01 00:00:00'),
             'end' => $current->modify('+1 month')->format('Y-m-01 00:00:00'),
@@ -88,22 +101,62 @@ function fy_months(string $fy): array
     return $months;
 }
 
+function current_month_val_for_fy(string $fy_label): int
+{
+    $parts = explode('-', $fy_label);
+    $start_year = (int)$parts[0];
+    $end_year = $start_year + 1;
+    $now = new DateTime();
+    $year = (int)$now->format('Y');
+    $month = (int)$now->format('n');
+
+    if ($year === $start_year && $month >= 7) {
+        return $month - 6;
+    }
+    if ($year === $end_year && $month <= 6) {
+        return $month + 6;
+    }
+    return 1;
+}
+
+function is_month_allowed(string $fy_label, int $month_val): bool
+{
+    if ($month_val < 1 || $month_val > 12) {
+        return false;
+    }
+    $current = current_month_val_for_fy($fy_label);
+    return $month_val <= $current;
+}
+
+function fy_month_options(string $fy_label): array
+{
+    $options = [];
+    $months = fy_months($fy_label);
+    foreach ($months as $index => $month) {
+        $options[] = [
+            'value' => $index + 1,
+            'label' => $month['label'],
+        ];
+    }
+    return $options;
+}
+
 function get_monthly_series(string $table, int $fy_id, int $division_id, string $metric, string $fy_label): array
 {
     $series = [];
     $last_value = 0.0;
-    $now = new DateTime();
+    $current_val = current_month_val_for_fy($fy_label);
     foreach (fy_months($fy_label) as $month) {
-        $month_start = new DateTime($month['start']);
-        if ($month_start > $now) {
+        $month_val = (int)$month['label_index'];
+        if ($month_val > $current_val) {
             $series[] = [
                 'label' => $month['label'],
                 'value' => 0,
             ];
             continue;
         }
-        $stmt = db()->prepare("SELECT {$metric} FROM {$table} WHERE fy_id = ? AND division_id = ? AND created_at >= ? AND created_at < ? ORDER BY id DESC LIMIT 1");
-        $stmt->execute([$fy_id, $division_id, $month['start'], $month['end']]);
+        $stmt = db()->prepare("SELECT {$metric} FROM {$table} WHERE fy_id = ? AND division_id = ? AND month_val = ? ORDER BY id DESC LIMIT 1");
+        $stmt->execute([$fy_id, $division_id, $month_val]);
         $value = $stmt->fetchColumn();
         if ($value === false) {
             $value = $last_value;
@@ -122,10 +175,10 @@ function get_monthly_series_all(string $table, int $fy_id, array $division_ids, 
 {
     $series = [];
     $last_value = 0.0;
-    $now = new DateTime();
+    $current_val = current_month_val_for_fy($fy_label);
     foreach (fy_months($fy_label) as $month) {
-        $month_start = new DateTime($month['start']);
-        if ($month_start > $now) {
+        $month_val = (int)$month['label_index'];
+        if ($month_val > $current_val) {
             $series[] = ['label' => $month['label'], 'value' => 0];
             continue;
         }
@@ -135,9 +188,9 @@ function get_monthly_series_all(string $table, int $fy_id, array $division_ids, 
         }
         $in = implode(',', array_fill(0, count($division_ids), '?'));
         $sql = "SELECT SUM(t.{$metric}) FROM {$table} t JOIN (
-SELECT division_id, MAX(id) AS max_id FROM {$table} WHERE fy_id = ? AND created_at >= ? AND created_at < ? AND division_id IN ({$in}) GROUP BY division_id
+SELECT division_id, MAX(id) AS max_id FROM {$table} WHERE fy_id = ? AND month_val = ? AND division_id IN ({$in}) GROUP BY division_id
 ) latest ON latest.max_id = t.id";
-        $params = array_merge([$fy_id, $month['start'], $month['end']], $division_ids);
+        $params = array_merge([$fy_id, $month_val], $division_ids);
         $stmt = db()->prepare($sql);
         $stmt->execute($params);
         $value = $stmt->fetchColumn();

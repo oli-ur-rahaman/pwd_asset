@@ -28,6 +28,13 @@ $date_label = date('Y-m-d');
 $budget_label = $table === 'revenue' ? 'Revenue Budget' : 'Development Budget';
 
 $include_division = !is_division_user();
+$month_map = function (string $fy_label, int $month_val): string {
+    if ($month_val < 1 || $month_val > 12) {
+        return '';
+    }
+    $months = fy_months($fy_label);
+    return $months[$month_val - 1]['label'] ?? '';
+};
 $headers = [];
 if ($include_division) {
     $headers['office_name'] = 'Division';
@@ -77,8 +84,24 @@ if ($scope === 'latest') {
         }
     }
 } else {
-    $params = [(int)$fy['id']];
-    $sql = "SELECT d.office_name, r.* FROM {$table} r JOIN divisions d ON d.id = r.division_id WHERE r.fy_id = ?";
+    $headers = [];
+    if ($include_division) {
+        $headers['office_name'] = 'Division';
+    }
+    $headers += [
+        'fiscal_years' => 'FY',
+        'month_name' => 'Month',
+        'pkg' => 'Total no. of packages',
+        'est' => 'Total Value of packages in Lakh Tk.',
+        'pkg_live' => 'In live (No.)',
+        'pkg_eval' => 'Evaluation/Appr.(No.)',
+        'pkg_cont' => 'Contract Awarded (No.)',
+        'cont' => 'Value of awarded contracts in Lakh Tk.',
+        'created_at' => 'Date',
+    ];
+
+    $params = [];
+    $sql = "SELECT d.office_name, f.fiscal_years, r.* FROM {$table} r JOIN divisions d ON d.id = r.division_id JOIN fy f ON f.id = r.fy_id WHERE 1=1";
     if ($division_ids) {
         $in = implode(',', array_fill(0, count($division_ids), '?'));
         $sql .= " AND r.division_id IN ({$in})";
@@ -90,6 +113,8 @@ if ($scope === 'latest') {
     $all_rows = $stmt->fetchAll();
     foreach ($all_rows as $row) {
         $entry = [
+            'fiscal_years' => $row['fiscal_years'],
+            'month_name' => $month_map($row['fiscal_years'], (int)($row['month_val'] ?? 0)),
             'pkg' => $row['pkg'],
             'est' => $row['est'],
             'pkg_live' => $row['pkg_live'],

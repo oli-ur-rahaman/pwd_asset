@@ -7,6 +7,8 @@ $division_list = get_divisions_for_user($user);
 $division_ids = array_column($division_list, 'id');
 $latest_revenue = $fy ? get_latest_records('revenue', (int)$fy['id'], $division_ids) : [];
 $latest_development = $fy ? get_latest_records('development', (int)$fy['id'], $division_ids) : [];
+$month_options = $fy ? fy_month_options($fy['fiscal_years']) : [];
+$default_month = $fy ? current_month_val_for_fy($fy['fiscal_years']) : 1;
 ?>
 
 <section class="card" id="charts">
@@ -28,6 +30,21 @@ $latest_development = $fy ? get_latest_records('development', (int)$fy['id'], $d
             <div class="grid">
                 <label>Total Packages
                     <input type="number" name="pkg" value="<?= e((string)($latest_rev['pkg'] ?? 0)); ?>" min="0" required>
+                </label>
+                <label>Month
+                    <select name="month_val" required>
+                        <?php foreach ($month_options as $opt): ?>
+                            <?php
+                                $selected = $latest_rev && !empty($latest_rev['month_val'])
+                                    ? (int)$latest_rev['month_val'] === (int)$opt['value']
+                                    : (int)$opt['value'] === (int)$default_month;
+                                $disabled = (int)$opt['value'] > (int)$default_month;
+                            ?>
+                            <option value="<?= e((string)$opt['value']); ?>" <?= $selected ? 'selected' : ''; ?> <?= $disabled ? 'disabled' : ''; ?>>
+                                <?= e($opt['label']); ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
                 </label>
                 <label>Total Value (Lakh Tk.)
                     <input type="number" name="est" step="0.01" value="<?= e((string)($latest_rev['est'] ?? 0)); ?>" min="0" required>
@@ -61,6 +78,21 @@ $latest_development = $fy ? get_latest_records('development', (int)$fy['id'], $d
             <div class="grid">
                 <label>Total Packages
                     <input type="number" name="pkg" value="<?= e((string)($latest_dev['pkg'] ?? 0)); ?>" min="0" required>
+                </label>
+                <label>Month
+                    <select name="month_val" required>
+                        <?php foreach ($month_options as $opt): ?>
+                            <?php
+                                $selected = $latest_dev && !empty($latest_dev['month_val'])
+                                    ? (int)$latest_dev['month_val'] === (int)$opt['value']
+                                    : (int)$opt['value'] === (int)$default_month;
+                                $disabled = (int)$opt['value'] > (int)$default_month;
+                            ?>
+                            <option value="<?= e((string)$opt['value']); ?>" <?= $selected ? 'selected' : ''; ?> <?= $disabled ? 'disabled' : ''; ?>>
+                                <?= e($opt['label']); ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
                 </label>
                 <label>Total Value (Lakh Tk.)
                     <input type="number" name="est" step="0.01" value="<?= e((string)($latest_dev['est'] ?? 0)); ?>" min="0" required>

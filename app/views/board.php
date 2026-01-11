@@ -11,6 +11,8 @@ $latest_development = $fy ? get_latest_records('development', (int)$fy['id'], $d
 $latest_rev = $fy && is_division_user() ? get_latest_record_for_division('revenue', (int)$fy['id'], (int)$user['division_id']) : null;
 $latest_dev = $fy && is_division_user() ? get_latest_record_for_division('development', (int)$fy['id'], (int)$user['division_id']) : null;
 $fy_list = get_fy_list();
+$month_options = $fy ? fy_month_options($fy['fiscal_years']) : [];
+$default_month = $fy ? current_month_val_for_fy($fy['fiscal_years']) : 1;
 $last_update_days = null;
 if (is_division_user()) {
     $dates = [];
@@ -200,6 +202,21 @@ if (is_division_user()) {
                 <label>Total no. of packages
                     <input type="number" name="pkg" value="<?= e((string)($latest_rev['pkg'] ?? 0)); ?>" min="0" required>
                 </label>
+                <label>Month
+                    <select name="month_val" required>
+                        <?php foreach ($month_options as $opt): ?>
+                            <?php
+                                $selected = $latest_rev && !empty($latest_rev['month_val'])
+                                    ? (int)$latest_rev['month_val'] === (int)$opt['value']
+                                    : (int)$opt['value'] === (int)$default_month;
+                                $disabled = (int)$opt['value'] > (int)$default_month;
+                            ?>
+                            <option value="<?= e((string)$opt['value']); ?>" <?= $selected ? 'selected' : ''; ?> <?= $disabled ? 'disabled' : ''; ?>>
+                                <?= e($opt['label']); ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </label>
                 <label>Total Value of packages in Lakh Tk.
                     <input type="number" name="est" step="0.01" value="<?= e((string)($latest_rev['est'] ?? 0)); ?>" min="0" required>
                 </label>
@@ -236,6 +253,21 @@ if (is_division_user()) {
                 <input type="hidden" name="table" value="development">
                 <label>Total no. of packages
                     <input type="number" name="pkg" value="<?= e((string)($latest_dev['pkg'] ?? 0)); ?>" min="0" required>
+                </label>
+                <label>Month
+                    <select name="month_val" required>
+                        <?php foreach ($month_options as $opt): ?>
+                            <?php
+                                $selected = $latest_dev && !empty($latest_dev['month_val'])
+                                    ? (int)$latest_dev['month_val'] === (int)$opt['value']
+                                    : (int)$opt['value'] === (int)$default_month;
+                                $disabled = (int)$opt['value'] > (int)$default_month;
+                            ?>
+                            <option value="<?= e((string)$opt['value']); ?>" <?= $selected ? 'selected' : ''; ?> <?= $disabled ? 'disabled' : ''; ?>>
+                                <?= e($opt['label']); ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
                 </label>
                 <label>Total Value of packages in Lakh Tk.
                     <input type="number" name="est" step="0.01" value="<?= e((string)($latest_dev['est'] ?? 0)); ?>" min="0" required>
