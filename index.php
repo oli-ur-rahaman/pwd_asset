@@ -283,6 +283,35 @@ if ($action === 'create_user') {
     redirect('index.php?page=admin');
 }
 
+if ($action === 'save_interface') {
+    require_login();
+    if (!is_superadmin()) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
+    if (!csrf_validate($_POST['csrf_token'] ?? null)) {
+        http_response_code(400);
+        exit('Invalid CSRF token.');
+    }
+    $existing = get_info_row();
+    $has_video = array_key_exists('video_tutorial_url', $_POST);
+    $has_message = array_key_exists('login_message', $_POST);
+
+    $video_url = $has_video ? input_str('video_tutorial_url') : ($existing['video_tutorial_url'] ?? null);
+    $login_message = $has_message ? input_str('login_message') : ($existing['login_message'] ?? null);
+
+    if ($has_video && $video_url === '') {
+        $video_url = null;
+    }
+    if ($has_message && $login_message === '') {
+        $login_message = null;
+    }
+
+    save_info_row($video_url, $login_message);
+    flash('success', 'Interface settings saved.');
+    redirect('index.php?page=interface');
+}
+
 if ($page === 'login') {
     require __DIR__ . '/app/views/login.php';
     exit;
@@ -304,12 +333,26 @@ if ($page === 'logs') {
     exit;
 }
 
+if ($page === 'board') {
+    require __DIR__ . '/app/views/board.php';
+    exit;
+}
+
 if ($page === 'admin') {
     if (!is_superadmin()) {
         http_response_code(403);
         exit('Not allowed.');
     }
     require __DIR__ . '/app/views/admin.php';
+    exit;
+}
+
+if ($page === 'interface') {
+    if (!is_superadmin()) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
+    require __DIR__ . '/app/views/interface.php';
     exit;
 }
 

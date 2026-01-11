@@ -5,7 +5,8 @@ require_login();
 $table = request_str('table');
 $metric = request_str('metric');
 $fy_id = (int)request_str('fy_id');
-$division_id = (int)request_str('division_id');
+$division_raw = request_str('division_id');
+$division_id = $division_raw === 'all' ? 0 : (int)$division_raw;
 
 $allowed_tables = ['revenue', 'development'];
 $allowed_metrics = ['pkg', 'est', 'pkg_live', 'pkg_eval', 'pkg_cont', 'cont'];
@@ -17,7 +18,7 @@ if (!in_array($table, $allowed_tables, true) || !in_array($metric, $allowed_metr
 
 $user = current_user();
 $allowed_divisions = array_column(get_divisions_for_user($user), 'id');
-if (!in_array($division_id, $allowed_divisions, true)) {
+if ($division_id > 0 && !in_array($division_id, $allowed_divisions, true)) {
     http_response_code(403);
     echo json_encode(['error' => 'Not allowed']);
     exit;
@@ -32,7 +33,16 @@ if (!$fy_label) {
     exit;
 }
 
-$data = get_monthly_series($table, $fy_id, $division_id, $metric, $fy_label);
+if ($division_id === 0) {
+    if (is_division_user()) {
+        http_response_code(403);
+        echo json_encode(['error' => 'Not allowed']);
+        exit;
+    }
+    $data = get_monthly_series_all($table, $fy_id, $allowed_divisions, $metric, $fy_label);
+} else {
+    $data = get_monthly_series($table, $fy_id, $division_id, $metric, $fy_label);
+}
 
 header('Content-Type: application/json');
 echo json_encode($data);

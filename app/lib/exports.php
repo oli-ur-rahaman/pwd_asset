@@ -8,16 +8,21 @@ function ensure_library(string $class, string $message): void
     }
 }
 
-function export_excel(array $rows, array $headers, string $filename): void
+function export_excel(array $rows, array $headers, string $filename, ?string $sheet_title = null): void
 {
     ensure_library('PhpOffice\\PhpSpreadsheet\\Spreadsheet', 'PhpSpreadsheet is not installed.');
 
     $sheet = new PhpOffice\PhpSpreadsheet\Spreadsheet();
     $active = $sheet->getActiveSheet();
+    if ($sheet_title) {
+        $safe = preg_replace('/[\\\\\\/\\?\\*\\[\\]:]/', '', $sheet_title);
+        $safe = substr($safe, 0, 31);
+        $active->setTitle($safe === '' ? 'Sheet1' : $safe);
+    }
 
     $col = 1;
     foreach ($headers as $header) {
-        $active->setCellValueByColumnAndRow($col, 1, $header);
+        $active->setCellValue([$col, 1], $header);
         $col++;
     }
 
@@ -26,7 +31,7 @@ function export_excel(array $rows, array $headers, string $filename): void
         $col = 1;
         foreach ($headers as $key => $header) {
             $value = $row[$key] ?? '';
-            $active->setCellValueByColumnAndRow($col, $rowNum, $value);
+            $active->setCellValue([$col, $rowNum], $value);
             $col++;
         }
         $rowNum++;

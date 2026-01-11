@@ -9,7 +9,7 @@ $latest_revenue = $fy ? get_latest_records('revenue', (int)$fy['id'], $division_
 $latest_development = $fy ? get_latest_records('development', (int)$fy['id'], $division_ids) : [];
 ?>
 
-<section class="card">
+<section class="card" id="charts">
     <h2>Current Fiscal Year</h2>
     <p><?= $fy ? e($fy['fiscal_years']) : 'Not set'; ?></p>
 </section>
@@ -86,7 +86,7 @@ $latest_development = $fy ? get_latest_records('development', (int)$fy['id'], $d
     </section>
 <?php endif; ?>
 
-<section class="card">
+<section class="card" id="exports">
     <h2>Latest Revenue Data</h2>
     <div class="table-wrap">
         <table>

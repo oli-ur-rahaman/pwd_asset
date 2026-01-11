@@ -12,12 +12,14 @@
 <nav class="nav">
     <div class="nav-title">APP Monitoring</div>
     <div class="nav-links">
+        <a href="index.php?page=board">Board</a>
         <a href="index.php?page=dashboard">Dashboard</a>
         <?php if (can_view_logs()): ?>
             <a href="index.php?page=logs">Logs</a>
         <?php endif; ?>
         <?php if (is_superadmin()): ?>
-            <a href="index.php?page=admin">Admin</a>
+            <a href="index.php?page=admin">Management</a>
+            <a href="index.php?page=interface">Interface</a>
         <?php endif; ?>
         <form method="post" action="index.php" class="logout-form">
             <?= csrf_input(); ?>

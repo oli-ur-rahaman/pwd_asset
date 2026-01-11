@@ -80,7 +80,7 @@ function fy_months(string $fy): array
         $current = clone $start;
         $current->modify('+' . $i . ' months');
         $months[] = [
-            'label' => $current->format('M/Y'),
+            'label' => $current->format('M/y'),
             'start' => $current->format('Y-m-01 00:00:00'),
             'end' => $current->modify('+1 month')->format('Y-m-01 00:00:00'),
         ];
@@ -91,13 +91,64 @@ function fy_months(string $fy): array
 function get_monthly_series(string $table, int $fy_id, int $division_id, string $metric, string $fy_label): array
 {
     $series = [];
+    $last_value = 0.0;
+    $now = new DateTime();
     foreach (fy_months($fy_label) as $month) {
+        $month_start = new DateTime($month['start']);
+        if ($month_start > $now) {
+            $series[] = [
+                'label' => $month['label'],
+                'value' => 0,
+            ];
+            continue;
+        }
         $stmt = db()->prepare("SELECT {$metric} FROM {$table} WHERE fy_id = ? AND division_id = ? AND created_at >= ? AND created_at < ? ORDER BY id DESC LIMIT 1");
         $stmt->execute([$fy_id, $division_id, $month['start'], $month['end']]);
         $value = $stmt->fetchColumn();
+        if ($value === false) {
+            $value = $last_value;
+        } else {
+            $last_value = (float)$value;
+        }
         $series[] = [
             'label' => $month['label'],
-            'value' => $value !== false ? (float)$value : 0,
+            'value' => (float)$value,
+        ];
+    }
+    return $series;
+}
+
+function get_monthly_series_all(string $table, int $fy_id, array $division_ids, string $metric, string $fy_label): array
+{
+    $series = [];
+    $last_value = 0.0;
+    $now = new DateTime();
+    foreach (fy_months($fy_label) as $month) {
+        $month_start = new DateTime($month['start']);
+        if ($month_start > $now) {
+            $series[] = ['label' => $month['label'], 'value' => 0];
+            continue;
+        }
+        if (!$division_ids) {
+            $series[] = ['label' => $month['label'], 'value' => $last_value];
+            continue;
+        }
+        $in = implode(',', array_fill(0, count($division_ids), '?'));
+        $sql = "SELECT SUM(t.{$metric}) FROM {$table} t JOIN (
+SELECT division_id, MAX(id) AS max_id FROM {$table} WHERE fy_id = ? AND created_at >= ? AND created_at < ? AND division_id IN ({$in}) GROUP BY division_id
+) latest ON latest.max_id = t.id";
+        $params = array_merge([$fy_id, $month['start'], $month['end']], $division_ids);
+        $stmt = db()->prepare($sql);
+        $stmt->execute($params);
+        $value = $stmt->fetchColumn();
+        if ($value === false || $value === null) {
+            $value = $last_value;
+        } else {
+            $last_value = (float)$value;
+        }
+        $series[] = [
+            'label' => $month['label'],
+            'value' => (float)$value,
         ];
     }
     return $series;
@@ -152,4 +203,47 @@ function get_logs_for_user(int $user_id, int $limit = 50): array
     $stmt->bindValue(2, $limit, PDO::PARAM_INT);
     $stmt->execute();
     return $stmt->fetchAll();
+}
+
+function get_info_row(): ?array
+{
+    $stmt = db()->query('SELECT * FROM info ORDER BY id ASC LIMIT 1');
+    $row = $stmt->fetch();
+    return $row ?: null;
+}
+
+function save_info_row(?string $video_url, ?string $login_message): void
+{
+    $existing = get_info_row();
+    if ($existing) {
+        $stmt = db()->prepare('UPDATE info SET video_tutorial_url = ?, login_message = ?, updated_at = NOW() WHERE id = ?');
+        $stmt->execute([$video_url, $login_message, (int)$existing['id']]);
+        return;
+    }
+    $stmt = db()->prepare('INSERT INTO info (video_tutorial_url, login_message, created_at) VALUES (?, ?, NOW())');
+    $stmt->execute([$video_url, $login_message]);
+}
+
+function get_office_name_for_user(array $user): string
+{
+    $office_type = (int)($user['office_type'] ?? 0);
+    if ($office_type === 1) {
+        return 'Chief Engineer Office';
+    }
+    if ($office_type === 2 && !empty($user['zone_id'])) {
+        $stmt = db()->prepare('SELECT office_name FROM zones WHERE id = ?');
+        $stmt->execute([$user['zone_id']]);
+        return $stmt->fetchColumn() ?: 'Zone Office';
+    }
+    if ($office_type === 3 && !empty($user['circle_id'])) {
+        $stmt = db()->prepare('SELECT office_name FROM circles WHERE id = ?');
+        $stmt->execute([$user['circle_id']]);
+        return $stmt->fetchColumn() ?: 'Circle Office';
+    }
+    if ($office_type === 4 && !empty($user['division_id'])) {
+        $stmt = db()->prepare('SELECT office_name FROM divisions WHERE id = ?');
+        $stmt->execute([$user['division_id']]);
+        return $stmt->fetchColumn() ?: 'Division Office';
+    }
+    return 'Office';
 }

@@ -97,3 +97,11 @@ CREATE TABLE IF NOT EXISTS logs (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     KEY idx_logs_user (user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS info (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    video_tutorial_url VARCHAR(255) DEFAULT NULL,
+    login_message TEXT DEFAULT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
