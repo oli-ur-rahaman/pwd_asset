@@ -99,26 +99,37 @@ if ($action === 'csv_import') {
         flash('error', 'Invalid CSV headers.');
         redirect('index.php?page=admin');
     }
+    $headers[0] = ltrim($headers[0], "\xEF\xBB\xBF");
 
     $count = 0;
+    $skipped = 0;
+    $header_count = count($headers);
     while (($row = fgetcsv($handle)) !== false) {
+        if (count($row) < $header_count) {
+            $row = array_pad($row, $header_count, '');
+        } elseif (count($row) > $header_count) {
+            $row = array_slice($row, 0, $header_count);
+        }
         $data = array_combine($headers, $row);
-        $get_id = function (string $key): ?int {
+        $get_id = function (string $key) use ($data): ?int {
             $raw = $data[$key] ?? '';
             $raw = trim((string)$raw);
-            if ($raw === '') {
+            if ($raw === '' || strcasecmp($raw, 'NULL') === 0) {
                 return null;
             }
             $value = (int)$raw;
             return $value > 0 ? $value : null;
         };
-        $get_text = function (string $key): ?string {
+        $get_text = function (string $key) use ($data): ?string {
             $raw = $data[$key] ?? null;
             if ($raw === null) {
                 return null;
             }
             $value = trim((string)$raw);
-            return $value === '' ? null : $value;
+            if ($value === '' || strcasecmp($value, 'NULL') === 0) {
+                return null;
+            }
+            return $value;
         };
         if ($type === 'divisions') {
             $stmt = db()->prepare('INSERT INTO divisions (office_name, office_address, office_type, zone_id, circle_id, created_at) VALUES (?, ?, ?, ?, ?, NOW())');
@@ -145,10 +156,22 @@ if ($action === 'csv_import') {
                 (int)($data['office_type'] ?? 2),
             ]);
         } elseif ($type === 'users') {
+            $email = $get_text('email_id');
+            if (!$email) {
+                $skipped++;
+                continue;
+            }
+            $exists = db()->prepare('SELECT id FROM users WHERE email_id = ? LIMIT 1');
+            $exists->execute([$email]);
+            if ($exists->fetchColumn()) {
+                $skipped++;
+                continue;
+            }
+
             $password = $data['password'] ?? 'changeme';
             $stmt = db()->prepare('INSERT INTO users (email_id, officer_name, password, office_type, office_role, zone_id, circle_id, division_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())');
             $stmt->execute([
-                $get_text('email_id') ?? '',
+                $email,
                 $get_text('officer_name'),
                 password_hash($password, PASSWORD_DEFAULT),
                 (int)($data['office_type'] ?? 4),
@@ -162,7 +185,11 @@ if ($action === 'csv_import') {
     }
     fclose($handle);
 
-    flash('success', 'Imported ' . $count . ' rows.');
+    $message = 'Imported ' . $count . ' rows.';
+    if ($skipped > 0) {
+        $message .= ' Skipped ' . $skipped . ' rows (missing or duplicate email).';
+    }
+    flash('success', $message);
     redirect('index.php?page=admin');
 }
 
