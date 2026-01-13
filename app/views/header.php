@@ -19,7 +19,9 @@
         <?php if (is_superadmin()): ?>
             <a href="index.php?page=admin">Management</a>
             <a href="index.php?page=interface">Interface</a>
+            <a href="index.php?page=users">Users</a>
         <?php endif; ?>
+        <a href="index.php?page=profile">Profile</a>
         <form method="post" action="index.php" class="logout-form">
             <?= csrf_input(); ?>
             <input type="hidden" name="action" value="logout">

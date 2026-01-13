@@ -7,11 +7,16 @@ body { margin: 0; font-family: Arial, sans-serif; background: #f5f7fb; color: #1
 .logout-form button { border: none; background: #ef8a17; color: #fff; padding: 6px 12px; border-radius: 4px; cursor: pointer; }
 .container { padding: 24px; display: grid; gap: 16px; }
 .card { background: #fff; padding: 16px; border-radius: 8px; box-shadow: 0 2px 6px rgba(15, 61, 94, 0.08); }
+.card-plain { background: transparent; box-shadow: none; padding: 0; }
+.card-plain { margin-top: 12px; margin-bottom: 0; }
 .card h2 { margin-top: 0; }
 .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
 label { display: flex; flex-direction: column; font-size: 14px; gap: 6px; }
 input, select, textarea { padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 14px; }
 button { padding: 8px 16px; background: #0f3d5e; color: #fff; border: none; border-radius: 4px; cursor: pointer; }
+.profile-form input { padding: 6px 8px; font-size: 13px; width: 25vw; min-width: 220px; }
+.btn-small { padding: 6px 12px; font-size: 13px; align-self: start; width: 10vw; min-width: 140px; }
+.small-input { padding: 6px 8px; font-size: 12px; width: 180px; }
 .table-wrap { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; font-size: 14px; }
 th, td { border: 1px solid #d7dee8; padding: 8px; text-align: center; }
@@ -64,6 +69,7 @@ th, td { border: 1px solid #d7dee8; padding: 8px; text-align: center; }
 .center { text-align: center; }
 .board-grid { display: grid; gap: 16px; grid-template-columns: 1fr; }
 .board-filters-grid { display: grid; gap: 12px; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.board-filters-grid { margin-bottom: 12px; }
 .card-actions { position: relative; }
 .card-actions-bar { position: absolute; top: 10px; right: 10px; display: flex; gap: 8px; opacity: 0; transition: opacity 0.2s ease; }
 .card-actions:hover .card-actions-bar { opacity: 1; }
@@ -78,3 +84,4 @@ th, td { border: 1px solid #d7dee8; padding: 8px; text-align: center; }
     .board-grid .card { width: 100%; margin-left: 0; margin-right: 0; }
     .board-grid { width: 75vw; margin-left: auto; margin-right: auto; }
 }
+.profile-form { grid-template-columns: 1fr; }

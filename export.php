@@ -9,7 +9,7 @@ $fy_id = (int)request_str('fy_id');
 $division_raw = request_str('division_id', 'all');
 $division_id = $division_raw === 'all' ? 0 : (int)$division_raw;
 
-$allowed_tables = ['revenue', 'development'];
+$allowed_tables = ['opr_repair', 'opr_other', 'dev_pw', 'opr_other_min', 'dev_other_min'];
 $allowed_formats = ['pdf', 'excel'];
 $allowed_modes = ['latest', 'monthly'];
 if (!in_array($table, $allowed_tables, true) || !in_array($format, $allowed_formats, true) || !in_array($mode, $allowed_modes, true)) {
@@ -80,8 +80,9 @@ if ($mode === 'latest') {
     ];
 }
 
-$title = ucfirst($table) . ' - ' . ucfirst($mode) . ' - FY ' . $fy_label;
-$filename = strtolower($table . '_' . $mode . '_' . $fy_label . '.' . ($format === 'pdf' ? 'pdf' : 'xlsx'));
+$label = in_array($table, ['opr_repair', 'opr_other', 'opr_other_min'], true) ? 'Operational' : 'Development';
+$title = $label . ' - ' . ucfirst($mode) . ' - FY ' . $fy_label;
+$filename = strtolower($label . '_' . $mode . '_' . $fy_label . '.' . ($format === 'pdf' ? 'pdf' : 'xlsx'));
 
 if ($format === 'excel') {
     export_excel($rows, $headers, $filename);

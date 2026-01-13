@@ -6,7 +6,7 @@ $table = request_str('table');
 $scope = request_str('scope', 'latest');
 $format = request_str('format', 'pdf');
 
-$allowed_tables = ['revenue', 'development'];
+$allowed_tables = ['opr_repair', 'opr_other', 'dev_pw', 'opr_other_min', 'dev_other_min'];
 $allowed_formats = ['pdf', 'excel'];
 $allowed_scopes = ['latest', 'full'];
 if (!in_array($table, $allowed_tables, true) || !in_array($format, $allowed_formats, true) || !in_array($scope, $allowed_scopes, true)) {
@@ -25,7 +25,14 @@ $division_list = get_divisions_for_user($user);
 $division_ids = array_column($division_list, 'id');
 $office_name = get_office_name_for_user($user);
 $date_label = date('Y-m-d');
-$budget_label = $table === 'revenue' ? 'Revenue Budget' : 'Development Budget';
+$budget_map = [
+    'opr_repair' => 'Operational Budget (Repair Works)',
+    'opr_other' => 'Operational Budget (Other than Repair)',
+    'dev_pw' => 'Development Budget (MoHPW)',
+    'opr_other_min' => 'Operational Budget (Other Ministry)',
+    'dev_other_min' => 'Development Budget (Other Ministry)',
+];
+$budget_label = $budget_map[$table] ?? 'Budget';
 
 $include_division = !is_division_user();
 $month_map = function (string $fy_label, int $month_val): string {
@@ -46,6 +53,8 @@ $headers += [
     'pkg_eval' => 'Evaluation/Appr.(No.)',
     'pkg_cont' => 'Contract Awarded (No.)',
     'cont' => 'Value of awarded contracts in Lakh Tk.',
+    'prog_pkg' => 'Progress (contract pkgs / total pkgs) %',
+    'prog_amt' => 'Progress (Total Cont Amount / Total Pkg Amount) %',
     'created_at' => 'Date',
 ];
 
@@ -61,6 +70,8 @@ if ($scope === 'latest') {
                 'pkg_eval' => $latest['pkg_eval'],
                 'pkg_cont' => $latest['pkg_cont'],
                 'cont' => $latest['cont'],
+                'prog_pkg' => $latest['pkg'] > 0 ? number_format(($latest['pkg_cont'] / $latest['pkg']) * 100, 2) : '0.00',
+                'prog_amt' => $latest['est'] > 0 ? number_format(($latest['cont'] / $latest['est']) * 100, 2) : '0.00',
                 'created_at' => $latest['created_at'] ? date('d-m-Y', strtotime($latest['created_at'])) : '',
             ];
             if ($include_division) {
@@ -79,6 +90,8 @@ if ($scope === 'latest') {
                 'pkg_eval' => $row['pkg_eval'],
                 'pkg_cont' => $row['pkg_cont'],
                 'cont' => $row['cont'],
+                'prog_pkg' => $row['pkg'] > 0 ? number_format(($row['pkg_cont'] / $row['pkg']) * 100, 2) : '0.00',
+                'prog_amt' => $row['est'] > 0 ? number_format(($row['cont'] / $row['est']) * 100, 2) : '0.00',
                 'created_at' => $row['created_at'] ? date('d-m-Y', strtotime($row['created_at'])) : '',
             ];
         }
@@ -97,6 +110,8 @@ if ($scope === 'latest') {
         'pkg_eval' => 'Evaluation/Appr.(No.)',
         'pkg_cont' => 'Contract Awarded (No.)',
         'cont' => 'Value of awarded contracts in Lakh Tk.',
+        'prog_pkg' => 'Progress (contract pkgs / total pkgs) %',
+        'prog_amt' => 'Progress (Total Cont Amount / Total Pkg Amount) %',
         'created_at' => 'Date',
     ];
 
@@ -121,6 +136,8 @@ if ($scope === 'latest') {
             'pkg_eval' => $row['pkg_eval'],
             'pkg_cont' => $row['pkg_cont'],
             'cont' => $row['cont'],
+            'prog_pkg' => $row['pkg'] > 0 ? number_format(($row['pkg_cont'] / $row['pkg']) * 100, 2) : '0.00',
+            'prog_amt' => $row['est'] > 0 ? number_format(($row['cont'] / $row['est']) * 100, 2) : '0.00',
             'created_at' => $row['created_at'] ? date('d-m-Y', strtotime($row['created_at'])) : '',
         ];
         if ($include_division) {

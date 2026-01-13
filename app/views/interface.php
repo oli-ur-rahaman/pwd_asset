@@ -15,6 +15,18 @@ $info = get_info_row();
 </section>
 
 <section class="card">
+    <h2>Site Name</h2>
+    <form method="post" action="index.php" class="grid">
+        <?= csrf_input(); ?>
+        <input type="hidden" name="action" value="save_interface">
+        <label>Site Name
+            <input type="text" name="site_name" value="<?= e((string)($info['site_name'] ?? '')); ?>" placeholder="PWD APP Manager">
+        </label>
+        <button type="submit">Save</button>
+    </form>
+</section>
+
+<section class="card">
     <h2>Login Message (HTML)</h2>
     <form method="post" action="index.php" class="split">
         <?= csrf_input(); ?>
@@ -26,6 +38,30 @@ $info = get_info_row();
             <div class="preview-title">Preview</div>
             <div id="login-preview" class="preview-panel"></div>
         </div>
+        <button type="submit">Save</button>
+    </form>
+</section>
+
+<section class="card">
+    <h2>Popup Messages</h2>
+    <form method="post" action="index.php" class="grid">
+        <?= csrf_input(); ?>
+        <input type="hidden" name="action" value="save_interface">
+        <label>Operational Budget (Repair)
+            <textarea name="i_opr_repair" rows="3"><?= e((string)($info['i_opr_repair'] ?? '')); ?></textarea>
+        </label>
+        <label>Operational Budget (Other than Repair)
+            <textarea name="i_opr_other" rows="3"><?= e((string)($info['i_opr_other'] ?? '')); ?></textarea>
+        </label>
+        <label>Development Budget (MoHPW)
+            <textarea name="i_dev_pw" rows="3"><?= e((string)($info['i_dev_pw'] ?? '')); ?></textarea>
+        </label>
+        <label>Operational Budget (Other than MoHPW)
+            <textarea name="i_opr_min" rows="3"><?= e((string)($info['i_opr_min'] ?? '')); ?></textarea>
+        </label>
+        <label>Development Budget (Other than MoHPW)
+            <textarea name="i_dev_min" rows="3"><?= e((string)($info['i_dev_min'] ?? '')); ?></textarea>
+        </label>
         <button type="submit">Save</button>
     </form>
 </section>

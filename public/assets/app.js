@@ -195,6 +195,15 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    const usersFilters = document.getElementById('users-filters');
+    if (usersFilters) {
+        usersFilters.querySelectorAll('select').forEach((select) => {
+            select.addEventListener('change', () => {
+                usersFilters.submit();
+            });
+        });
+    }
+
     const graphModal = document.getElementById('graph-modal');
     const graphChartCanvas = document.getElementById('board-chart');
     const graphFy = document.getElementById('graph-fy');
@@ -206,7 +215,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const graphDownload = document.getElementById('graph-download');
     let boardChart = null;
     let currentMetric = 'pkg';
-    let currentTable = 'revenue';
+    let currentTable = 'opr_repair';
 
     const metricLabels = {
         pkg: 'Total no. of packages',
@@ -296,11 +305,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
     document.querySelectorAll('[data-modal="graph-modal"]').forEach((button) => {
         button.addEventListener('click', () => {
-            currentTable = button.getAttribute('data-table') || 'revenue';
+            currentTable = button.getAttribute('data-table') || 'opr_repair';
             if (graphModal) {
                 const title = document.getElementById('graph-title');
                 if (title) {
-                    title.textContent = currentTable === 'revenue' ? 'Revenue Budget' : 'Development Budget';
+                    const titles = {
+                        opr_repair: 'Operational Budget (Repair Works)',
+                        opr_other: 'Operational Budget (Other than Repair)',
+                        dev_pw: 'Development Budget (MoHPW)',
+                        opr_other_min: 'Operational Budget (Other Ministry)',
+                        dev_other_min: 'Development Budget (Other Ministry)',
+                    };
+                    title.textContent = titles[currentTable] || 'Budget';
                 }
             }
             loadBoardChart();
@@ -346,7 +362,14 @@ document.addEventListener('DOMContentLoaded', () => {
             ctx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
             ctx.fillStyle = '#1f2a44';
             ctx.font = '32px Arial';
-            const title = currentTable === 'revenue' ? 'Revenue Budget' : 'Development Budget';
+            const titles = {
+                opr_repair: 'Operational Budget (Repair Works)',
+                opr_other: 'Operational Budget (Other than Repair)',
+                dev_pw: 'Development Budget (MoHPW)',
+                opr_other_min: 'Operational Budget (Other Ministry)',
+                dev_other_min: 'Development Budget (Other Ministry)',
+            };
+            const title = titles[currentTable] || 'Budget';
             const titleWidth = ctx.measureText(title).width;
             ctx.fillText(title, (exportCanvas.width - titleWidth) / 2, margin + 28);
             const fyLabel = graphFy ? graphFy.options[graphFy.selectedIndex].textContent : '';
@@ -370,4 +393,93 @@ document.addEventListener('DOMContentLoaded', () => {
             link.click();
         });
     }
+
+    document.querySelectorAll('[id^="edit-user-"]').forEach((modal) => {
+        const zoneSelect = modal.querySelector('.zone-select');
+        const circleSelect = modal.querySelector('.circle-select');
+        const divisionSelect = modal.querySelector('.division-select');
+
+        const filterCircles = () => {
+            if (!circleSelect) {
+                return;
+            }
+            const zoneId = zoneSelect ? zoneSelect.value : '0';
+            circleSelect.querySelectorAll('option').forEach((opt) => {
+                if (opt.value === '0') {
+                    opt.hidden = false;
+                    return;
+                }
+                const match = zoneId === '0' || opt.getAttribute('data-zone') === zoneId;
+                opt.hidden = !match;
+            });
+        };
+
+        const filterDivisions = () => {
+            if (!divisionSelect) {
+                return;
+            }
+            const zoneId = zoneSelect ? zoneSelect.value : '0';
+            const circleId = circleSelect ? circleSelect.value : '0';
+            divisionSelect.querySelectorAll('option').forEach((opt) => {
+                if (opt.value === '0') {
+                    opt.hidden = false;
+                    return;
+                }
+                const matchZone = zoneId === '0' || opt.getAttribute('data-zone') === zoneId;
+                const matchCircle = circleId === '0' || opt.getAttribute('data-circle') === circleId;
+                opt.hidden = !(matchZone && matchCircle);
+            });
+        };
+
+        if (zoneSelect) {
+            zoneSelect.addEventListener('change', () => {
+                if (circleSelect) {
+                    circleSelect.value = '0';
+                }
+                if (divisionSelect) {
+                    divisionSelect.value = '0';
+                }
+                filterCircles();
+                filterDivisions();
+            });
+        }
+
+        if (circleSelect) {
+            circleSelect.addEventListener('change', () => {
+                if (divisionSelect) {
+                    divisionSelect.value = '0';
+                }
+                if (zoneSelect && circleSelect.value !== '0') {
+                    const selected = circleSelect.options[circleSelect.selectedIndex];
+                    const zoneId = selected.getAttribute('data-zone');
+                    if (zoneId) {
+                        zoneSelect.value = zoneId;
+                    }
+                }
+                filterDivisions();
+            });
+        }
+
+        if (divisionSelect) {
+            divisionSelect.addEventListener('change', () => {
+                if (divisionSelect.value === '0') {
+                    return;
+                }
+                const selected = divisionSelect.options[divisionSelect.selectedIndex];
+                const zoneId = selected.getAttribute('data-zone');
+                const circleId = selected.getAttribute('data-circle');
+                if (zoneSelect && zoneId) {
+                    zoneSelect.value = zoneId;
+                }
+                if (circleSelect && circleId) {
+                    circleSelect.value = circleId;
+                }
+                filterCircles();
+                filterDivisions();
+            });
+        }
+
+        filterCircles();
+        filterDivisions();
+    });
 });

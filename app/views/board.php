@@ -103,12 +103,19 @@ if ($division_filter !== 'all') {
     $division_ids = $allowed_division_ids;
 }
 
-$latest_revenue = $fy ? get_latest_records('revenue', (int)$fy['id'], $division_ids) : [];
-$latest_development = $fy ? get_latest_records('development', (int)$fy['id'], $division_ids) : [];
-$latest_rev = $fy && is_division_user() ? get_latest_record_for_division('revenue', (int)$fy['id'], (int)$user['division_id']) : null;
-$latest_dev = $fy && is_division_user() ? get_latest_record_for_division('development', (int)$fy['id'], (int)$user['division_id']) : null;
+$latest_revenue = $fy ? get_latest_records('opr_repair', (int)$fy['id'], $division_ids) : [];
+$latest_opr_other = $fy ? get_latest_records('opr_other', (int)$fy['id'], $division_ids) : [];
+$latest_development = $fy ? get_latest_records('dev_pw', (int)$fy['id'], $division_ids) : [];
+$latest_opr_other_min = $fy ? get_latest_records('opr_other_min', (int)$fy['id'], $division_ids) : [];
+$latest_dev_other_min = $fy ? get_latest_records('dev_other_min', (int)$fy['id'], $division_ids) : [];
+$latest_rev = $fy && is_division_user() ? get_latest_record_for_division('opr_repair', (int)$fy['id'], (int)$user['division_id']) : null;
+$latest_opr_other_row = $fy && is_division_user() ? get_latest_record_for_division('opr_other', (int)$fy['id'], (int)$user['division_id']) : null;
+$latest_dev = $fy && is_division_user() ? get_latest_record_for_division('dev_pw', (int)$fy['id'], (int)$user['division_id']) : null;
+$latest_opr_other_min_row = $fy && is_division_user() ? get_latest_record_for_division('opr_other_min', (int)$fy['id'], (int)$user['division_id']) : null;
+$latest_dev_other_min_row = $fy && is_division_user() ? get_latest_record_for_division('dev_other_min', (int)$fy['id'], (int)$user['division_id']) : null;
 $month_options = $fy ? fy_month_options($fy['fiscal_years']) : [];
 $default_month = $fy ? current_month_val_for_fy($fy['fiscal_years']) : 1;
+$info = get_info_row();
 $last_update_days = null;
 if (is_division_user()) {
     $dates = [];
@@ -126,7 +133,7 @@ if (is_division_user()) {
 }
 ?>
 <section class="card">
-    <h2 class="center">APP Manager</h2>
+    <h2 class="center"><?= e((string)($info['site_name'] ?? 'APP Manager')); ?></h2>
     <div class="grid">
         <div><strong>Office:</strong> <?= e($office_name); ?></div>
         <div><strong>Email:</strong> <?= e($user['email_id'] ?? ''); ?></div>
@@ -207,152 +214,25 @@ if (is_division_user()) {
     </section>
 <?php endif; ?>
 
-<section class="board-grid">
-    <div class="card card-actions">
-        <div class="card-actions-bar">
-            <?php if (is_division_user()): ?>
-                <button type="button" class="icon-link" title="Edit" aria-label="Edit" data-modal="revenue-modal">
-                    <svg viewBox="0 0 24 24" aria-hidden="true">
-                        <path d="M4 20h4l10-10-4-4L4 16v4z"></path>
-                        <path d="M13 6l4 4"></path>
-                    </svg>
-                </button>
-            <?php endif; ?>
-            <button type="button" class="icon-link" title="Graph" aria-label="Graph" data-modal="graph-modal" data-table="revenue">
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                    <path d="M4 18V6"></path>
-                    <path d="M4 18h16"></path>
-                    <path d="M7 14l4-4 4 3 4-6"></path>
-                </svg>
-            </button>
-            <button type="button" class="icon-link" title="Download" aria-label="Download" data-modal="revenue-download-modal">
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                    <path d="M12 4v10"></path>
-                    <path d="M8 10l4 4 4-4"></path>
-                    <path d="M4 20h16"></path>
-                </svg>
-            </button>
-        </div>
-        <h2>Revenue Budget</h2>
-        <div class="table-wrap">
-            <table>
-                <thead>
-                    <tr>
-                        <?php if (!is_division_user()): ?>
-                            <th>Division</th>
-                        <?php endif; ?>
-                        <th>Total no. of packages</th>
-                        <th>Total Value of packages in Lakh Tk.</th>
-                        <th>In live (No.)</th>
-                        <th>Evaluation/Appr.(No.)</th>
-                        <th>Contract Awarded (No.)</th>
-                        <th>Value of awarded contracts in Lakh Tk.</th>
-                        <?php if (!is_division_user()): ?>
-                            <th>Updated (days ago)</th>
-                        <?php endif; ?>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php foreach ($latest_revenue as $row): ?>
-                        <tr>
-                            <?php if (!is_division_user()): ?>
-                                <td><?= e($row['office_name']); ?></td>
-                            <?php endif; ?>
-                            <td><?= e((string)$row['pkg']); ?></td>
-                            <td><?= e((string)$row['est']); ?></td>
-                            <td><?= e((string)$row['pkg_live']); ?></td>
-                            <td><?= e((string)$row['pkg_eval']); ?></td>
-                            <td><?= e((string)$row['pkg_cont']); ?></td>
-                            <td><?= e((string)$row['cont']); ?></td>
-                            <?php if (!is_division_user()): ?>
-                                <?php
-                                    $days = '';
-                                    if (!empty($row['created_at'])) {
-                                        $diff = (new DateTime($row['created_at']))->diff(new DateTime($today));
-                                        $days = $diff->format('%a');
-                                    }
-                                ?>
-                                <td><?= $days !== '' ? e($days) : ''; ?></td>
-                            <?php endif; ?>
-                        </tr>
-                    <?php endforeach; ?>
-                </tbody>
-            </table>
-        </div>
-    </div>
+<section class="card card-plain">
+    <h2 class="center">Entries For MoHPW only</h2>
+</section>
 
-    <div class="card card-actions">
-        <div class="card-actions-bar">
-            <?php if (is_division_user()): ?>
-                <button type="button" class="icon-link" title="Edit" aria-label="Edit" data-modal="development-modal">
-                    <svg viewBox="0 0 24 24" aria-hidden="true">
-                        <path d="M4 20h4l10-10-4-4L4 16v4z"></path>
-                        <path d="M13 6l4 4"></path>
-                    </svg>
-                </button>
-            <?php endif; ?>
-            <button type="button" class="icon-link" title="Graph" aria-label="Graph" data-modal="graph-modal" data-table="development">
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                    <path d="M4 18V6"></path>
-                    <path d="M4 18h16"></path>
-                    <path d="M7 14l4-4 4 3 4-6"></path>
-                </svg>
-            </button>
-            <button type="button" class="icon-link" title="Download" aria-label="Download" data-modal="development-download-modal">
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                    <path d="M12 4v10"></path>
-                    <path d="M8 10l4 4 4-4"></path>
-                    <path d="M4 20h16"></path>
-                </svg>
-            </button>
-        </div>
-        <h2>Development Budget</h2>
-        <div class="table-wrap">
-            <table>
-                <thead>
-                    <tr>
-                        <?php if (!is_division_user()): ?>
-                            <th>Division</th>
-                        <?php endif; ?>
-                        <th>Total no. of packages</th>
-                        <th>Total Value of packages in Lakh Tk.</th>
-                        <th>In live (No.)</th>
-                        <th>Evaluation/Appr.(No.)</th>
-                        <th>Contract Awarded (No.)</th>
-                        <th>Value of awarded contracts in Lakh Tk.</th>
-                        <?php if (!is_division_user()): ?>
-                            <th>Updated (days ago)</th>
-                        <?php endif; ?>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php foreach ($latest_development as $row): ?>
-                        <tr>
-                            <?php if (!is_division_user()): ?>
-                                <td><?= e($row['office_name']); ?></td>
-                            <?php endif; ?>
-                            <td><?= e((string)$row['pkg']); ?></td>
-                            <td><?= e((string)$row['est']); ?></td>
-                            <td><?= e((string)$row['pkg_live']); ?></td>
-                            <td><?= e((string)$row['pkg_eval']); ?></td>
-                            <td><?= e((string)$row['pkg_cont']); ?></td>
-                            <td><?= e((string)$row['cont']); ?></td>
-                            <?php if (!is_division_user()): ?>
-                                <?php
-                                    $days = '';
-                                    if (!empty($row['created_at'])) {
-                                        $diff = (new DateTime($row['created_at']))->diff(new DateTime($today));
-                                        $days = $diff->format('%a');
-                                    }
-                                ?>
-                                <td><?= $days !== '' ? e($days) : ''; ?></td>
-                            <?php endif; ?>
-                        </tr>
-                    <?php endforeach; ?>
-                </tbody>
-            </table>
-        </div>
+<section class="board-grid">
+    <?php
+        $render_card = function (string $title, string $table, string $edit_modal, string $download_modal, string $info_modal, array $rows) use ($today) {
+            $path = __DIR__ . '/_board_card.php';
+            include $path;
+        };
+    ?>
+    <?php $render_card('Operational Budget (Repair Works)', 'opr_repair', 'revenue-modal', 'revenue-download-modal', 'info-opr-repair', $latest_revenue); ?>
+    <?php $render_card('Operational Budget (Other than Repair)', 'opr_other', 'opr-other-modal', 'opr-other-download-modal', 'info-opr-other', $latest_opr_other); ?>
+    <?php $render_card('Development Budget (MoHPW)', 'dev_pw', 'development-modal', 'development-download-modal', 'info-dev-pw', $latest_development); ?>
+    <div class="card card-plain section-heading">
+        <h2 class="center">Entries for Ministries Other than MoHPW</h2>
     </div>
+    <?php $render_card('Operational Budget (Other Ministry)', 'opr_other_min', 'opr-other-min-modal', 'opr-other-min-download-modal', 'info-opr-min', $latest_opr_other_min); ?>
+    <?php $render_card('Development Budget (Other Ministry)', 'dev_other_min', 'dev-other-min-modal', 'dev-other-min-download-modal', 'info-dev-min', $latest_dev_other_min); ?>
 </section>
 
 <?php if (is_division_user()): ?>
@@ -363,7 +243,7 @@ if (is_division_user()) {
             <form method="post" action="index.php" class="grid">
                 <?= csrf_input(); ?>
                 <input type="hidden" name="action" value="add_record">
-                <input type="hidden" name="table" value="revenue">
+                <input type="hidden" name="table" value="opr_repair">
                 <label>Total no. of packages
                     <input type="number" name="pkg" value="<?= e((string)($latest_rev['pkg'] ?? 0)); ?>" min="0" required>
                 </label>
@@ -415,7 +295,7 @@ if (is_division_user()) {
             <form method="post" action="index.php" class="grid">
                 <?= csrf_input(); ?>
                 <input type="hidden" name="action" value="add_record">
-                <input type="hidden" name="table" value="development">
+                <input type="hidden" name="table" value="dev_pw">
                 <label>Total no. of packages
                     <input type="number" name="pkg" value="<?= e((string)($latest_dev['pkg'] ?? 0)); ?>" min="0" required>
                 </label>
@@ -459,13 +339,169 @@ if (is_division_user()) {
             </form>
         </div>
     </div>
+
+    <div class="modal-backdrop" id="opr-other-modal" aria-hidden="true">
+        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="opr-other-title">
+            <h3 id="opr-other-title">Operational Budget (Other than Repair)</h3>
+            <p class="modal-sub">Date: <?= e($today); ?> | FY: <?= e($fy['fiscal_years'] ?? 'Not set'); ?></p>
+            <form method="post" action="index.php" class="grid">
+                <?= csrf_input(); ?>
+                <input type="hidden" name="action" value="add_record">
+                <input type="hidden" name="table" value="opr_other">
+                <label>Total no. of packages
+                    <input type="number" name="pkg" value="<?= e((string)($latest_opr_other_row['pkg'] ?? 0)); ?>" min="0" required>
+                </label>
+                <label>Month
+                    <select name="month_val" required>
+                        <?php foreach ($month_options as $opt): ?>
+                            <?php
+                                $selected = $latest_opr_other_row && !empty($latest_opr_other_row['month_val'])
+                                    ? (int)$latest_opr_other_row['month_val'] === (int)$opt['value']
+                                    : (int)$opt['value'] === (int)$default_month;
+                                $disabled = (int)$opt['value'] > (int)$default_month;
+                            ?>
+                            <option value="<?= e((string)$opt['value']); ?>" <?= $selected ? 'selected' : ''; ?> <?= $disabled ? 'disabled' : ''; ?>>
+                                <?= e($opt['label']); ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </label>
+                <label>Total Value of packages in Lakh Tk.
+                    <input type="number" name="est" step="0.01" value="<?= e((string)($latest_opr_other_row['est'] ?? 0)); ?>" min="0" required>
+                </label>
+                <label>In live (No.)
+                    <input type="number" name="pkg_live" value="<?= e((string)($latest_opr_other_row['pkg_live'] ?? 0)); ?>" min="0" required>
+                </label>
+                <label>Evaluation/Appr.(No.)
+                    <input type="number" name="pkg_eval" value="<?= e((string)($latest_opr_other_row['pkg_eval'] ?? 0)); ?>" min="0" required>
+                </label>
+                <label>Contract Awarded (No.)
+                    <input type="number" name="pkg_cont" value="<?= e((string)($latest_opr_other_row['pkg_cont'] ?? 0)); ?>" min="0" required>
+                </label>
+                <label>Value of awarded contracts in Lakh Tk.
+                    <input type="number" name="cont" step="0.01" value="<?= e((string)($latest_opr_other_row['cont'] ?? 0)); ?>" min="0" required>
+                </label>
+                <label>Note / Remarks
+                    <textarea name="note" rows="2"><?= e((string)($latest_opr_other_row['note'] ?? '')); ?></textarea>
+                </label>
+                <div class="modal-actions">
+                    <button type="submit">Save</button>
+                    <button type="button" class="modal-close" data-close="opr-other-modal">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="modal-backdrop" id="opr-other-min-modal" aria-hidden="true">
+        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="opr-other-min-title">
+            <h3 id="opr-other-min-title">Operational Budget (Other Ministry)</h3>
+            <p class="modal-sub">Date: <?= e($today); ?> | FY: <?= e($fy['fiscal_years'] ?? 'Not set'); ?></p>
+            <form method="post" action="index.php" class="grid">
+                <?= csrf_input(); ?>
+                <input type="hidden" name="action" value="add_record">
+                <input type="hidden" name="table" value="opr_other_min">
+                <label>Total no. of packages
+                    <input type="number" name="pkg" value="<?= e((string)($latest_opr_other_min_row['pkg'] ?? 0)); ?>" min="0" required>
+                </label>
+                <label>Month
+                    <select name="month_val" required>
+                        <?php foreach ($month_options as $opt): ?>
+                            <?php
+                                $selected = $latest_opr_other_min_row && !empty($latest_opr_other_min_row['month_val'])
+                                    ? (int)$latest_opr_other_min_row['month_val'] === (int)$opt['value']
+                                    : (int)$opt['value'] === (int)$default_month;
+                                $disabled = (int)$opt['value'] > (int)$default_month;
+                            ?>
+                            <option value="<?= e((string)$opt['value']); ?>" <?= $selected ? 'selected' : ''; ?> <?= $disabled ? 'disabled' : ''; ?>>
+                                <?= e($opt['label']); ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </label>
+                <label>Total Value of packages in Lakh Tk.
+                    <input type="number" name="est" step="0.01" value="<?= e((string)($latest_opr_other_min_row['est'] ?? 0)); ?>" min="0" required>
+                </label>
+                <label>In live (No.)
+                    <input type="number" name="pkg_live" value="<?= e((string)($latest_opr_other_min_row['pkg_live'] ?? 0)); ?>" min="0" required>
+                </label>
+                <label>Evaluation/Appr.(No.)
+                    <input type="number" name="pkg_eval" value="<?= e((string)($latest_opr_other_min_row['pkg_eval'] ?? 0)); ?>" min="0" required>
+                </label>
+                <label>Contract Awarded (No.)
+                    <input type="number" name="pkg_cont" value="<?= e((string)($latest_opr_other_min_row['pkg_cont'] ?? 0)); ?>" min="0" required>
+                </label>
+                <label>Value of awarded contracts in Lakh Tk.
+                    <input type="number" name="cont" step="0.01" value="<?= e((string)($latest_opr_other_min_row['cont'] ?? 0)); ?>" min="0" required>
+                </label>
+                <label>Note / Remarks
+                    <textarea name="note" rows="2"><?= e((string)($latest_opr_other_min_row['note'] ?? '')); ?></textarea>
+                </label>
+                <div class="modal-actions">
+                    <button type="submit">Save</button>
+                    <button type="button" class="modal-close" data-close="opr-other-min-modal">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="modal-backdrop" id="dev-other-min-modal" aria-hidden="true">
+        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="dev-other-min-title">
+            <h3 id="dev-other-min-title">Development Budget (Other Ministry)</h3>
+            <p class="modal-sub">Date: <?= e($today); ?> | FY: <?= e($fy['fiscal_years'] ?? 'Not set'); ?></p>
+            <form method="post" action="index.php" class="grid">
+                <?= csrf_input(); ?>
+                <input type="hidden" name="action" value="add_record">
+                <input type="hidden" name="table" value="dev_other_min">
+                <label>Total no. of packages
+                    <input type="number" name="pkg" value="<?= e((string)($latest_dev_other_min_row['pkg'] ?? 0)); ?>" min="0" required>
+                </label>
+                <label>Month
+                    <select name="month_val" required>
+                        <?php foreach ($month_options as $opt): ?>
+                            <?php
+                                $selected = $latest_dev_other_min_row && !empty($latest_dev_other_min_row['month_val'])
+                                    ? (int)$latest_dev_other_min_row['month_val'] === (int)$opt['value']
+                                    : (int)$opt['value'] === (int)$default_month;
+                                $disabled = (int)$opt['value'] > (int)$default_month;
+                            ?>
+                            <option value="<?= e((string)$opt['value']); ?>" <?= $selected ? 'selected' : ''; ?> <?= $disabled ? 'disabled' : ''; ?>>
+                                <?= e($opt['label']); ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </label>
+                <label>Total Value of packages in Lakh Tk.
+                    <input type="number" name="est" step="0.01" value="<?= e((string)($latest_dev_other_min_row['est'] ?? 0)); ?>" min="0" required>
+                </label>
+                <label>In live (No.)
+                    <input type="number" name="pkg_live" value="<?= e((string)($latest_dev_other_min_row['pkg_live'] ?? 0)); ?>" min="0" required>
+                </label>
+                <label>Evaluation/Appr.(No.)
+                    <input type="number" name="pkg_eval" value="<?= e((string)($latest_dev_other_min_row['pkg_eval'] ?? 0)); ?>" min="0" required>
+                </label>
+                <label>Contract Awarded (No.)
+                    <input type="number" name="pkg_cont" value="<?= e((string)($latest_dev_other_min_row['pkg_cont'] ?? 0)); ?>" min="0" required>
+                </label>
+                <label>Value of awarded contracts in Lakh Tk.
+                    <input type="number" name="cont" step="0.01" value="<?= e((string)($latest_dev_other_min_row['cont'] ?? 0)); ?>" min="0" required>
+                </label>
+                <label>Note / Remarks
+                    <textarea name="note" rows="2"><?= e((string)($latest_dev_other_min_row['note'] ?? '')); ?></textarea>
+                </label>
+                <div class="modal-actions">
+                    <button type="submit">Save</button>
+                    <button type="button" class="modal-close" data-close="dev-other-min-modal">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
 <?php endif; ?>
 
 <div class="modal-backdrop" id="revenue-download-modal" aria-hidden="true">
     <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="revenue-download-title">
         <h3 id="revenue-download-title">Download Revenue Budget</h3>
         <form method="get" action="export_board.php" class="grid">
-            <input type="hidden" name="table" value="revenue">
+            <input type="hidden" name="table" value="opr_repair">
             <label>Format
                 <select name="format">
                     <option value="pdf">PDF</option>
@@ -490,7 +526,7 @@ if (is_division_user()) {
     <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="development-download-title">
         <h3 id="development-download-title">Download Development Budget</h3>
         <form method="get" action="export_board.php" class="grid">
-            <input type="hidden" name="table" value="development">
+            <input type="hidden" name="table" value="dev_pw">
             <label>Format
                 <select name="format">
                     <option value="pdf">PDF</option>
@@ -506,6 +542,81 @@ if (is_division_user()) {
             <div class="modal-actions">
                 <button type="submit">Download</button>
                 <button type="button" class="modal-close" data-close="development-download-modal">Cancel</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="modal-backdrop" id="opr-other-download-modal" aria-hidden="true">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="opr-other-download-title">
+        <h3 id="opr-other-download-title">Download Operational Budget (Other than Repair)</h3>
+        <form method="get" action="export_board.php" class="grid">
+            <input type="hidden" name="table" value="opr_other">
+            <label>Format
+                <select name="format">
+                    <option value="pdf">PDF</option>
+                    <option value="excel">Excel</option>
+                </select>
+            </label>
+            <label>Scope
+                <select name="scope">
+                    <option value="latest">Latest Only</option>
+                    <option value="full">Full Data</option>
+                </select>
+            </label>
+            <div class="modal-actions">
+                <button type="submit">Download</button>
+                <button type="button" class="modal-close" data-close="opr-other-download-modal">Cancel</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="modal-backdrop" id="opr-other-min-download-modal" aria-hidden="true">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="opr-other-min-download-title">
+        <h3 id="opr-other-min-download-title">Download Operational Budget (Other Ministry)</h3>
+        <form method="get" action="export_board.php" class="grid">
+            <input type="hidden" name="table" value="opr_other_min">
+            <label>Format
+                <select name="format">
+                    <option value="pdf">PDF</option>
+                    <option value="excel">Excel</option>
+                </select>
+            </label>
+            <label>Scope
+                <select name="scope">
+                    <option value="latest">Latest Only</option>
+                    <option value="full">Full Data</option>
+                </select>
+            </label>
+            <div class="modal-actions">
+                <button type="submit">Download</button>
+                <button type="button" class="modal-close" data-close="opr-other-min-download-modal">Cancel</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="modal-backdrop" id="dev-other-min-download-modal" aria-hidden="true">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="dev-other-min-download-title">
+        <h3 id="dev-other-min-download-title">Download Development Budget (Other Ministry)</h3>
+        <form method="get" action="export_board.php" class="grid">
+            <input type="hidden" name="table" value="dev_other_min">
+            <label>Format
+                <select name="format">
+                    <option value="pdf">PDF</option>
+                    <option value="excel">Excel</option>
+                </select>
+            </label>
+            <label>Scope
+                <select name="scope">
+                    <option value="latest">Latest Only</option>
+                    <option value="full">Full Data</option>
+                </select>
+            </label>
+            <div class="modal-actions">
+                <button type="submit">Download</button>
+                <button type="button" class="modal-close" data-close="dev-other-min-download-modal">Cancel</button>
             </div>
         </form>
     </div>
@@ -563,6 +674,56 @@ if (is_division_user()) {
         </div>
         <div class="modal-actions">
             <button type="button" class="modal-close" data-close="graph-modal">Close</button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-backdrop" id="info-opr-repair" aria-hidden="true">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="info-opr-repair-title">
+        <h3 id="info-opr-repair-title">Operational Budget (Repair Works)</h3>
+        <p><?= e((string)($info['i_opr_repair'] ?? 'No message')); ?></p>
+        <div class="modal-actions">
+            <button type="button" class="modal-close" data-close="info-opr-repair">Close</button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-backdrop" id="info-opr-other" aria-hidden="true">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="info-opr-other-title">
+        <h3 id="info-opr-other-title">Operational Budget (Other than Repair)</h3>
+        <p><?= e((string)($info['i_opr_other'] ?? 'No message')); ?></p>
+        <div class="modal-actions">
+            <button type="button" class="modal-close" data-close="info-opr-other">Close</button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-backdrop" id="info-dev-pw" aria-hidden="true">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="info-dev-pw-title">
+        <h3 id="info-dev-pw-title">Development Budget (MoHPW)</h3>
+        <p><?= e((string)($info['i_dev_pw'] ?? 'No message')); ?></p>
+        <div class="modal-actions">
+            <button type="button" class="modal-close" data-close="info-dev-pw">Close</button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-backdrop" id="info-opr-min" aria-hidden="true">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="info-opr-min-title">
+        <h3 id="info-opr-min-title">Operational Budget (Other Ministry)</h3>
+        <p><?= e((string)($info['i_opr_min'] ?? 'No message')); ?></p>
+        <div class="modal-actions">
+            <button type="button" class="modal-close" data-close="info-opr-min">Close</button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-backdrop" id="info-dev-min" aria-hidden="true">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="info-dev-min-title">
+        <h3 id="info-dev-min-title">Development Budget (Other Ministry)</h3>
+        <p><?= e((string)($info['i_dev_min'] ?? 'No message')); ?></p>
+        <div class="modal-actions">
+            <button type="button" class="modal-close" data-close="info-dev-min">Close</button>
         </div>
     </div>
 </div>

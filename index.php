@@ -15,7 +15,7 @@ if ($action === 'login') {
         flash('error', 'Invalid credentials.');
         redirect('index.php?page=login');
     }
-    redirect('index.php?page=dashboard');
+    redirect('index.php?page=board');
 }
 
 if ($action === 'logout') {
@@ -39,7 +39,7 @@ if ($action === 'add_record') {
     }
 
     $table = input_str('table');
-    if (!in_array($table, ['revenue', 'development'], true)) {
+    if (!in_array($table, ['opr_repair', 'opr_other', 'dev_pw', 'opr_other_min', 'dev_other_min'], true)) {
         http_response_code(400);
         exit('Invalid table.');
     }
@@ -265,6 +265,7 @@ if ($action === 'create_user') {
     $password = input_str('password');
     $office_type = input_int('office_type');
     $office_role = input_int('office_role');
+    $office_role = input_int('office_role', 1);
     $zone_id = input_int('zone_id');
     $circle_id = input_int('circle_id');
     $division_id = input_int('division_id');
@@ -288,6 +289,103 @@ if ($action === 'create_user') {
 
     flash('success', 'User created.');
     redirect('index.php?page=admin');
+}
+
+if ($action === 'update_profile') {
+    require_login();
+    if (!csrf_validate($_POST['csrf_token'] ?? null)) {
+        http_response_code(400);
+        exit('Invalid CSRF token.');
+    }
+
+    $name = input_str('officer_name');
+    $password = input_str('password');
+    $password_confirm = input_str('password_confirm');
+    $user = current_user();
+    if ($name === '') {
+        $name = $user['officer_name'] ?? '';
+    }
+
+    if ($password !== '') {
+        if ($password !== $password_confirm) {
+            flash('error', 'Passwords do not match.');
+            redirect('index.php?page=profile');
+        }
+        $stmt = db()->prepare('UPDATE users SET officer_name = ?, password = ?, updated_at = NOW() WHERE id = ?');
+        $stmt->execute([$name, password_hash($password, PASSWORD_DEFAULT), (int)$user['id']]);
+    } else {
+        $stmt = db()->prepare('UPDATE users SET officer_name = ?, updated_at = NOW() WHERE id = ?');
+        $stmt->execute([$name, (int)$user['id']]);
+    }
+
+    $_SESSION['user']['officer_name'] = $name;
+    flash('success', 'Profile updated.');
+    redirect('index.php?page=profile');
+}
+
+if ($action === 'reset_user_password') {
+    require_login();
+    if (!is_superadmin()) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
+    if (!csrf_validate($_POST['csrf_token'] ?? null)) {
+        http_response_code(400);
+        exit('Invalid CSRF token.');
+    }
+    $user_id = input_int('user_id');
+    $new_password = input_str('new_password');
+    if ($user_id <= 0 || $new_password === '') {
+        flash('error', 'User and password are required.');
+        redirect('index.php?page=users');
+    }
+    $stmt = db()->prepare('UPDATE users SET password = ?, updated_at = NOW() WHERE id = ?');
+    $stmt->execute([password_hash($new_password, PASSWORD_DEFAULT), $user_id]);
+    flash('success', 'Password reset.');
+    redirect('index.php?page=users');
+}
+
+if ($action === 'update_user') {
+    require_login();
+    if (!is_superadmin()) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
+    if (!csrf_validate($_POST['csrf_token'] ?? null)) {
+        http_response_code(400);
+        exit('Invalid CSRF token.');
+    }
+    $user_id = input_int('user_id');
+    $email = input_str('email_id');
+    $name = input_str('officer_name');
+    $zone_id = input_int('zone_id');
+    $circle_id = input_int('circle_id');
+    $division_id = input_int('division_id');
+
+    if ($user_id <= 0 || $email === '') {
+        flash('error', 'User and email are required.');
+        redirect('index.php?page=users');
+    }
+
+    $stmt = db()->prepare('SELECT id FROM users WHERE email_id = ? AND id <> ?');
+    $stmt->execute([$email, $user_id]);
+    if ($stmt->fetchColumn()) {
+        flash('error', 'Email already exists.');
+        redirect('index.php?page=users');
+    }
+
+    $stmt = db()->prepare('UPDATE users SET email_id = ?, officer_name = ?, office_role = ?, zone_id = ?, circle_id = ?, division_id = ?, updated_at = NOW() WHERE id = ?');
+    $stmt->execute([
+        $email,
+        $name === '' ? null : $name,
+        $office_role,
+        $zone_id > 0 ? $zone_id : null,
+        $circle_id > 0 ? $circle_id : null,
+        $division_id > 0 ? $division_id : null,
+        $user_id,
+    ]);
+    flash('success', 'User updated.');
+    redirect('index.php?page=users');
 }
 
 if ($action === 'save_interface') {
@@ -314,7 +412,16 @@ if ($action === 'save_interface') {
         $login_message = null;
     }
 
-    save_info_row($video_url, $login_message);
+    $extras = [];
+    $extra_keys = ['site_name', 'i_opr_repair', 'i_opr_other', 'i_dev_pw', 'i_opr_min', 'i_dev_min'];
+    foreach ($extra_keys as $key) {
+        if (array_key_exists($key, $_POST)) {
+            $value = input_str($key);
+            $extras[$key] = $value === '' ? null : $value;
+        }
+    }
+
+    save_info_row($video_url, $login_message, $extras);
     flash('success', 'Interface settings saved.');
     redirect('index.php?page=interface');
 }
@@ -351,6 +458,20 @@ if ($page === 'admin') {
         exit('Not allowed.');
     }
     require __DIR__ . '/app/views/admin.php';
+    exit;
+}
+
+if ($page === 'users') {
+    if (!is_superadmin()) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
+    require __DIR__ . '/app/views/users.php';
+    exit;
+}
+
+if ($page === 'profile') {
+    require __DIR__ . '/app/views/profile.php';
     exit;
 }
 

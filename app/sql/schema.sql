@@ -56,7 +56,7 @@ CREATE TABLE IF NOT EXISTS fy (
     updated_at DATETIME DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS revenue (
+CREATE TABLE IF NOT EXISTS opr_repair (
     id INT AUTO_INCREMENT PRIMARY KEY,
     fy_id INT NOT NULL,
     division_id INT NOT NULL,
@@ -70,10 +70,10 @@ CREATE TABLE IF NOT EXISTS revenue (
     note TEXT DEFAULT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT NULL,
-    KEY idx_revenue_fy_div (fy_id, division_id, id)
+    KEY idx_opr_repair_fy_div (fy_id, division_id, id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS development (
+CREATE TABLE IF NOT EXISTS opr_other (
     id INT AUTO_INCREMENT PRIMARY KEY,
     fy_id INT NOT NULL,
     division_id INT NOT NULL,
@@ -87,7 +87,58 @@ CREATE TABLE IF NOT EXISTS development (
     note TEXT DEFAULT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT NULL,
-    KEY idx_development_fy_div (fy_id, division_id, id)
+    KEY idx_opr_other_fy_div (fy_id, division_id, id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS dev_pw (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    fy_id INT NOT NULL,
+    division_id INT NOT NULL,
+    month_val TINYINT NOT NULL DEFAULT 1,
+    pkg INT NOT NULL DEFAULT 0,
+    est DECIMAL(10,2) NOT NULL DEFAULT 0,
+    pkg_live INT NOT NULL DEFAULT 0,
+    pkg_eval INT NOT NULL DEFAULT 0,
+    pkg_cont INT NOT NULL DEFAULT 0,
+    cont DECIMAL(10,2) NOT NULL DEFAULT 0,
+    note TEXT DEFAULT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT NULL,
+    KEY idx_dev_pw_fy_div (fy_id, division_id, id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS opr_other_min (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    fy_id INT NOT NULL,
+    division_id INT NOT NULL,
+    month_val TINYINT NOT NULL DEFAULT 1,
+    pkg INT NOT NULL DEFAULT 0,
+    est DECIMAL(10,2) NOT NULL DEFAULT 0,
+    pkg_live INT NOT NULL DEFAULT 0,
+    pkg_eval INT NOT NULL DEFAULT 0,
+    pkg_cont INT NOT NULL DEFAULT 0,
+    cont DECIMAL(10,2) NOT NULL DEFAULT 0,
+    note TEXT DEFAULT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT NULL,
+    KEY idx_opr_other_min_fy_div (fy_id, division_id, id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS dev_other_min (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    fy_id INT NOT NULL,
+    division_id INT NOT NULL,
+    month_val TINYINT NOT NULL DEFAULT 1,
+    pkg INT NOT NULL DEFAULT 0,
+    est DECIMAL(10,2) NOT NULL DEFAULT 0,
+    pkg_live INT NOT NULL DEFAULT 0,
+    pkg_eval INT NOT NULL DEFAULT 0,
+    pkg_cont INT NOT NULL DEFAULT 0,
+    cont DECIMAL(10,2) NOT NULL DEFAULT 0,
+    note TEXT DEFAULT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT NULL,
+    KEY idx_dev_other_min_fy_div (fy_id, division_id, id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS logs (
@@ -102,8 +153,14 @@ CREATE TABLE IF NOT EXISTS logs (
 
 CREATE TABLE IF NOT EXISTS info (
     id INT AUTO_INCREMENT PRIMARY KEY,
+    site_name VARCHAR(255) DEFAULT NULL,
     video_tutorial_url VARCHAR(255) DEFAULT NULL,
     login_message TEXT DEFAULT NULL,
+    i_opr_repair TEXT DEFAULT NULL,
+    i_opr_other TEXT DEFAULT NULL,
+    i_dev_pw TEXT DEFAULT NULL,
+    i_opr_min TEXT DEFAULT NULL,
+    i_dev_min TEXT DEFAULT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

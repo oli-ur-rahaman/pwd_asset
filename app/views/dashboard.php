@@ -5,8 +5,8 @@ $fy = get_current_fy();
 $fy_list = get_fy_list();
 $division_list = get_divisions_for_user($user);
 $division_ids = array_column($division_list, 'id');
-$latest_revenue = $fy ? get_latest_records('revenue', (int)$fy['id'], $division_ids) : [];
-$latest_development = $fy ? get_latest_records('development', (int)$fy['id'], $division_ids) : [];
+$latest_revenue = $fy ? get_latest_records('opr_repair', (int)$fy['id'], $division_ids) : [];
+$latest_development = $fy ? get_latest_records('dev_pw', (int)$fy['id'], $division_ids) : [];
 $month_options = $fy ? fy_month_options($fy['fiscal_years']) : [];
 $default_month = $fy ? current_month_val_for_fy($fy['fiscal_years']) : 1;
 ?>
@@ -18,15 +18,15 @@ $default_month = $fy ? current_month_val_for_fy($fy['fiscal_years']) : 1;
 
 <?php if (is_division_user()): ?>
     <?php
-        $latest_rev = $fy ? get_latest_record_for_division('revenue', (int)$fy['id'], (int)$user['division_id']) : null;
-        $latest_dev = $fy ? get_latest_record_for_division('development', (int)$fy['id'], (int)$user['division_id']) : null;
+        $latest_rev = $fy ? get_latest_record_for_division('opr_repair', (int)$fy['id'], (int)$user['division_id']) : null;
+        $latest_dev = $fy ? get_latest_record_for_division('dev_pw', (int)$fy['id'], (int)$user['division_id']) : null;
     ?>
     <section class="card">
         <h2>Division Entry - Revenue</h2>
         <form method="post" action="index.php">
             <?= csrf_input(); ?>
             <input type="hidden" name="action" value="add_record">
-            <input type="hidden" name="table" value="revenue">
+            <input type="hidden" name="table" value="opr_repair">
             <div class="grid">
                 <label>Total Packages
                     <input type="number" name="pkg" value="<?= e((string)($latest_rev['pkg'] ?? 0)); ?>" min="0" required>
@@ -74,7 +74,7 @@ $default_month = $fy ? current_month_val_for_fy($fy['fiscal_years']) : 1;
         <form method="post" action="index.php">
             <?= csrf_input(); ?>
             <input type="hidden" name="action" value="add_record">
-            <input type="hidden" name="table" value="development">
+            <input type="hidden" name="table" value="dev_pw">
             <div class="grid">
                 <label>Total Packages
                     <input type="number" name="pkg" value="<?= e((string)($latest_dev['pkg'] ?? 0)); ?>" min="0" required>
@@ -203,8 +203,8 @@ $default_month = $fy ? current_month_val_for_fy($fy['fiscal_years']) : 1;
         </label>
         <label>Dataset
             <select name="table">
-                <option value="revenue">Revenue</option>
-                <option value="development">Development</option>
+                <option value="opr_repair">Revenue</option>
+                <option value="dev_pw">Development</option>
             </select>
         </label>
         <label>Metric
@@ -235,8 +235,8 @@ $default_month = $fy ? current_month_val_for_fy($fy['fiscal_years']) : 1;
     <form method="get" action="export.php" class="export-form">
         <label>Type
             <select name="table">
-                <option value="revenue">Revenue</option>
-                <option value="development">Development</option>
+                <option value="opr_repair">Revenue</option>
+                <option value="dev_pw">Development</option>
             </select>
         </label>
         <label>Fiscal Year

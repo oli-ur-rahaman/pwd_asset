@@ -4,7 +4,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>PWD APP Manager</title>
+    <title><?= e((string)($info['site_name'] ?? 'PWD APP Manager')); ?></title>
     <link rel="stylesheet" href="public/assets/style.css">
 </head>
 <body class="auth-body">
@@ -16,7 +16,7 @@
         </div>
     </div>
     <div class="auth-title-row">
-        <h1>PWD APP Manager</h1>
+        <h1><?= e((string)($info['site_name'] ?? 'PWD APP Manager')); ?></h1>
     </div>
     <div class="auth-grid">
         <div class="auth-card">
