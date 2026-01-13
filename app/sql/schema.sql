@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS divisions (
     office_type TINYINT NOT NULL DEFAULT 2,
     zone_id INT DEFAULT NULL,
     circle_id INT DEFAULT NULL,
+    field_office TINYINT NOT NULL DEFAULT 1,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT NULL,
     KEY idx_divisions_zone (zone_id),

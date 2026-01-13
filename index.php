@@ -1,7 +1,7 @@
 <?php
 require __DIR__ . '/app/lib/bootstrap.php';
 
-$page = request_str('page', 'dashboard');
+$page = request_str('page', 'board');
 $action = $_POST['action'] ?? null;
 
 if ($action === 'login') {
@@ -75,7 +75,7 @@ if ($action === 'add_record') {
     add_log((int)$user['id'], $table, $record_id, 'Added new entry.');
 
     flash('success', 'Data saved.');
-    redirect('index.php?page=dashboard');
+    redirect('index.php?page=board');
 }
 
 if ($action === 'csv_import') {
@@ -139,13 +139,14 @@ if ($action === 'csv_import') {
             return $value;
         };
         if ($type === 'divisions') {
-            $stmt = db()->prepare('INSERT INTO divisions (office_name, office_address, office_type, zone_id, circle_id, created_at) VALUES (?, ?, ?, ?, ?, NOW())');
+            $stmt = db()->prepare('INSERT INTO divisions (office_name, office_address, office_type, zone_id, circle_id, field_office, created_at) VALUES (?, ?, ?, ?, ?, ?, NOW())');
             $stmt->execute([
                 $get_text('office_name') ?? '',
                 $get_text('office_address'),
                 (int)($data['office_type'] ?? 2),
                 $get_id('zone_id'),
                 $get_id('circle_id'),
+                (int)($data['field_office'] ?? 1),
             ]);
         } elseif ($type === 'circles') {
             $stmt = db()->prepare('INSERT INTO circles (office_name, office_address, office_type, zone_id, created_at) VALUES (?, ?, ?, ?, NOW())');
@@ -484,4 +485,4 @@ if ($page === 'interface') {
     exit;
 }
 
-require __DIR__ . '/app/views/dashboard.php';
+require __DIR__ . '/app/views/board.php';

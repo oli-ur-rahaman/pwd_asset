@@ -36,3 +36,25 @@
 <?php if ($msg = flash('error')): ?>
     <div class="alert error"><?= e($msg); ?></div>
 <?php endif; ?>
+<?php
+    $needs_name = $user && (empty($user['officer_name']) || $user['officer_name'] === '0');
+?>
+<?php if ($needs_name): ?>
+    <div class="modal-backdrop open" id="name-modal" aria-hidden="false">
+        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="name-title">
+            <h3 id="name-title">Update Officer Name</h3>
+            <p>Please enter your name to continue.</p>
+            <form method="post" action="index.php" id="name-form" class="grid">
+                <?= csrf_input(); ?>
+                <input type="hidden" name="action" value="update_profile">
+                <label>Officer Name
+                    <input type="text" name="officer_name" id="officer-name-input" required>
+                </label>
+                <div class="modal-actions">
+                    <button type="submit">Save</button>
+                    <button type="button" class="modal-close" id="name-cancel">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+<?php endif; ?>

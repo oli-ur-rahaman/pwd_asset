@@ -482,4 +482,21 @@ document.addEventListener('DOMContentLoaded', () => {
         filterCircles();
         filterDivisions();
     });
+
+    const nameModal = document.getElementById('name-modal');
+    const nameForm = document.getElementById('name-form');
+    const nameInput = document.getElementById('officer-name-input');
+    const nameCancel = document.getElementById('name-cancel');
+    if (nameModal && nameForm && nameInput && nameCancel) {
+        nameCancel.addEventListener('click', () => {
+            nameModal.classList.remove('open');
+            nameModal.setAttribute('aria-hidden', 'true');
+        });
+        nameForm.addEventListener('submit', (event) => {
+            if (nameInput.value.trim() === '') {
+                event.preventDefault();
+                alert('Please enter your name and press Save.');
+            }
+        });
+    }
 });
