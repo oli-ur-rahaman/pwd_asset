@@ -15,8 +15,16 @@ foreach ($circles as $circle) {
     $circle_by_id[$circle['id']] = $circle;
 }
 $division_by_id = [];
+$division_ids_by_circle = [];
 foreach ($divisions as $division) {
     $division_by_id[$division['id']] = $division;
+    $circle_id = (int)($division['circle_id'] ?? 0);
+    if ($circle_id > 0) {
+        if (!isset($division_ids_by_circle[$circle_id])) {
+            $division_ids_by_circle[$circle_id] = [];
+        }
+        $division_ids_by_circle[$circle_id][] = (int)$division['id'];
+    }
 }
 
 function user_office_name(array $user, array $zone_by_id, array $circle_by_id, array $division_by_id): string
@@ -38,23 +46,46 @@ function user_office_name(array $user, array $zone_by_id, array $circle_by_id, a
     return $division_by_id[$user['division_id']]['office_name'] ?? '-';
 }
 
+function office_type_label(int $type): string
+{
+    if ($type === 1) {
+        return "Chief Engineer's Office";
+    }
+    if ($type === 2) {
+        return 'Zone';
+    }
+    if ($type === 3) {
+        return 'Circle';
+    }
+    if ($type === 4) {
+        return 'Division';
+    }
+    return '-';
+}
+
 $role_filter = request_str('role', 'all');
 $zone_filter = request_str('zone_id', 'all');
 $circle_filter = request_str('circle_id', 'all');
 $division_filter = request_str('division_id', 'all');
 
-$users = array_values(array_filter($users, function ($u) use ($role_filter, $zone_filter, $circle_filter, $division_filter) {
+$users = array_values(array_filter($users, function ($u) use ($role_filter, $zone_filter, $circle_filter, $division_filter, $division_ids_by_circle) {
     if ($role_filter !== 'all' && (int)$u['office_role'] !== (int)$role_filter) {
         return false;
     }
     if ($zone_filter !== 'all' && (int)($u['zone_id'] ?? 0) !== (int)$zone_filter) {
         return false;
     }
-    if ($circle_filter !== 'all' && (int)($u['circle_id'] ?? 0) !== (int)$circle_filter) {
-        return false;
-    }
     if ($division_filter !== 'all' && (int)($u['division_id'] ?? 0) !== (int)$division_filter) {
         return false;
+    }
+    if ($circle_filter !== 'all') {
+        $circle_id = (int)$circle_filter;
+        $user_circle = (int)($u['circle_id'] ?? 0);
+        $user_division = (int)($u['division_id'] ?? 0);
+        $division_ids = $division_ids_by_circle[$circle_id] ?? [];
+        if ($user_circle !== $circle_id && !in_array($user_division, $division_ids, true)) {
+            return false;
+        }
     }
     return true;
 }));
@@ -91,7 +122,7 @@ $users = array_values(array_filter($users, function ($u) use ($role_filter, $zon
             <select name="circle_id">
                 <option value="all">All</option>
                 <?php foreach ($circles as $circle): ?>
-                    <option value="<?= e((string)$circle['id']); ?>" <?= $circle_filter === (string)$circle['id'] ? 'selected' : ''; ?>>
+                    <option value="<?= e((string)$circle['id']); ?>" data-zone="<?= e((string)$circle['zone_id']); ?>" <?= $circle_filter === (string)$circle['id'] ? 'selected' : ''; ?>>
                         <?= e($circle['office_name']); ?>
                     </option>
                 <?php endforeach; ?>
@@ -101,7 +132,7 @@ $users = array_values(array_filter($users, function ($u) use ($role_filter, $zon
             <select name="division_id">
                 <option value="all">All</option>
                 <?php foreach ($divisions as $division): ?>
-                    <option value="<?= e((string)$division['id']); ?>" <?= $division_filter === (string)$division['id'] ? 'selected' : ''; ?>>
+                    <option value="<?= e((string)$division['id']); ?>" data-zone="<?= e((string)($division['zone_id'] ?? '')); ?>" data-circle="<?= e((string)($division['circle_id'] ?? '')); ?>" <?= $division_filter === (string)$division['id'] ? 'selected' : ''; ?>>
                         <?= e($division['office_name']); ?>
                     </option>
                 <?php endforeach; ?>
@@ -152,10 +183,11 @@ $users = array_values(array_filter($users, function ($u) use ($role_filter, $zon
 
 <?php foreach ($users as $user_row): ?>
     <?php
-        $office_name = user_office_name($user_row, $zone_by_id, $circle_by_id, $division_by_id);
         $zone_id = (int)($user_row['zone_id'] ?? 0);
         $circle_id = (int)($user_row['circle_id'] ?? 0);
         $division_id = (int)($user_row['division_id'] ?? 0);
+        $office_type = (int)($user_row['office_type'] ?? 1);
+        $office_type_text = office_type_label($office_type);
     ?>
     <div class="modal-backdrop" id="edit-user-<?= e((string)$user_row['id']); ?>" aria-hidden="true">
         <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="edit-user-title-<?= e((string)$user_row['id']); ?>">
@@ -177,8 +209,9 @@ $users = array_values(array_filter($users, function ($u) use ($role_filter, $zon
                         <option value="3" <?= (int)$user_row['office_role'] === 3 ? 'selected' : ''; ?>>Superadmin</option>
                     </select>
                 </label>
-                <label>Office Name
-                    <input type="text" value="<?= e($office_name); ?>" readonly>
+                <input type="hidden" name="office_type" value="<?= e((string)$office_type); ?>">
+                <label>Office Type
+                    <input type="text" class="office-type-display" value="<?= e($office_type_text); ?>" readonly>
                 </label>
                 <label>Zone Name
                     <select name="zone_id" class="zone-select">

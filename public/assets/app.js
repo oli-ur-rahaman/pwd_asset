@@ -197,11 +197,118 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const usersFilters = document.getElementById('users-filters');
     if (usersFilters) {
-        usersFilters.querySelectorAll('select').forEach((select) => {
-            select.addEventListener('change', () => {
+        const zoneSelect = usersFilters.querySelector('select[name="zone_id"]');
+        const circleSelect = usersFilters.querySelector('select[name="circle_id"]');
+        const roleSelect = usersFilters.querySelector('select[name="role"]');
+        const divisionSelect = usersFilters.querySelector('select[name="division_id"]');
+
+        const filterUserCircles = () => {
+            if (!circleSelect) {
+                return;
+            }
+            const zoneId = zoneSelect ? zoneSelect.value : 'all';
+            circleSelect.querySelectorAll('option').forEach((opt) => {
+                if (opt.value === 'all') {
+                    opt.hidden = false;
+                    return;
+                }
+                const match = zoneId === 'all' || opt.getAttribute('data-zone') === zoneId;
+                opt.hidden = !match;
+            });
+        };
+
+        const filterUserDivisions = () => {
+            if (!divisionSelect) {
+                return;
+            }
+            const zoneId = zoneSelect ? zoneSelect.value : 'all';
+            const circleId = circleSelect ? circleSelect.value : 'all';
+            const visibleCircles = new Set();
+            if (circleSelect) {
+                circleSelect.querySelectorAll('option').forEach((opt) => {
+                    if (opt.value !== 'all' && !opt.hidden) {
+                        visibleCircles.add(opt.value);
+                    }
+                });
+            }
+            divisionSelect.querySelectorAll('option').forEach((opt) => {
+                if (opt.value === 'all') {
+                    opt.hidden = false;
+                    return;
+                }
+                const optZone = opt.getAttribute('data-zone') || '';
+                const optCircle = opt.getAttribute('data-circle') || '';
+                if (circleId !== 'all') {
+                    opt.hidden = optCircle !== circleId;
+                    return;
+                }
+                if (zoneId === 'all') {
+                    opt.hidden = visibleCircles.size > 0 && !visibleCircles.has(optCircle);
+                    return;
+                }
+                opt.hidden = optZone !== zoneId;
+            });
+        };
+
+        if (zoneSelect) {
+            zoneSelect.addEventListener('change', () => {
+                if (circleSelect) {
+                    circleSelect.value = 'all';
+                }
+                if (divisionSelect) {
+                    divisionSelect.value = 'all';
+                }
+                filterUserCircles();
+                filterUserDivisions();
                 usersFilters.submit();
             });
-        });
+        }
+
+        if (circleSelect) {
+            circleSelect.addEventListener('change', () => {
+                if (circleSelect.value !== 'all') {
+                    const selected = circleSelect.options[circleSelect.selectedIndex];
+                    const zoneId = selected ? selected.getAttribute('data-zone') : null;
+                    if (zoneSelect && zoneId) {
+                        zoneSelect.value = zoneId;
+                    }
+                }
+                if (divisionSelect) {
+                    divisionSelect.value = 'all';
+                }
+                filterUserCircles();
+                filterUserDivisions();
+                usersFilters.submit();
+            });
+        }
+
+        if (roleSelect) {
+            roleSelect.addEventListener('change', () => {
+                usersFilters.submit();
+            });
+        }
+
+        if (divisionSelect) {
+            divisionSelect.addEventListener('change', () => {
+                if (divisionSelect.value !== 'all') {
+                    const selected = divisionSelect.options[divisionSelect.selectedIndex];
+                    const zoneId = selected ? selected.getAttribute('data-zone') : null;
+                    const circleId = selected ? selected.getAttribute('data-circle') : null;
+                    if (zoneSelect && zoneId) {
+                        zoneSelect.value = zoneId;
+                    }
+                    if (circleSelect && circleId) {
+                        circleSelect.value = circleId;
+                    }
+                    filterUserCircles();
+                    filterUserDivisions();
+                }
+                usersFilters.submit();
+            });
+        }
+
+        filterUserCircles();
+        filterUserDivisions();
     }
 
     const graphModal = document.getElementById('graph-modal');
@@ -398,6 +505,38 @@ document.addEventListener('DOMContentLoaded', () => {
         const zoneSelect = modal.querySelector('.zone-select');
         const circleSelect = modal.querySelector('.circle-select');
         const divisionSelect = modal.querySelector('.division-select');
+        const roleSelect = modal.querySelector('select[name="office_role"]');
+        const officeTypeInput = modal.querySelector('input[name="office_type"]');
+        const officeTypeDisplay = modal.querySelector('.office-type-display');
+
+        const officeTypeLabels = {
+            1: "Chief Engineer's Office",
+            2: 'Zone',
+            3: 'Circle',
+            4: 'Division',
+        };
+
+        const setOfficeType = (type) => {
+            const value = String(type);
+            if (officeTypeInput) {
+                officeTypeInput.value = value;
+            }
+            if (officeTypeDisplay) {
+                officeTypeDisplay.value = officeTypeLabels[type] || '-';
+            }
+        };
+
+        const updateOfficeTypeFromSelection = () => {
+            let type = 1;
+            if (divisionSelect && divisionSelect.value !== '0') {
+                type = 4;
+            } else if (circleSelect && circleSelect.value !== '0') {
+                type = 3;
+            } else if (zoneSelect && zoneSelect.value !== '0') {
+                type = 2;
+            }
+            setOfficeType(type);
+        };
 
         const filterCircles = () => {
             if (!circleSelect) {
@@ -431,6 +570,27 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         };
 
+        if (roleSelect) {
+            roleSelect.addEventListener('change', () => {
+                if (roleSelect.value === '2' || roleSelect.value === '3') {
+                    if (zoneSelect) {
+                        zoneSelect.value = '0';
+                    }
+                    if (circleSelect) {
+                        circleSelect.value = '0';
+                    }
+                    if (divisionSelect) {
+                        divisionSelect.value = '0';
+                    }
+                    filterCircles();
+                    filterDivisions();
+                    setOfficeType(1);
+                    return;
+                }
+                updateOfficeTypeFromSelection();
+            });
+        }
+
         if (zoneSelect) {
             zoneSelect.addEventListener('change', () => {
                 if (circleSelect) {
@@ -439,8 +599,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (divisionSelect) {
                     divisionSelect.value = '0';
                 }
+                if (roleSelect && zoneSelect.value !== '0') {
+                    roleSelect.value = '1';
+                }
                 filterCircles();
                 filterDivisions();
+                updateOfficeTypeFromSelection();
             });
         }
 
@@ -456,13 +620,18 @@ document.addEventListener('DOMContentLoaded', () => {
                         zoneSelect.value = zoneId;
                     }
                 }
+                if (roleSelect && circleSelect.value !== '0') {
+                    roleSelect.value = '1';
+                }
                 filterDivisions();
+                updateOfficeTypeFromSelection();
             });
         }
 
         if (divisionSelect) {
             divisionSelect.addEventListener('change', () => {
                 if (divisionSelect.value === '0') {
+                    updateOfficeTypeFromSelection();
                     return;
                 }
                 const selected = divisionSelect.options[divisionSelect.selectedIndex];
@@ -474,13 +643,33 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (circleSelect && circleId) {
                     circleSelect.value = circleId;
                 }
+                if (roleSelect) {
+                    roleSelect.value = '1';
+                }
                 filterCircles();
                 filterDivisions();
+                updateOfficeTypeFromSelection();
             });
         }
 
         filterCircles();
         filterDivisions();
+        if (roleSelect && (roleSelect.value === '2' || roleSelect.value === '3')) {
+            if (zoneSelect) {
+                zoneSelect.value = '0';
+            }
+            if (circleSelect) {
+                circleSelect.value = '0';
+            }
+            if (divisionSelect) {
+                divisionSelect.value = '0';
+            }
+            filterCircles();
+            filterDivisions();
+            setOfficeType(1);
+        } else {
+            updateOfficeTypeFromSelection();
+        }
     });
 
     const nameModal = document.getElementById('name-modal');

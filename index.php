@@ -359,6 +359,8 @@ if ($action === 'update_user') {
     $user_id = input_int('user_id');
     $email = input_str('email_id');
     $name = input_str('officer_name');
+    $office_role = input_int('office_role', 1);
+    $office_type = input_int('office_type', 1);
     $zone_id = input_int('zone_id');
     $circle_id = input_int('circle_id');
     $division_id = input_int('division_id');
@@ -375,11 +377,59 @@ if ($action === 'update_user') {
         redirect('index.php?page=users');
     }
 
-    $stmt = db()->prepare('UPDATE users SET email_id = ?, officer_name = ?, office_role = ?, zone_id = ?, circle_id = ?, division_id = ?, updated_at = NOW() WHERE id = ?');
+    if ($office_role === 2 || $office_role === 3) {
+        $office_type = 1;
+        $zone_id = 0;
+        $circle_id = 0;
+        $division_id = 0;
+    } else {
+        $office_role = 1;
+        if ($division_id > 0) {
+            $stmt = db()->prepare('SELECT zone_id, circle_id FROM divisions WHERE id = ? LIMIT 1');
+            $stmt->execute([$division_id]);
+            $division = $stmt->fetch();
+            if (!$division) {
+                flash('error', 'Invalid division selection.');
+                redirect('index.php?page=users');
+            }
+            $circle_id = (int)($division['circle_id'] ?? 0);
+            $zone_id = (int)($division['zone_id'] ?? 0);
+            $office_type = 4;
+        } elseif ($circle_id > 0) {
+            $stmt = db()->prepare('SELECT zone_id FROM circles WHERE id = ? LIMIT 1');
+            $stmt->execute([$circle_id]);
+            $circle = $stmt->fetch();
+            if (!$circle) {
+                flash('error', 'Invalid circle selection.');
+                redirect('index.php?page=users');
+            }
+            $zone_id = (int)($circle['zone_id'] ?? 0);
+            $office_type = 3;
+            $division_id = 0;
+        } elseif ($zone_id > 0) {
+            $stmt = db()->prepare('SELECT id FROM zones WHERE id = ? LIMIT 1');
+            $stmt->execute([$zone_id]);
+            if (!$stmt->fetchColumn()) {
+                flash('error', 'Invalid zone selection.');
+                redirect('index.php?page=users');
+            }
+            $office_type = 2;
+            $circle_id = 0;
+            $division_id = 0;
+        } else {
+            $office_type = 1;
+            $circle_id = 0;
+            $division_id = 0;
+            $zone_id = 0;
+        }
+    }
+
+    $stmt = db()->prepare('UPDATE users SET email_id = ?, officer_name = ?, office_role = ?, office_type = ?, zone_id = ?, circle_id = ?, division_id = ?, updated_at = NOW() WHERE id = ?');
     $stmt->execute([
         $email,
         $name === '' ? null : $name,
         $office_role,
+        $office_type,
         $zone_id > 0 ? $zone_id : null,
         $circle_id > 0 ? $circle_id : null,
         $division_id > 0 ? $division_id : null,
