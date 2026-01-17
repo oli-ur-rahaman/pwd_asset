@@ -8,7 +8,7 @@ $fy_id = (int)request_str('fy_id');
 $division_raw = request_str('division_id');
 $division_id = $division_raw === 'all' ? 0 : (int)$division_raw;
 
-$allowed_tables = ['opr_repair', 'opr_other', 'dev_pw', 'opr_other_min', 'dev_other_min'];
+$allowed_tables = ['operational', 'development', 'opr_repair', 'opr_other', 'dev_pw', 'opr_other_min', 'dev_other_min'];
 $allowed_metrics = ['pkg', 'est', 'pkg_live', 'pkg_eval', 'pkg_cont', 'cont'];
 if (!in_array($table, $allowed_tables, true) || !in_array($metric, $allowed_metrics, true)) {
     http_response_code(400);

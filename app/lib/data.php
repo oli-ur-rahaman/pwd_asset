@@ -66,6 +66,139 @@ function get_latest_records(string $table, int $fy_id, ?array $division_ids = nu
     return $stmt->fetchAll();
 }
 
+function get_latest_records_with_ministry(string $table, int $fy_id, ?array $division_ids = null, ?array $ministry_ids = null): array
+{
+    $sql = "SELECT d.office_name, m.name AS ministry_name, r.*
+        FROM {$table} r
+        JOIN (
+            SELECT division_id, ministry_id, MAX(month_val) AS max_month
+            FROM {$table}
+            WHERE fy_id = ?
+            GROUP BY division_id, ministry_id
+        ) m1 ON r.division_id = m1.division_id AND r.ministry_id = m1.ministry_id AND r.month_val = m1.max_month
+        JOIN (
+            SELECT division_id, ministry_id, month_val, MAX(id) AS max_id
+            FROM {$table}
+            WHERE fy_id = ?
+            GROUP BY division_id, ministry_id, month_val
+        ) t ON r.id = t.max_id AND r.division_id = t.division_id AND r.ministry_id = t.ministry_id AND r.month_val = t.month_val
+        JOIN divisions d ON d.id = r.division_id
+        JOIN ministries m ON m.id = r.ministry_id";
+    $params = [$fy_id, $fy_id];
+    $clauses = [];
+    if ($division_ids) {
+        $in = implode(',', array_fill(0, count($division_ids), '?'));
+        $clauses[] = "r.division_id IN ({$in})";
+        $params = array_merge($params, $division_ids);
+    }
+    if ($ministry_ids) {
+        $in = implode(',', array_fill(0, count($ministry_ids), '?'));
+        $clauses[] = "r.ministry_id IN ({$in})";
+        $params = array_merge($params, $ministry_ids);
+    }
+    if ($clauses) {
+        $sql .= ' WHERE ' . implode(' AND ', $clauses);
+    }
+    $sql .= ' ORDER BY m.name, d.office_name';
+
+    $stmt = db()->prepare($sql);
+    $stmt->execute($params);
+    return $stmt->fetchAll();
+}
+
+function get_latest_record_for_division_ministry(string $table, int $fy_id, int $division_id, int $ministry_id): ?array
+{
+    $stmt = db()->prepare("SELECT MAX(month_val) FROM {$table} WHERE fy_id = ? AND division_id = ? AND ministry_id = ?");
+    $stmt->execute([$fy_id, $division_id, $ministry_id]);
+    $month_val = $stmt->fetchColumn();
+    if ($month_val === false || $month_val === null) {
+        return null;
+    }
+    $stmt = db()->prepare("SELECT * FROM {$table} WHERE fy_id = ? AND division_id = ? AND ministry_id = ? AND month_val = ? ORDER BY created_at DESC, id DESC LIMIT 1");
+    $stmt->execute([$fy_id, $division_id, $ministry_id, (int)$month_val]);
+    $row = $stmt->fetch();
+    return $row ?: null;
+}
+
+function get_ministries_for_budget(string $type, bool $defaults_only = false): array
+{
+    $type = strtolower($type);
+    if (!in_array($type, ['opr', 'dev'], true)) {
+        return [];
+    }
+    $vis_col = $type === 'opr' ? 'vis_opr' : 'vis_dev';
+    $def_col = $type === 'opr' ? 'def_opr' : 'def_dev';
+    $sql = "SELECT id, name, {$def_col} AS is_default, def_opr_sl, def_dev_sl FROM ministries WHERE inuse_status = 1 AND {$vis_col} = 1";
+    if ($defaults_only) {
+        $sql .= " AND {$def_col} = 1";
+    }
+    if ($defaults_only) {
+        $order_col = $type === 'opr' ? 'def_opr_sl' : 'def_dev_sl';
+        $sql .= " ORDER BY {$order_col} ASC, name ASC";
+    } else {
+        $sql .= ' ORDER BY name';
+    }
+    $stmt = db()->query($sql);
+    return $stmt->fetchAll();
+}
+
+function merge_default_ministry_rows(array $rows, array $divisions, array $default_ministries): array
+{
+    if (!$default_ministries || !$divisions) {
+        return $rows;
+    }
+
+    $map = [];
+    foreach ($rows as $row) {
+        $div_id = (int)($row['division_id'] ?? 0);
+        $min_id = (int)($row['ministry_id'] ?? 0);
+        if ($div_id > 0 && $min_id > 0) {
+            $map[$div_id][$min_id] = $row;
+        }
+    }
+
+    $output = [];
+    $default_ids = array_map(fn($m) => (int)$m['id'], $default_ministries);
+    foreach ($default_ministries as $ministry) {
+        $min_id = (int)$ministry['id'];
+        $min_name = $ministry['name'] ?? '';
+        foreach ($divisions as $division) {
+            $div_id = (int)($division['id'] ?? 0);
+            if ($div_id <= 0) {
+                continue;
+            }
+            if (isset($map[$div_id][$min_id])) {
+                $output[] = $map[$div_id][$min_id];
+                continue;
+            }
+            $output[] = [
+                'division_id' => $div_id,
+                'ministry_id' => $min_id,
+                'office_name' => $division['office_name'] ?? '',
+                'ministry_name' => $min_name,
+                'pkg' => 0,
+                'est' => 0,
+                'pkg_live' => 0,
+                'pkg_eval' => 0,
+                'pkg_cont' => 0,
+                'cont' => 0,
+                'created_at' => null,
+            ];
+        }
+    }
+
+    foreach ($rows as $row) {
+        $div_id = (int)($row['division_id'] ?? 0);
+        $min_id = (int)($row['ministry_id'] ?? 0);
+        if ($div_id > 0 && $min_id > 0 && in_array($min_id, $default_ids, true)) {
+            continue;
+        }
+        $output[] = $row;
+    }
+
+    return $output;
+}
+
 function get_latest_record_for_division(string $table, int $fy_id, int $division_id): ?array
 {
     $stmt = db()->prepare("SELECT MAX(month_val) FROM {$table} WHERE fy_id = ? AND division_id = ?");

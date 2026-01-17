@@ -10,6 +10,8 @@ body { margin: 0; font-family: Arial, sans-serif; background: #f5f7fb; color: #1
 .card-plain { background: transparent; box-shadow: none; padding: 0; }
 .card-plain { margin-top: 12px; margin-bottom: 0; }
 .section-heading { margin-top: 96px; }
+.section-heading-tight { margin-top: 24px; }
+.operational-budget-card .table-wrap { margin-top: 32px; }
 .card h2 { margin-top: 0; }
 .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
 label { display: flex; flex-direction: column; font-size: 14px; gap: 6px; }
@@ -21,6 +23,17 @@ button { padding: 8px 16px; background: #0f3d5e; color: #fff; border: none; bord
 .table-wrap { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; font-size: 14px; }
 th, td { border: 1px solid #d7dee8; padding: 8px; text-align: center; }
+.total-row td { font-weight: 600; background: #f1f5f9; }
+.row-clickable { cursor: pointer; }
+.row-clickable:hover td { background: #d8ecff; }
+.modal-card.ministry-modal { width: 90vw; max-width: 90vw; max-height: 85vh; overflow-y: auto; overflow-x: hidden; box-sizing: border-box; }
+.ministry-list { display: grid; gap: 10px; grid-template-columns: repeat(5, minmax(0, 1fr)); margin: 12px 0 20px; }
+.ministry-group-title { font-weight: 600; margin-top: 6px; }
+.ministry-pill { background: #e2e8f0; color: #1f2a44; border: 1px solid #cbd5e1; padding: 8px 10px; border-radius: 6px; cursor: pointer; text-align: left; height: 44px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ministry-pill:hover { background: #d8ecff; }
+.ministry-pill.disabled { background: #f1f5f9; color: #6b7280; border-color: #e2e8f0; cursor: not-allowed; }
+.ministry-pill.disabled:hover { background: #f1f5f9; }
+.ministry-search { padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 6px; width: 100%; max-width: 360px; margin: 6px 0 12px; }
 .alert { padding: 10px 14px; border-radius: 4px; margin-bottom: 12px; }
 .alert.success { background: #e7f6ee; color: #1d6b41; }
 .alert.error { background: #fdeaea; color: #b00020; }
@@ -49,6 +62,8 @@ th, td { border: 1px solid #d7dee8; padding: 8px; text-align: center; }
 .modal-backdrop.open { display: flex; }
 .modal-card { background: #fff; padding: 20px; border-radius: 10px; max-width: 420px; text-align: center; }
 .modal-card { max-height: 75vh; overflow-y: auto; }
+.modal-card.budget-modal { max-width: 630px; max-height: none; overflow: visible; }
+.modal-card.budget-modal .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .modal-card h3 { margin-top: 0; }
 .modal-sub { margin: 0 0 10px; font-size: 13px; color: #475569; }
 .modal-card .grid { text-align: left; }
@@ -69,7 +84,14 @@ th, td { border: 1px solid #d7dee8; padding: 8px; text-align: center; }
 .preview-title { font-weight: 600; margin-bottom: 6px; }
 .center { text-align: center; }
 .board-grid { display: grid; gap: 16px; grid-template-columns: 1fr; }
-.board-filters-grid { display: grid; gap: 12px; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.board-filters-grid { display: grid; gap: 12px; grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.filter-bar-spacer { height: 0; }
+.sticky-filters { position: relative; }
+.sticky-filters.is-sticky { position: fixed; top: 0; left: 0; right: 0; width: 100%; margin: 0; border-radius: 0; z-index: 30; }
+.sticky-filters.is-sticky h2 { display: none; }
+.view-toggle { display: flex; justify-content: center; gap: 8px; margin-top: 12px; }
+.toggle-btn { padding: 8px 16px; background: #e2e8f0; color: #1f2a44; border: 1px solid #cbd5e1; border-radius: 999px; cursor: pointer; }
+.toggle-btn.active { background: #0f3d5e; color: #fff; border-color: #0f3d5e; }
 .board-filters-grid { margin-bottom: 12px; }
 .card-actions { position: relative; }
 .card-actions-bar { position: absolute; top: 10px; right: 10px; display: flex; gap: 8px; opacity: 0; transition: opacity 0.2s ease; }

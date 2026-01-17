@@ -165,3 +165,55 @@ CREATE TABLE IF NOT EXISTS info (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS operational (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    ministry_id INT NOT NULL,
+    fy_id INT NOT NULL,
+    division_id INT NOT NULL,
+    month_val TINYINT NOT NULL DEFAULT 1,
+    pkg INT NOT NULL DEFAULT 0,
+    est DECIMAL(10,2) NOT NULL DEFAULT 0,
+    pkg_live INT NOT NULL DEFAULT 0,
+    pkg_eval INT NOT NULL DEFAULT 0,
+    pkg_cont INT NOT NULL DEFAULT 0,
+    cont DECIMAL(10,2) NOT NULL DEFAULT 0,
+    note TEXT DEFAULT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT NULL,
+    KEY idx_operational_fy_div (fy_id, division_id, id),
+    KEY idx_operational_ministry (ministry_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS development (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    ministry_id INT NOT NULL,
+    fy_id INT NOT NULL,
+    division_id INT NOT NULL,
+    month_val TINYINT NOT NULL DEFAULT 1,
+    pkg INT NOT NULL DEFAULT 0,
+    est DECIMAL(10,2) NOT NULL DEFAULT 0,
+    pkg_live INT NOT NULL DEFAULT 0,
+    pkg_eval INT NOT NULL DEFAULT 0,
+    pkg_cont INT NOT NULL DEFAULT 0,
+    cont DECIMAL(10,2) NOT NULL DEFAULT 0,
+    note TEXT DEFAULT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT NULL,
+    KEY idx_development_fy_div (fy_id, division_id, id),
+    KEY idx_development_ministry (ministry_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS ministries (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    vis_opr TINYINT NOT NULL DEFAULT 1,
+    vis_dev TINYINT NOT NULL DEFAULT 1,
+    inuse_status TINYINT NOT NULL DEFAULT 1,
+    def_opr TINYINT NOT NULL DEFAULT 0,
+    def_dev TINYINT NOT NULL DEFAULT 0,
+    def_opr_sl INT NOT NULL DEFAULT 0,
+    def_dev_sl INT NOT NULL DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

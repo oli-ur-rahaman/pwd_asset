@@ -6,7 +6,7 @@ $table = request_str('table');
 $scope = request_str('scope', 'latest');
 $format = request_str('format', 'pdf');
 
-$allowed_tables = ['opr_repair', 'opr_other', 'dev_pw', 'opr_other_min', 'dev_other_min'];
+$allowed_tables = ['operational', 'development', 'opr_repair', 'opr_other', 'dev_pw', 'opr_other_min', 'dev_other_min'];
 $allowed_formats = ['pdf', 'excel'];
 $allowed_scopes = ['latest', 'full'];
 if (!in_array($table, $allowed_tables, true) || !in_array($format, $allowed_formats, true) || !in_array($scope, $allowed_scopes, true)) {
@@ -26,6 +26,8 @@ $division_ids = array_column($division_list, 'id');
 $office_name = get_office_name_for_user($user);
 $date_label = date('Y-m-d');
 $budget_map = [
+    'operational' => 'Operational Budget',
+    'development' => 'Development Budget',
     'opr_repair' => 'Operational Budget (Repair Works)',
     'opr_other' => 'Operational Budget (Other than Repair)',
     'dev_pw' => 'Development Budget (MoHPW)',
@@ -35,6 +37,7 @@ $budget_map = [
 $budget_label = $budget_map[$table] ?? 'Budget';
 
 $include_division = !is_division_user();
+$include_ministry = in_array($table, ['operational', 'development'], true);
 $month_map = function (string $fy_label, int $month_val): string {
     if ($month_val < 1 || $month_val > 12) {
         return '';
@@ -43,6 +46,9 @@ $month_map = function (string $fy_label, int $month_val): string {
     return $months[$month_val - 1]['label'] ?? '';
 };
 $headers = [];
+if ($include_ministry) {
+    $headers['ministry_name'] = 'Ministry/Type Name';
+}
 if ($include_division) {
     $headers['office_name'] = 'Division';
 }
@@ -60,44 +66,75 @@ $headers += [
 
 $rows = [];
 if ($scope === 'latest') {
-    if (is_division_user()) {
-        $latest = get_latest_record_for_division($table, (int)$fy['id'], (int)$user['division_id']);
-        if ($latest) {
-            $row = [
-                'pkg' => $latest['pkg'],
-                'est' => $latest['est'],
-                'pkg_live' => $latest['pkg_live'],
-                'pkg_eval' => $latest['pkg_eval'],
-                'pkg_cont' => $latest['pkg_cont'],
-                'cont' => $latest['cont'],
-                'prog_pkg' => $latest['pkg'] > 0 ? number_format(($latest['pkg_cont'] / $latest['pkg']) * 100, 2) : '0.00',
-                'prog_amt' => $latest['est'] > 0 ? number_format(($latest['cont'] / $latest['est']) * 100, 2) : '0.00',
-                'created_at' => $latest['created_at'] ? date('d-m-Y', strtotime($latest['created_at'])) : '',
+    if ($include_ministry) {
+        $latest_rows = get_latest_records_with_ministry($table, (int)$fy['id'], $division_ids);
+        $defaults = $table === 'operational'
+            ? get_ministries_for_budget('opr', true)
+            : get_ministries_for_budget('dev', true);
+        if ($defaults) {
+            $latest_rows = merge_default_ministry_rows($latest_rows, $division_list, $defaults);
+        }
+        foreach ($latest_rows as $row) {
+            $entry = [
+                'ministry_name' => $row['ministry_name'] ?? '',
+                'pkg' => $row['pkg'] ?? 0,
+                'est' => $row['est'] ?? 0,
+                'pkg_live' => $row['pkg_live'] ?? 0,
+                'pkg_eval' => $row['pkg_eval'] ?? 0,
+                'pkg_cont' => $row['pkg_cont'] ?? 0,
+                'cont' => $row['cont'] ?? 0,
+                'prog_pkg' => ($row['pkg'] ?? 0) > 0 ? number_format(($row['pkg_cont'] / $row['pkg']) * 100, 2) : '0.00',
+                'prog_amt' => ($row['est'] ?? 0) > 0 ? number_format(($row['cont'] / $row['est']) * 100, 2) : '0.00',
+                'created_at' => !empty($row['created_at']) ? date('d-m-Y', strtotime($row['created_at'])) : '',
             ];
             if ($include_division) {
-                $row = ['office_name' => $office_name] + $row;
+                $entry = ['office_name' => $row['office_name'] ?? $office_name] + $entry;
             }
-            $rows[] = $row;
+            $rows[] = $entry;
         }
     } else {
-        $latest_rows = get_latest_records($table, (int)$fy['id'], $division_ids);
-        foreach ($latest_rows as $row) {
-            $rows[] = [
-                'office_name' => $row['office_name'],
-                'pkg' => $row['pkg'],
-                'est' => $row['est'],
-                'pkg_live' => $row['pkg_live'],
-                'pkg_eval' => $row['pkg_eval'],
-                'pkg_cont' => $row['pkg_cont'],
-                'cont' => $row['cont'],
-                'prog_pkg' => $row['pkg'] > 0 ? number_format(($row['pkg_cont'] / $row['pkg']) * 100, 2) : '0.00',
-                'prog_amt' => $row['est'] > 0 ? number_format(($row['cont'] / $row['est']) * 100, 2) : '0.00',
-                'created_at' => $row['created_at'] ? date('d-m-Y', strtotime($row['created_at'])) : '',
-            ];
+        if (is_division_user()) {
+            $latest = get_latest_record_for_division($table, (int)$fy['id'], (int)$user['division_id']);
+            if ($latest) {
+                $row = [
+                    'pkg' => $latest['pkg'],
+                    'est' => $latest['est'],
+                    'pkg_live' => $latest['pkg_live'],
+                    'pkg_eval' => $latest['pkg_eval'],
+                    'pkg_cont' => $latest['pkg_cont'],
+                    'cont' => $latest['cont'],
+                    'prog_pkg' => $latest['pkg'] > 0 ? number_format(($latest['pkg_cont'] / $latest['pkg']) * 100, 2) : '0.00',
+                    'prog_amt' => $latest['est'] > 0 ? number_format(($latest['cont'] / $latest['est']) * 100, 2) : '0.00',
+                    'created_at' => $latest['created_at'] ? date('d-m-Y', strtotime($latest['created_at'])) : '',
+                ];
+                if ($include_division) {
+                    $row = ['office_name' => $office_name] + $row;
+                }
+                $rows[] = $row;
+            }
+        } else {
+            $latest_rows = get_latest_records($table, (int)$fy['id'], $division_ids);
+            foreach ($latest_rows as $row) {
+                $rows[] = [
+                    'office_name' => $row['office_name'],
+                    'pkg' => $row['pkg'],
+                    'est' => $row['est'],
+                    'pkg_live' => $row['pkg_live'],
+                    'pkg_eval' => $row['pkg_eval'],
+                    'pkg_cont' => $row['pkg_cont'],
+                    'cont' => $row['cont'],
+                    'prog_pkg' => $row['pkg'] > 0 ? number_format(($row['pkg_cont'] / $row['pkg']) * 100, 2) : '0.00',
+                    'prog_amt' => $row['est'] > 0 ? number_format(($row['cont'] / $row['est']) * 100, 2) : '0.00',
+                    'created_at' => $row['created_at'] ? date('d-m-Y', strtotime($row['created_at'])) : '',
+                ];
+            }
         }
     }
 } else {
     $headers = [];
+    if ($include_ministry) {
+        $headers['ministry_name'] = 'Ministry/Type Name';
+    }
     if ($include_division) {
         $headers['office_name'] = 'Division';
     }
@@ -116,7 +153,11 @@ if ($scope === 'latest') {
     ];
 
     $params = [];
-    $sql = "SELECT d.office_name, f.fiscal_years, r.* FROM {$table} r JOIN divisions d ON d.id = r.division_id JOIN fy f ON f.id = r.fy_id WHERE 1=1";
+    if ($include_ministry) {
+        $sql = "SELECT d.office_name, m.name AS ministry_name, f.fiscal_years, r.* FROM {$table} r JOIN divisions d ON d.id = r.division_id JOIN ministries m ON m.id = r.ministry_id JOIN fy f ON f.id = r.fy_id WHERE 1=1";
+    } else {
+        $sql = "SELECT d.office_name, f.fiscal_years, r.* FROM {$table} r JOIN divisions d ON d.id = r.division_id JOIN fy f ON f.id = r.fy_id WHERE 1=1";
+    }
     if ($division_ids) {
         $in = implode(',', array_fill(0, count($division_ids), '?'));
         $sql .= " AND r.division_id IN ({$in})";
@@ -140,6 +181,9 @@ if ($scope === 'latest') {
             'prog_amt' => $row['est'] > 0 ? number_format(($row['cont'] / $row['est']) * 100, 2) : '0.00',
             'created_at' => $row['created_at'] ? date('d-m-Y', strtotime($row['created_at'])) : '',
         ];
+        if ($include_ministry) {
+            $entry = ['ministry_name' => $row['ministry_name'] ?? ''] + $entry;
+        }
         if ($include_division) {
             $entry = ['office_name' => $row['office_name']] + $entry;
         }

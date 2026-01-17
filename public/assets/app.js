@@ -142,6 +142,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const circleSelect = boardFilters.querySelector('select[name="circle_id"]');
         const divisionSelect = boardFilters.querySelector('select[name="division_id"]');
         const fySelect = boardFilters.querySelector('select[name="fy_id"]');
+        const budgetSelect = boardFilters.querySelector('select[name="budget_type"]');
+        const ministrySelect = boardFilters.querySelector('select[name="ministry_id"]');
+        const viewModeInput = boardFilters.querySelector('input[name="view_mode"]');
 
         const setSelectValue = (select, value) => {
             if (!select) {
@@ -192,6 +195,54 @@ document.addEventListener('DOMContentLoaded', () => {
             fySelect.addEventListener('change', () => {
                 boardFilters.submit();
             });
+        }
+
+        if (budgetSelect) {
+            budgetSelect.addEventListener('change', () => {
+                boardFilters.submit();
+            });
+        }
+
+        if (ministrySelect) {
+            ministrySelect.addEventListener('change', () => {
+                boardFilters.submit();
+            });
+        }
+
+        document.querySelectorAll('.view-toggle .toggle-btn').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const view = btn.getAttribute('data-view') || 'ministry';
+                if (viewModeInput) {
+                    viewModeInput.value = view;
+                }
+                boardFilters.submit();
+            });
+        });
+
+        const filterBar = document.querySelector('.sticky-filters');
+        const spacer = document.getElementById('filter-bar-spacer');
+        if (filterBar && spacer) {
+            let stickyStart = filterBar.getBoundingClientRect().top + window.scrollY;
+            const updateStickyBar = () => {
+                if (window.scrollY >= stickyStart) {
+                    if (!filterBar.classList.contains('is-sticky')) {
+                        filterBar.classList.add('is-sticky');
+                        spacer.style.height = filterBar.offsetHeight + 'px';
+                    }
+                } else {
+                    filterBar.classList.remove('is-sticky');
+                    spacer.style.height = '0px';
+                }
+            };
+            const recalcStickyStart = () => {
+                if (!filterBar.classList.contains('is-sticky')) {
+                    stickyStart = filterBar.getBoundingClientRect().top + window.scrollY;
+                }
+                updateStickyBar();
+            };
+            updateStickyBar();
+            window.addEventListener('scroll', updateStickyBar);
+            window.addEventListener('resize', recalcStickyStart);
         }
     }
 
@@ -417,6 +468,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 const title = document.getElementById('graph-title');
                 if (title) {
                     const titles = {
+                        operational: 'Operational Budget',
+                        development: 'Development Budget',
                         opr_repair: 'Operational Budget (Repair Works)',
                         opr_other: 'Operational Budget (Other than Repair)',
                         dev_pw: 'Development Budget (MoHPW)',
@@ -688,4 +741,293 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
+
+    const rowModalMap = {
+        operational: {
+            modalId: 'revenue-modal',
+            nameId: 'operational-ministry-name',
+        },
+        development: {
+            modalId: 'development-modal',
+            nameId: 'development-ministry-name',
+        },
+    };
+
+    const fillBudgetModal = (modal, data) => {
+        const setValue = (selector, value) => {
+            const input = modal.querySelector(selector);
+            if (!input) {
+                return;
+            }
+            input.value = value;
+        };
+        if (data.month_val) {
+            setValue('select[name="month_val"]', data.month_val);
+        }
+        setValue('input[name="pkg"]', data.pkg ?? 0);
+        setValue('input[name="est"]', data.est ?? 0);
+        setValue('input[name="pkg_live"]', data.pkg_live ?? 0);
+        setValue('input[name="pkg_eval"]', data.pkg_eval ?? 0);
+        setValue('input[name="pkg_cont"]', data.pkg_cont ?? 0);
+        setValue('input[name="cont"]', data.cont ?? 0);
+        const note = modal.querySelector('textarea[name="note"]');
+        if (note) {
+            note.value = data.note ?? '';
+        }
+    };
+
+    const openBudgetModal = async ({ table, ministryId, ministryName, fyId, source }) => {
+        const config = rowModalMap[table];
+        if (!config) {
+            return;
+        }
+        const modal = document.getElementById(config.modalId);
+        if (!modal) {
+            return;
+        }
+        modal.setAttribute('data-open-source', source || '');
+        const nameEl = document.getElementById(config.nameId);
+        if (nameEl) {
+            nameEl.textContent = ministryName || '';
+        }
+        const hiddenMinistry = modal.querySelector('input[name="ministry_id"]');
+        if (hiddenMinistry) {
+            hiddenMinistry.value = ministryId;
+        }
+
+        try {
+            const params = new URLSearchParams({
+                table,
+                ministry_id: ministryId,
+                fy_id: fyId || '',
+            });
+            const response = await fetch('ministry_row.php?' + params.toString());
+            if (response.ok) {
+                const data = await response.json();
+                fillBudgetModal(modal, data);
+                if (nameEl && data.ministry_name) {
+                    nameEl.textContent = data.ministry_name;
+                }
+            }
+        } catch (err) {
+            // Ignore network errors; modal still opens with existing values.
+        }
+
+        modal.classList.add('open');
+        modal.setAttribute('aria-hidden', 'false');
+    };
+
+    document.addEventListener('click', (event) => {
+        const row = event.target.closest('.row-clickable[data-ministry-id]');
+        if (!row) {
+            return;
+        }
+        const table = row.getAttribute('data-table');
+        const ministryId = row.getAttribute('data-ministry-id');
+        if (!table || !ministryId) {
+            return;
+        }
+        const ministryName = row.getAttribute('data-ministry-name') || '';
+        const fyWrapper = row.closest('.operational-budget-card');
+        const fyId = fyWrapper ? fyWrapper.getAttribute('data-fy-id') : '';
+        openBudgetModal({
+            table,
+            ministryId,
+            ministryName,
+            fyId,
+            source: 'row',
+        });
+    });
+
+    document.querySelectorAll('[data-ministry-list]').forEach((button) => {
+        button.addEventListener('click', () => {
+            const table = button.getAttribute('data-ministry-list');
+            const modalId = table === 'development' ? 'development-ministry-modal' : 'operational-ministry-modal';
+            const modal = document.getElementById(modalId);
+            if (!modal) {
+                return;
+            }
+            modal.classList.add('open');
+            modal.setAttribute('aria-hidden', 'false');
+        });
+    });
+
+    document.querySelectorAll('.ministry-pill').forEach((button) => {
+        button.addEventListener('click', () => {
+            if (button.getAttribute('data-disabled') === '1') {
+                return;
+            }
+            const table = button.getAttribute('data-table');
+            const ministryId = button.getAttribute('data-ministry-id');
+            const ministryName = button.getAttribute('data-ministry-name') || '';
+            if (!table || !ministryId) {
+                return;
+            }
+            const modalId = table === 'development' ? 'development-ministry-modal' : 'operational-ministry-modal';
+            const listModal = document.getElementById(modalId);
+            if (listModal) {
+                listModal.classList.remove('open');
+                listModal.setAttribute('aria-hidden', 'true');
+            }
+            const card = document.querySelector(`.operational-budget-card[data-table="${table}"]`);
+            const fyId = card ? card.getAttribute('data-fy-id') : '';
+            openBudgetModal({
+                table,
+                ministryId,
+                ministryName,
+                fyId,
+                source: 'list',
+            });
+        });
+    });
+
+    document.querySelectorAll('.ministry-search').forEach((input) => {
+        input.addEventListener('input', () => {
+            const target = input.getAttribute('data-target');
+            if (!target) {
+                return;
+            }
+            const query = input.value.trim().toLowerCase();
+            const group = input.closest('.ministry-group');
+            if (!group) {
+                return;
+            }
+            group.querySelectorAll('.ministry-pill').forEach((btn) => {
+                if (btn.getAttribute('data-disabled') === '1') {
+                    return;
+                }
+                const name = (btn.getAttribute('data-ministry-name') || '').toLowerCase();
+                btn.style.display = name.includes(query) ? '' : 'none';
+            });
+        });
+    });
+
+    const modalFormMap = {
+        operational: 'revenue-modal',
+        development: 'development-modal',
+    };
+
+    const createRowElement = (table, data) => {
+        const row = document.createElement('tr');
+        row.className = 'row-clickable';
+        row.setAttribute('data-table', table);
+        row.setAttribute('data-ministry-id', String(data.ministry_id || '0'));
+        row.setAttribute('data-ministry-name', data.ministry_name || '');
+        row.setAttribute('data-default', '0');
+        const values = [
+            data.ministry_name || '-',
+            data.pkg ?? 0,
+            data.est ?? 0,
+            data.pkg_live ?? 0,
+            data.pkg_eval ?? 0,
+            data.pkg_cont ?? 0,
+            data.cont ?? 0,
+        ];
+        values.forEach((val) => {
+            const td = document.createElement('td');
+            td.textContent = String(val);
+            row.appendChild(td);
+        });
+        return row;
+    };
+
+    const syncMinistryLists = (table, data) => {
+        const modalId = table === 'development' ? 'development-ministry-modal' : 'operational-ministry-modal';
+        const listModal = document.getElementById(modalId);
+        if (!listModal) {
+            return;
+        }
+        const presentList = listModal.querySelector('.ministry-group:first-of-type .ministry-list');
+        const availableList = listModal.querySelector('.ministry-group:last-of-type .ministry-list');
+        if (!presentList || !availableList) {
+            return;
+        }
+        const selector = `.ministry-pill[data-ministry-id="${data.ministry_id}"]`;
+        let pill = listModal.querySelector(selector);
+        if (!pill) {
+            return;
+        }
+        if (!pill.classList.contains('disabled')) {
+            pill.classList.add('disabled');
+            pill.setAttribute('data-disabled', '1');
+        }
+        availableList.querySelectorAll(selector).forEach((node) => {
+            if (node !== pill) {
+                node.remove();
+            }
+        });
+        if (!presentList.contains(pill)) {
+            presentList.appendChild(pill);
+        }
+    };
+
+    const insertOrUpdateRow = (table, data) => {
+        const tbody = document.querySelector(`.operational-budget-card[data-table="${table}"] tbody`);
+        if (!tbody) {
+            return;
+        }
+        const existing = tbody.querySelector(`tr[data-table="${table}"][data-ministry-id="${data.ministry_id}"]`);
+        const newRow = createRowElement(table, data);
+        if (existing) {
+            existing.replaceWith(newRow);
+            return;
+        }
+        const rows = Array.from(tbody.querySelectorAll(`tr[data-table="${table}"]`));
+        const lastDefault = rows.filter((row) => row.getAttribute('data-default') === '1').pop();
+        if (lastDefault && lastDefault.nextSibling) {
+            lastDefault.parentNode.insertBefore(newRow, lastDefault.nextSibling);
+        } else if (lastDefault) {
+            lastDefault.parentNode.appendChild(newRow);
+        } else {
+            tbody.appendChild(newRow);
+        }
+    };
+
+    Object.keys(modalFormMap).forEach((table) => {
+        const modal = document.getElementById(modalFormMap[table]);
+        if (!modal) {
+            return;
+        }
+        const form = modal.querySelector('form');
+        if (!form) {
+            return;
+        }
+        form.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const openSource = modal.getAttribute('data-open-source');
+            if (openSource === 'list') {
+                const pkg = Number(form.querySelector('input[name="pkg"]')?.value || 0);
+                const est = Number(form.querySelector('input[name="est"]')?.value || 0);
+                const pkgLive = Number(form.querySelector('input[name="pkg_live"]')?.value || 0);
+                const pkgEval = Number(form.querySelector('input[name="pkg_eval"]')?.value || 0);
+                const pkgCont = Number(form.querySelector('input[name="pkg_cont"]')?.value || 0);
+                const cont = Number(form.querySelector('input[name="cont"]')?.value || 0);
+                if (pkg === 0 && est === 0 && pkgLive === 0 && pkgEval === 0 && pkgCont === 0 && cont === 0) {
+                    modal.classList.remove('open');
+                    modal.setAttribute('aria-hidden', 'true');
+                    return;
+                }
+            }
+            const formData = new FormData(form);
+            formData.set('table', table);
+            try {
+                const response = await fetch('add_record_ajax.php', {
+                    method: 'POST',
+                    body: formData,
+                });
+                const data = await response.json();
+                if (!response.ok || !data.ok) {
+                    alert(data.error || 'Unable to save entry.');
+                    return;
+                }
+                insertOrUpdateRow(table, data);
+                syncMinistryLists(table, data);
+                modal.classList.remove('open');
+                modal.setAttribute('aria-hidden', 'true');
+                window.location.reload();
+            } catch (err) {
+                alert('Unable to save entry.');
+            }
+        });
+    });
 });

@@ -103,6 +103,7 @@ $divisions = db()->query('SELECT id, office_name FROM divisions ORDER BY office_
                 <option value="circles">Circles</option>
                 <option value="divisions">Divisions</option>
                 <option value="users">Users</option>
+                <option value="ministries">Ministries</option>
             </select>
         </label>
         <label>CSV File
@@ -110,6 +111,6 @@ $divisions = db()->query('SELECT id, office_name FROM divisions ORDER BY office_
         </label>
         <button type="submit">Import CSV</button>
     </form>
-    <p class="hint">CSV headers must match: zones (office_name, office_address, office_type), circles (office_name, office_address, office_type, zone_id), divisions (office_name, office_address, office_type, zone_id, circle_id, field_office), users (email_id, officer_name, password, office_type, office_role, zone_id, circle_id, division_id).</p>
+    <p class="hint">CSV headers must match: zones (office_name, office_address, office_type), circles (office_name, office_address, office_type, zone_id), divisions (office_name, office_address, office_type, zone_id, circle_id, field_office), users (email_id, officer_name, password, office_type, office_role, zone_id, circle_id, division_id), ministries (name).</p>
 </section>
 <?php require __DIR__ . '/footer.php'; ?>

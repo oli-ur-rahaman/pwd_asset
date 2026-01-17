@@ -39,7 +39,7 @@ if ($action === 'add_record') {
     }
 
     $table = input_str('table');
-    if (!in_array($table, ['opr_repair', 'opr_other', 'dev_pw', 'opr_other_min', 'dev_other_min'], true)) {
+    if (!in_array($table, ['operational', 'development', 'opr_repair', 'opr_other', 'dev_pw', 'opr_other_min', 'dev_other_min'], true)) {
         http_response_code(400);
         exit('Invalid table.');
     }
@@ -70,6 +70,14 @@ if ($action === 'add_record') {
         'note' => input_str('note'),
         'created_at' => date('Y-m-d H:i:s'),
     ];
+    if (in_array($table, ['operational', 'development'], true)) {
+        $ministry_id = input_int('ministry_id');
+        if ($ministry_id <= 0) {
+            flash('error', 'Ministry is required.');
+            redirect('index.php?page=board');
+        }
+        $data['ministry_id'] = $ministry_id;
+    }
 
     $record_id = insert_record($table, $data);
     add_log((int)$user['id'], $table, $record_id, 'Added new entry.');
@@ -148,6 +156,14 @@ if ($action === 'csv_import') {
                 $get_id('circle_id'),
                 (int)($data['field_office'] ?? 1),
             ]);
+        } elseif ($type === 'ministries') {
+            $name = $get_text('name');
+            if ($name === null || $name === '') {
+                $skipped++;
+                continue;
+            }
+            $stmt = db()->prepare('INSERT INTO ministries (name, created_at) VALUES (?, NOW())');
+            $stmt->execute([$name]);
         } elseif ($type === 'circles') {
             $stmt = db()->prepare('INSERT INTO circles (office_name, office_address, office_type, zone_id, created_at) VALUES (?, ?, ?, ?, NOW())');
             $stmt->execute([
