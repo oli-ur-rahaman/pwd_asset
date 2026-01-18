@@ -15,24 +15,24 @@ function get_fy_list(): array
 function get_divisions_for_user(array $user): array
 {
     if ((int)$user['office_type'] === 4 && !empty($user['division_id'])) {
-        $stmt = db()->prepare('SELECT id, office_name FROM divisions WHERE id = ?');
+        $stmt = db()->prepare('SELECT id, office_name, zone_id, circle_id FROM divisions WHERE id = ?');
         $stmt->execute([$user['division_id']]);
         return $stmt->fetchAll();
     }
 
     if ((int)$user['office_type'] === 3 && !empty($user['circle_id'])) {
-        $stmt = db()->prepare('SELECT id, office_name FROM divisions WHERE circle_id = ? ORDER BY office_name');
+        $stmt = db()->prepare('SELECT id, office_name, zone_id, circle_id FROM divisions WHERE circle_id = ? ORDER BY office_name');
         $stmt->execute([$user['circle_id']]);
         return $stmt->fetchAll();
     }
 
     if ((int)$user['office_type'] === 2 && !empty($user['zone_id'])) {
-        $stmt = db()->prepare('SELECT id, office_name FROM divisions WHERE zone_id = ? ORDER BY office_name');
+        $stmt = db()->prepare('SELECT id, office_name, zone_id, circle_id FROM divisions WHERE zone_id = ? ORDER BY office_name');
         $stmt->execute([$user['zone_id']]);
         return $stmt->fetchAll();
     }
 
-    $stmt = db()->query('SELECT id, office_name FROM divisions ORDER BY office_name');
+    $stmt = db()->query('SELECT id, office_name, zone_id, circle_id FROM divisions ORDER BY office_name');
     return $stmt->fetchAll();
 }
 
@@ -139,7 +139,18 @@ function get_ministries_for_budget(string $type, bool $defaults_only = false): a
         $sql .= ' ORDER BY name';
     }
     $stmt = db()->query($sql);
-    return $stmt->fetchAll();
+    $rows = $stmt->fetchAll();
+    $seen = [];
+    $deduped = [];
+    foreach ($rows as $row) {
+        $name = strtolower(trim((string)($row['name'] ?? '')));
+        if ($name === '' || isset($seen[$name])) {
+            continue;
+        }
+        $seen[$name] = true;
+        $deduped[] = $row;
+    }
+    return $deduped;
 }
 
 function merge_default_ministry_rows(array $rows, array $divisions, array $default_ministries): array
