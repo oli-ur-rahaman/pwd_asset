@@ -49,7 +49,7 @@
 <div class="modal-backdrop" id="forgot-modal" aria-hidden="true">
     <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="forgot-title">
         <h3 id="forgot-title">Forgot Password</h3>
-        <p>Please send an email to ee_mis2@pwd.gov.bd from an official PWD email id with the Login ID you are using.</p>
+        <p>Please see the Help &amp; Instructions section on this login page.</p>
         <button type="button" id="close-forgot">Close</button>
     </div>
 </div>
