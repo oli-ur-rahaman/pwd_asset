@@ -221,6 +221,16 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
 
+        const resetBtn = document.getElementById('filters-reset');
+        if (resetBtn) {
+            resetBtn.addEventListener('click', () => {
+                const params = new URLSearchParams();
+                params.set('page', 'board');
+                params.set('reset', '1');
+                window.location.href = 'index.php?' + params.toString();
+            });
+        }
+
         const filterBar = document.querySelector('.sticky-filters');
         const spacer = document.getElementById('filter-bar-spacer');
         if (filterBar && spacer) {

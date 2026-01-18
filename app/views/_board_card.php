@@ -48,6 +48,7 @@
         <table>
             <thead>
                 <tr>
+                    <th>SL</th>
                     <?php
                         $division_col = $show_division_col;
                         if ($division_col === null) {
@@ -78,6 +79,7 @@
                 </tr>
             </thead>
             <tbody>
+                <?php $sl = 1; ?>
                 <?php foreach ($rows as $row): ?>
                     <?php
                         $row_classes = [];
@@ -96,6 +98,7 @@
                         <?php endif; ?>
                         <?= $row_classes ? 'class="' . e(implode(' ', $row_classes)) . '"' : ''; ?>
                     >
+                        <td><?= $sl++; ?></td>
                         <?php if ($show_ministry_col): ?>
                             <td><?= e((string)($row['ministry_name'] ?? '-')); ?></td>
                         <?php endif; ?>
@@ -151,6 +154,7 @@
                     $total_prog_amt = $totals['est'] > 0 ? ($totals['cont'] / $totals['est']) * 100 : 0;
                 ?>
                 <tr class="total-row">
+                    <td></td>
                     <?php if ($show_ministry_col): ?>
                         <td>Total</td>
                     <?php endif; ?>

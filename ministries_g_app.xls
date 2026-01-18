@@ -1,0 +1,54 @@
+<table border="1">
+<tr><th>id</th><th>name</th><th>vis_opr</th><th>vis_dev</th><th>inuse_status</th><th>def_opr</th><th>def_dev</th><th>def_opr_sl</th><th>def_dev_sl</th><th>created_at</th><th>updated_at</th></tr>
+<tr><td>1</td><td>Anti-Corruption Commission</td><td>1</td><td>1</td><td>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>2026-01-17 22:07:38</td><td></td></tr>
+<tr><td>2</td><td>Bangladesh Parliament Secretariat</td><td>1</td><td>1</td><td>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>2026-01-17 22:07:38</td><td></td></tr>
+<tr><td>3</td><td>Cabinet Division</td><td>1</td><td>1</td><td>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>2026-01-17 22:07:38</td><td></td></tr>
+<tr><td>4</td><td>Election Commission Secretariat</td><td>1</td><td>1</td><td>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>2026-01-17 22:07:38</td><td></td></tr>
+<tr><td>5</td><td>Ministry of Agriculture</td><td>1</td><td>1</td><td>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>2026-01-17 22:07:38</td><td></td></tr>
+<tr><td>6</td><td>Ministry of chittagong Hill Tract&#039;s Affairs</td><td>1</td><td>1</td><td>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>2026-01-17 22:07:38</td><td></td></tr>
+<tr><td>7</td><td>Ministry of Civil Aviation &amp; Tourism</td><td>1</td><td>1</td><td>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>2026-01-17 22:07:38</td><td></td></tr>
+<tr><td>8</td><td>Ministry of Commerce</td><td>1</td><td>1</td><td>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>2026-01-17 22:07:38</td><td></td></tr>
+<tr><td>9</td><td>Ministry of Cultural Affairs</td><td>1</td><td>1</td><td>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>2026-01-17 22:07:38</td><td></td></tr>
+<tr><td>10</td><td>Ministry of Defence</td><td>1</td><td>1</td><td>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>2026-01-17 22:07:38</td><td></td></tr>
+<tr><td>11</td><td>Ministry of Disaster Management &amp; Relief</td><td>1</td><td>1</td><td>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>2026-01-17 22:07:38</td><td></td></tr>
+<tr><td>12</td><td>Ministry of Education</td><td>1</td><td>1</td><td>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>2026-01-17 22:07:38</td><td></td></tr>
+<tr><td>13</td><td>Ministry of Energy, Power and Minearal Resources</td><td>1</td><td>1</td><td>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>2026-01-17 22:07:38</td><td></td></tr>
+<tr><td>14</td><td>Ministry of Environment, Forest and Climate Change</td><td>1</td><td>1</td><td>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>2026-01-17 22:07:38</td><td></td></tr>
+<tr><td>15</td><td>Ministry of Expatriates&#039; Welfare and Overseas Employment</td><td>1</td><td>1</td><td>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>2026-01-17 22:07:38</td><td></td></tr>
+<tr><td>16</td><td>Ministry of Finance</td><td>1</td><td>1</td><td>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>2026-01-17 22:07:38</td><td></td></tr>
+<tr><td>17</td><td>Ministry of Fisheries &amp; Livestock</td><td>1</td><td>1</td><td>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>2026-01-17 22:07:38</td><td></td></tr>
+<tr><td>18</td><td>Ministry of Food</td><td>1</td><td>1</td><td>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>2026-01-17 22:07:38</td><td></td></tr>
+<tr><td>19</td><td>Ministry of Foreign Affairs</td><td>1</td><td>1</td><td>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>2026-01-17 22:07:38</td><td></td></tr>
+<tr><td>20</td><td>Ministry of Health and Family Welfare</td><td>0</td><td>1</td><td>1</td><td>0</td><td>1</td><td>0</td><td>3</td><td>2026-01-17 22:07:38</td><td></td></tr>
+<tr><td>21</td><td>Ministry of Home Affairs</td><td>1</td><td>1</td><td>1</td><td>0</td><td>1</td><td>0</td><td>2</td><td>2026-01-17 22:07:38</td><td></td></tr>
+<tr><td>22</td><td>Ministry of Housing and Public Works</td><td>0</td><td>1</td><td>1</td><td>0</td><td>1</td><td>0</td><td>1</td><td>2026-01-17 22:07:38</td><td></td></tr>
+<tr><td>23</td><td>Ministry of Industries</td><td>1</td><td>1</td><td>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>2026-01-17 22:07:38</td><td></td></tr>
+<tr><td>24</td><td>Ministry of Information</td><td>1</td><td>1</td><td>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>2026-01-17 22:07:38</td><td></td></tr>
+<tr><td>25</td><td>Ministry of Labour and Employment</td><td>1</td><td>1</td><td>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>2026-01-17 22:07:38</td><td></td></tr>
+<tr><td>26</td><td>Ministry of Land</td><td>1</td><td>1</td><td>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>2026-01-17 22:07:38</td><td></td></tr>
+<tr><td>27</td><td>Ministry of Law, Justice and Parliamentary Affairs</td><td>1</td><td>1</td><td>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>2026-01-17 22:07:38</td><td></td></tr>
+<tr><td>28</td><td>Ministry of Liberation War Affairs</td><td>1</td><td>1</td><td>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>2026-01-17 22:07:38</td><td></td></tr>
+<tr><td>29</td><td>Ministry of Local Government, Rural Development and Co-operatives</td><td>1</td><td>1</td><td>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>2026-01-17 22:07:38</td><td></td></tr>
+<tr><td>30</td><td>Ministry of Planning</td><td>1</td><td>1</td><td>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>2026-01-17 22:07:38</td><td></td></tr>
+<tr><td>31</td><td>Ministry of Post, Telecommunications &amp; Information Technology</td><td>1</td><td>1</td><td>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>2026-01-17 22:07:38</td><td></td></tr>
+<tr><td>32</td><td>Ministry of Primary and Mass Education</td><td>1</td><td>1</td><td>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>2026-01-17 22:07:38</td><td></td></tr>
+<tr><td>33</td><td>Ministry of Public Administration</td><td>1</td><td>1</td><td>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>2026-01-17 22:07:38</td><td></td></tr>
+<tr><td>34</td><td>Ministry of Railways</td><td>1</td><td>1</td><td>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>2026-01-17 22:07:38</td><td></td></tr>
+<tr><td>35</td><td>Ministry of Religious Affairs</td><td>1</td><td>1</td><td>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>2026-01-17 22:07:38</td><td></td></tr>
+<tr><td>36</td><td>Ministry of Road Transport and Bridges</td><td>1</td><td>1</td><td>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>2026-01-17 22:07:38</td><td></td></tr>
+<tr><td>37</td><td>Ministry of Science and Technology</td><td>1</td><td>1</td><td>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>2026-01-17 22:07:38</td><td></td></tr>
+<tr><td>38</td><td>Ministry of Shipping</td><td>1</td><td>1</td><td>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>2026-01-17 22:07:38</td><td></td></tr>
+<tr><td>39</td><td>Ministry of Social Welfare</td><td>1</td><td>1</td><td>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>2026-01-17 22:07:38</td><td></td></tr>
+<tr><td>40</td><td>Ministry of Textiles &amp; Jute</td><td>1</td><td>1</td><td>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>2026-01-17 22:07:38</td><td></td></tr>
+<tr><td>41</td><td>Ministry of Water Resources</td><td>1</td><td>1</td><td>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>2026-01-17 22:07:38</td><td></td></tr>
+<tr><td>42</td><td>Ministry of Women and Children Affairs</td><td>1</td><td>1</td><td>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>2026-01-17 22:07:38</td><td></td></tr>
+<tr><td>43</td><td>Ministry of Youth &amp; Sports</td><td>1</td><td>1</td><td>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>2026-01-17 22:07:38</td><td></td></tr>
+<tr><td>44</td><td>Office of the Comptroller and Auditor General of Bangladesh</td><td>1</td><td>1</td><td>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>2026-01-17 22:07:38</td><td></td></tr>
+<tr><td>45</td><td>President&#039;s Office</td><td>1</td><td>1</td><td>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>2026-01-17 22:07:38</td><td></td></tr>
+<tr><td>46</td><td>Prime Minister&#039;s Office</td><td>1</td><td>1</td><td>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>2026-01-17 22:07:38</td><td></td></tr>
+<tr><td>47</td><td>Supreme Court of Bangladesh</td><td>1</td><td>1</td><td>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>2026-01-17 22:07:38</td><td></td></tr>
+<tr><td>48</td><td>PWD Repair</td><td>1</td><td>1</td><td>1</td><td>1</td><td>0</td><td>1</td><td>0</td><td>2026-01-17 23:22:45</td><td></td></tr>
+<tr><td>49</td><td>PWD other than Repair</td><td>1</td><td>1</td><td>1</td><td>1</td><td>0</td><td>2</td><td>0</td><td>2026-01-17 23:22:45</td><td></td></tr>
+<tr><td>50</td><td>Health Education</td><td>1</td><td>1</td><td>1</td><td>1</td><td>0</td><td>3</td><td>0</td><td>2026-01-17 23:22:45</td><td></td></tr>
+<tr><td>51</td><td>Health Service</td><td>1</td><td>1</td><td>1</td><td>1</td><td>0</td><td>4</td><td>0</td><td>2026-01-17 23:22:45</td><td></td></tr>
+</table>

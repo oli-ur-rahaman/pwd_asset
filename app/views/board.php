@@ -13,7 +13,11 @@ $all_circles = db()->query('SELECT id, office_name, zone_id FROM circles ORDER B
 $all_divisions = db()->query('SELECT id, office_name, zone_id, circle_id FROM divisions ORDER BY office_name')->fetchAll();
 
 $fy_list = get_fy_list();
-$saved_filters = $_SESSION['board_filters'] ?? [];
+$reset_filters = request_str('reset', '') === '1';
+if ($reset_filters) {
+    unset($_SESSION['board_filters']);
+}
+$saved_filters = $reset_filters ? [] : ($_SESSION['board_filters'] ?? []);
 $fy_selected_id = request_str('fy_id', $saved_filters['fy_id'] ?? '');
 $budget_type_filter = request_str('budget_type', $saved_filters['budget_type'] ?? 'all');
 $ministry_filter = request_str('ministry_id', $saved_filters['ministry_id'] ?? 'all');
@@ -112,6 +116,10 @@ if ($division_filter !== 'all') {
 } else {
     $division_ids = $allowed_division_ids;
 }
+$filtered_divisions = array_values(array_filter(
+    $allowed_divisions,
+    fn($d) => in_array((int)$d['id'], $division_ids, true)
+));
 
 $opr_ministries = get_ministries_for_budget('opr');
 $dev_ministries = get_ministries_for_budget('dev');
@@ -183,10 +191,10 @@ $latest_operational = $fy ? get_latest_records_with_ministry('operational', (int
 $latest_development = $fy ? get_latest_records_with_ministry('development', (int)$fy['id'], $division_ids) : [];
 
 if ($default_opr_ministries) {
-    $latest_operational = merge_default_ministry_rows($latest_operational, $allowed_divisions, $default_opr_ministries);
+    $latest_operational = merge_default_ministry_rows($latest_operational, $filtered_divisions, $default_opr_ministries);
 }
 if ($default_dev_ministries) {
-    $latest_development = merge_default_ministry_rows($latest_development, $allowed_divisions, $default_dev_ministries);
+    $latest_development = merge_default_ministry_rows($latest_development, $filtered_divisions, $default_dev_ministries);
 }
 
 $latest_operational_row = ($fy && is_division_user() && $default_opr_ministry_id)
@@ -354,9 +362,19 @@ $render_card = function (string $title, string $table, string $edit_modal, strin
                 </select>
             </label>
         </form>
-        <div class="view-toggle">
-            <button type="button" class="toggle-btn <?= $view_mode === 'ministry' ? 'active' : ''; ?>" data-view="ministry">Ministry-wise</button>
-            <button type="button" class="toggle-btn <?= $view_mode === 'division' ? 'active' : ''; ?>" data-view="division">Division-wise</button>
+        <div class="view-toggle-row">
+            <div class="view-toggle">
+                <button type="button" class="toggle-btn <?= $view_mode === 'ministry' ? 'active' : ''; ?>" data-view="ministry">Ministry-wise</button>
+                <button type="button" class="toggle-btn <?= $view_mode === 'division' ? 'active' : ''; ?>" data-view="division">Division-wise</button>
+            </div>
+            <div class="view-toggle-actions">
+                <button type="button" class="icon-link" id="filters-reset" title="Reset Filters" aria-label="Reset Filters">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M21 12a9 9 0 1 1-2.64-6.36"></path>
+                        <path d="M21 3v6h-6"></path>
+                    </svg>
+                </button>
+            </div>
         </div>
     </section>
 <?php endif; ?>
@@ -510,7 +528,7 @@ $render_card = function (string $title, string $table, string $edit_modal, strin
             <h2 class="center">Operational Budget</h2>
         </section>
         <section class="board-grid">
-            <?php foreach ($allowed_divisions as $division): ?>
+            <?php foreach ($filtered_divisions as $division): ?>
                 <?php
                     $div_id = (int)$division['id'];
                     $rows = $operational_by_division[$div_id] ?? [];
@@ -541,7 +559,7 @@ $render_card = function (string $title, string $table, string $edit_modal, strin
             <h2 class="center">Development Budget</h2>
         </section>
         <section class="board-grid">
-            <?php foreach ($allowed_divisions as $division): ?>
+            <?php foreach ($filtered_divisions as $division): ?>
                 <?php
                     $div_id = (int)$division['id'];
                     $rows = $development_by_division[$div_id] ?? [];

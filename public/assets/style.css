@@ -94,7 +94,9 @@ th, td { border: 1px solid #d7dee8; padding: 8px; text-align: center; }
 .sticky-filters.is-sticky input,
 .sticky-filters.is-sticky select { background: #ffffff; color: #1f2a44; border-color: #cbd5e1; }
 .sticky-filters.is-sticky button { background: #ef8a17; color: #fff; }
-.view-toggle { display: flex; justify-content: center; gap: 8px; margin-top: 12px; }
+.view-toggle-row { display: flex; align-items: center; justify-content: center; position: relative; margin-top: 12px; }
+.view-toggle { display: flex; justify-content: center; gap: 8px; margin: 0 auto; }
+.view-toggle-actions { position: absolute; right: 0; }
 .toggle-btn { padding: 8px 16px; background: #e2e8f0; color: #1f2a44; border: 1px solid #cbd5e1; border-radius: 999px; cursor: pointer; }
 .toggle-btn.active { background: #0f3d5e; color: #fff; border-color: #0f3d5e; }
 .sticky-filters.is-sticky .toggle-btn { background: transparent; color: #fff; border-color: rgba(255, 255, 255, 0.6); }
