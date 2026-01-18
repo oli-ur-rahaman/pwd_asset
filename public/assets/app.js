@@ -211,6 +211,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         document.querySelectorAll('.view-toggle .toggle-btn').forEach((btn) => {
             btn.addEventListener('click', () => {
+                document.querySelectorAll('.view-toggle .toggle-btn').forEach((b) => b.classList.remove('active'));
+                btn.classList.add('active');
                 const view = btn.getAttribute('data-view') || 'ministry';
                 if (viewModeInput) {
                     viewModeInput.value = view;
@@ -365,9 +367,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const graphModal = document.getElementById('graph-modal');
     const graphChartCanvas = document.getElementById('board-chart');
     const graphFy = document.getElementById('graph-fy');
+    const graphMinistry = document.getElementById('graph-ministry');
     const graphDivision = document.getElementById('graph-division');
     const graphMetricName = document.getElementById('graph-metric-name');
     const graphDivisionName = document.getElementById('graph-division-name');
+    const graphMinistryName = document.getElementById('graph-ministry-name');
     const graphOfficeName = document.getElementById('graph-office-name');
     const graphDate = document.getElementById('graph-date');
     const graphDownload = document.getElementById('graph-download');
@@ -396,6 +400,18 @@ document.addEventListener('DOMContentLoaded', () => {
         return option ? option.textContent : '';
     };
 
+    const getMinistryName = () => {
+        if (!graphMinistry) {
+            return 'All';
+        }
+        const value = graphMinistry.value;
+        if (value === 'all') {
+            return 'All';
+        }
+        const option = graphMinistry.querySelector(`option[value="${value}"]`);
+        return option ? option.textContent : '';
+    };
+
     const loadBoardChart = async () => {
         if (!graphChartCanvas || !graphFy) {
             return;
@@ -404,6 +420,9 @@ document.addEventListener('DOMContentLoaded', () => {
         params.set('table', currentTable);
         params.set('metric', currentMetric);
         params.set('fy_id', graphFy.value);
+        if (graphMinistry) {
+            params.set('ministry_id', graphMinistry.value);
+        }
         if (graphDivision) {
             params.set('division_id', graphDivision.value);
         } else {
@@ -423,6 +442,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (graphDivisionName) {
             graphDivisionName.textContent = getDivisionName();
+        }
+        if (graphMinistryName) {
+            graphMinistryName.textContent = getMinistryName();
         }
         if (graphDate) {
             const now = new Date();
@@ -464,6 +486,11 @@ document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('[data-modal="graph-modal"]').forEach((button) => {
         button.addEventListener('click', () => {
             currentTable = button.getAttribute('data-table') || 'opr_repair';
+            const cardViewMode = button.getAttribute('data-view-mode') || '';
+            const fixedMinistryId = button.getAttribute('data-ministry-id') || '';
+            const fixedDivisionId = button.getAttribute('data-division-id') || '';
+            const fixedDivisionName = button.getAttribute('data-division-name') || '';
+            const fixedMinistryName = button.getAttribute('data-ministry-name') || '';
             if (graphModal) {
                 const title = document.getElementById('graph-title');
                 if (title) {
@@ -478,6 +505,57 @@ document.addEventListener('DOMContentLoaded', () => {
                     };
                     title.textContent = titles[currentTable] || 'Budget';
                 }
+            }
+            if (graphMinistry) {
+                graphMinistry.disabled = false;
+                graphMinistry.querySelectorAll('option').forEach((opt) => {
+                    if (opt.value === 'all') {
+                        opt.hidden = false;
+                        return;
+                    }
+                    if (currentTable === 'operational') {
+                        opt.hidden = opt.getAttribute('data-opr') !== '1';
+                    } else if (currentTable === 'development') {
+                        opt.hidden = opt.getAttribute('data-dev') !== '1';
+                    } else {
+                        opt.hidden = false;
+                    }
+                });
+                if (cardViewMode === 'ministry' && fixedMinistryId) {
+                    graphMinistry.value = fixedMinistryId;
+                    graphMinistry.disabled = true;
+                } else if (graphMinistry.selectedOptions.length && graphMinistry.selectedOptions[0].hidden) {
+                    graphMinistry.value = 'all';
+                }
+            }
+            if (graphDivision) {
+                graphDivision.disabled = false;
+                if (cardViewMode === 'division' && fixedDivisionId) {
+                    graphDivision.value = fixedDivisionId;
+                    graphDivision.disabled = true;
+                } else if (graphModal) {
+                    const zoneId = graphModal.getAttribute('data-zone-id') || 'all';
+                    graphDivision.querySelectorAll('option').forEach((opt) => {
+                        if (opt.value === 'all') {
+                            opt.hidden = false;
+                            return;
+                        }
+                        const optZone = opt.getAttribute('data-zone') || '';
+                        opt.hidden = zoneId !== 'all' && optZone !== zoneId;
+                    });
+                    if (graphDivision.selectedOptions.length && graphDivision.selectedOptions[0].hidden) {
+                        graphDivision.value = 'all';
+                    }
+                }
+            }
+            if (graphDivisionName && cardViewMode === 'division' && fixedDivisionName) {
+                graphDivisionName.textContent = fixedDivisionName;
+            }
+            if (graphDivisionName && cardViewMode === 'ministry') {
+                graphDivisionName.textContent = graphDivision ? graphDivision.options[graphDivision.selectedIndex].textContent : 'All';
+            }
+            if (graphMinistryName) {
+                graphMinistryName.textContent = getMinistryName();
             }
             loadBoardChart();
         });
@@ -500,6 +578,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (graphFy) {
         graphFy.addEventListener('change', loadBoardChart);
     }
+    if (graphMinistry) {
+        graphMinistry.addEventListener('change', loadBoardChart);
+    }
     if (graphDivision) {
         graphDivision.addEventListener('change', loadBoardChart);
     }
@@ -509,6 +590,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const meta = [
                 `Office: ${graphOfficeName ? graphOfficeName.textContent : ''}`,
                 `Division: ${graphDivisionName ? graphDivisionName.textContent : ''}`,
+                `Ministry: ${graphMinistryName ? graphMinistryName.textContent : ''}`,
                 `Metric: ${graphMetricName ? graphMetricName.textContent : ''}`,
                 `Date: ${graphDate ? graphDate.textContent : ''}`,
             ];
@@ -540,13 +622,28 @@ document.addEventListener('DOMContentLoaded', () => {
             ctx.drawImage(graphChartCanvas, margin, headerHeight + margin);
             ctx.fillStyle = '#1f2a44';
             ctx.font = '12px Arial';
-            const padding = 8;
-            let y = headerHeight + margin + padding + 12;
+            const padding = 12;
+            const blockWidth = 200;
+            const lineHeight = 14;
+            let y = headerHeight + margin + padding + lineHeight;
+            const xRight = exportCanvas.width - padding;
+            const xLeft = xRight - blockWidth;
             meta.forEach((line) => {
-                const width = ctx.measureText(line).width;
-                ctx.fillText(line, exportCanvas.width - width - padding, y);
-                y += 14;
+                const parts = line.split(':');
+                if (parts.length > 1) {
+                    const label = parts.shift().trim() + ':';
+                    const value = parts.join(':').trim();
+                    ctx.textAlign = 'left';
+                    ctx.fillText(label, xLeft, y);
+                    ctx.textAlign = 'right';
+                    ctx.fillText(value, xRight, y);
+                } else {
+                    ctx.textAlign = 'left';
+                    ctx.fillText(line, xLeft, y);
+                }
+                y += lineHeight;
             });
+            ctx.textAlign = 'left';
             const link = document.createElement('a');
             link.href = exportCanvas.toDataURL('image/jpeg', 0.9);
             link.download = 'graph.jpg';

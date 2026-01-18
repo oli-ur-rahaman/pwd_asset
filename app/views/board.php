@@ -78,6 +78,10 @@ if ($office_role === 2 || $office_role === 3 || ($office_role === 1 && $office_t
     $allowed_divisions = get_divisions_for_user($user);
 }
 $allowed_division_ids = array_map(fn($d) => (int)$d['id'], $allowed_divisions);
+$graph_divisions = array_values(array_filter(
+    $all_divisions,
+    fn($d) => in_array((int)$d['id'], $allowed_division_ids, true)
+));
 
 if ($division_filter !== 'all' && !in_array((int)$division_filter, $allowed_division_ids, true)) {
     $division_filter = 'all';
@@ -132,11 +136,35 @@ foreach ($dev_ministries as $ministry) {
     }
 }
 $filter_ministry_map = [];
-foreach ($opr_ministries as $ministry) {
-    $filter_ministry_map[(int)$ministry['id']] = $ministry['name'] ?? '';
-}
-foreach ($dev_ministries as $ministry) {
-    $filter_ministry_map[(int)$ministry['id']] = $ministry['name'] ?? '';
+$filter_division_ids = $division_ids;
+if ($fy) {
+    $params = [$fy['id']];
+    $in = $filter_division_ids ? implode(',', array_fill(0, count($filter_division_ids), '?')) : '';
+    if ($filter_division_ids) {
+        $params = array_merge($params, $filter_division_ids);
+    }
+    $opr_sql = 'SELECT DISTINCT m.id, m.name FROM operational o JOIN ministries m ON m.id = o.ministry_id WHERE o.fy_id = ?';
+    $dev_sql = 'SELECT DISTINCT m.id, m.name FROM development d JOIN ministries m ON m.id = d.ministry_id WHERE d.fy_id = ?';
+    if ($filter_division_ids) {
+        $opr_sql .= " AND o.division_id IN ({$in})";
+        $dev_sql .= " AND d.division_id IN ({$in})";
+    }
+    $stmt = db()->prepare($opr_sql);
+    $stmt->execute($params);
+    foreach ($stmt->fetchAll() as $row) {
+        $filter_ministry_map[(int)$row['id']] = $row['name'];
+    }
+    $stmt = db()->prepare($dev_sql);
+    $stmt->execute($params);
+    foreach ($stmt->fetchAll() as $row) {
+        $filter_ministry_map[(int)$row['id']] = $row['name'];
+    }
+    foreach ($default_opr_ministries as $row) {
+        $filter_ministry_map[(int)$row['id']] = $row['name'];
+    }
+    foreach ($default_dev_ministries as $row) {
+        $filter_ministry_map[(int)$row['id']] = $row['name'];
+    }
 }
 asort($filter_ministry_map);
 $present_opr_ids = [];
@@ -186,7 +214,44 @@ if (is_division_user()) {
     }
 }
 
-$render_card = function (string $title, string $table, string $edit_modal, string $download_modal, string $info_modal, array $rows, bool $show_ministry_col = false, array $default_ministry_ids = [], ?bool $show_division_col = null) use ($today) {
+$graph_ministries = [];
+$graph_opr_ids = [];
+$graph_dev_ids = [];
+if ($fy) {
+    $stmt = db()->prepare('SELECT DISTINCT m.id, m.name FROM ministries m JOIN operational o ON o.ministry_id = m.id WHERE o.fy_id = ?');
+    $stmt->execute([(int)$fy['id']]);
+    $graph_ministries = $stmt->fetchAll();
+    foreach ($graph_ministries as $row) {
+        $graph_opr_ids[(int)$row['id']] = true;
+    }
+    $stmt = db()->prepare('SELECT DISTINCT m.id, m.name FROM ministries m JOIN development d ON d.ministry_id = m.id WHERE d.fy_id = ?');
+    $stmt->execute([(int)$fy['id']]);
+    $dev_min_list = $stmt->fetchAll();
+
+    $seen = [];
+    foreach ($graph_ministries as $row) {
+        $seen[(int)$row['id']] = $row['name'];
+    }
+    foreach ($dev_min_list as $row) {
+        $seen[(int)$row['id']] = $row['name'];
+    }
+    foreach ($default_opr_ministries as $row) {
+        $seen[(int)$row['id']] = $row['name'];
+        $graph_opr_ids[(int)$row['id']] = true;
+    }
+    foreach ($default_dev_ministries as $row) {
+        $seen[(int)$row['id']] = $row['name'];
+        $graph_dev_ids[(int)$row['id']] = true;
+    }
+
+    $graph_ministries = [];
+    foreach ($seen as $id => $name) {
+        $graph_ministries[] = ['id' => $id, 'name' => $name];
+    }
+    usort($graph_ministries, fn($a, $b) => strcmp($a['name'], $b['name']));
+}
+
+$render_card = function (string $title, string $table, string $edit_modal, string $download_modal, string $info_modal, array $rows, bool $show_ministry_col = false, array $default_ministry_ids = [], ?bool $show_division_col = null, array $card_meta = []) use ($today) {
     $path = __DIR__ . '/_board_card.php';
     include $path;
 };
@@ -408,7 +473,11 @@ $render_card = function (string $title, string $table, string $edit_modal, strin
                     $rows = $operational_by_ministry[$mid] ?? [];
                 ?>
                 <div class="operational-budget-card" data-table="operational" data-fy-id="<?= e((string)($fy['id'] ?? 0)); ?>">
-                    <?php $render_card($min_name, 'operational', 'revenue-modal', 'revenue-download-modal', 'info-opr-repair', $rows, false, []); ?>
+                    <?php $render_card($min_name, 'operational', 'revenue-modal', 'revenue-download-modal', 'info-opr', $rows, false, [], null, [
+                        'ministry_id' => $mid,
+                        'ministry_name' => $min_name,
+                        'view_mode' => $view_mode,
+                    ]); ?>
                 </div>
             <?php endforeach; ?>
         </section>
@@ -426,7 +495,11 @@ $render_card = function (string $title, string $table, string $edit_modal, strin
                     $rows = $development_by_ministry[$mid] ?? [];
                 ?>
                 <div class="operational-budget-card" data-table="development" data-fy-id="<?= e((string)($fy['id'] ?? 0)); ?>">
-                    <?php $render_card($min_name, 'development', 'development-modal', 'development-download-modal', 'info-dev-pw', $rows, false, []); ?>
+                    <?php $render_card($min_name, 'development', 'development-modal', 'development-download-modal', 'info-dev', $rows, false, [], null, [
+                        'ministry_id' => $mid,
+                        'ministry_name' => $min_name,
+                        'view_mode' => $view_mode,
+                    ]); ?>
                 </div>
             <?php endforeach; ?>
         </section>
@@ -453,7 +526,11 @@ $render_card = function (string $title, string $table, string $edit_modal, strin
                     }, $rows);
                 ?>
                 <div class="operational-budget-card" data-table="operational" data-fy-id="<?= e((string)($fy['id'] ?? 0)); ?>">
-                    <?php $render_card($division['office_name'], 'operational', 'revenue-modal', 'revenue-download-modal', 'info-opr-repair', $rows, true, $default_opr_ministry_ids, false); ?>
+                    <?php $render_card($division['office_name'], 'operational', 'revenue-modal', 'revenue-download-modal', 'info-opr', $rows, true, $default_opr_ministry_ids, false, [
+                        'division_id' => $div_id,
+                        'division_name' => $division['office_name'],
+                        'view_mode' => $view_mode,
+                    ]); ?>
                 </div>
             <?php endforeach; ?>
         </section>
@@ -480,7 +557,11 @@ $render_card = function (string $title, string $table, string $edit_modal, strin
                     }, $rows);
                 ?>
                 <div class="operational-budget-card" data-table="development" data-fy-id="<?= e((string)($fy['id'] ?? 0)); ?>">
-                    <?php $render_card($division['office_name'], 'development', 'development-modal', 'development-download-modal', 'info-dev-pw', $rows, true, $default_dev_ministry_ids, false); ?>
+                    <?php $render_card($division['office_name'], 'development', 'development-modal', 'development-download-modal', 'info-dev', $rows, true, $default_dev_ministry_ids, false, [
+                        'division_id' => $div_id,
+                        'division_name' => $division['office_name'],
+                        'view_mode' => $view_mode,
+                    ]); ?>
                 </div>
             <?php endforeach; ?>
         </section>
@@ -490,14 +571,18 @@ $render_card = function (string $title, string $table, string $edit_modal, strin
         <h2 class="center">Operational Budget</h2>
     </section>
     <div class="operational-budget-card" data-table="operational" data-fy-id="<?= e((string)($fy['id'] ?? 0)); ?>">
-        <?php $render_card('', 'operational', 'revenue-modal', 'revenue-download-modal', 'info-opr-repair', $latest_operational, true, $default_opr_ministry_ids); ?>
+    <?php $render_card('', 'operational', 'revenue-modal', 'revenue-download-modal', 'info-opr', $latest_operational, true, $default_opr_ministry_ids, null, [
+        'view_mode' => $view_mode,
+    ]); ?>
     </div>
 
     <section class="card card-plain section-heading section-heading-tight">
         <h2 class="center">Development Budget</h2>
     </section>
     <div class="operational-budget-card" data-table="development" data-fy-id="<?= e((string)($fy['id'] ?? 0)); ?>">
-        <?php $render_card('', 'development', 'development-modal', 'development-download-modal', 'info-dev-pw', $latest_development, true, $default_dev_ministry_ids); ?>
+    <?php $render_card('', 'development', 'development-modal', 'development-download-modal', 'info-dev', $latest_development, true, $default_dev_ministry_ids, null, [
+        'view_mode' => $view_mode,
+    ]); ?>
     </div>
 <?php endif; ?>
 
@@ -995,7 +1080,7 @@ $render_card = function (string $title, string $table, string $edit_modal, strin
     </div>
 </div>
 
-<div class="modal-backdrop" id="graph-modal" aria-hidden="true" data-division-id="<?= is_division_user() ? e((string)$user['division_id']) : ''; ?>">
+<div class="modal-backdrop" id="graph-modal" aria-hidden="true" data-division-id="<?= is_division_user() ? e((string)$user['division_id']) : ''; ?>" data-view-mode="<?= e($view_mode); ?>" data-zone-id="<?= e((string)$zone_filter); ?>">
     <div class="modal-card modal-wide" role="dialog" aria-modal="true" aria-labelledby="graph-title">
         <div class="modal-head">
             <h3 id="graph-title">Budget Graph</h3>
@@ -1017,12 +1102,29 @@ $render_card = function (string $title, string $table, string $edit_modal, strin
                     <?php endforeach; ?>
                 </select>
             </label>
+            <label>Ministry
+                <select id="graph-ministry">
+                    <option value="all">All</option>
+                    <?php foreach ($graph_ministries as $ministry): ?>
+                        <?php
+                            $mid = (int)$ministry['id'];
+                            $has_opr = !empty($graph_opr_ids[$mid]) ? '1' : '0';
+                            $has_dev = !empty($graph_dev_ids[$mid]) ? '1' : '0';
+                        ?>
+                        <option value="<?= e((string)$ministry['id']); ?>" data-opr="<?= $has_opr; ?>" data-dev="<?= $has_dev; ?>">
+                            <?= e($ministry['name']); ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
+            </label>
             <?php if (!is_division_user()): ?>
                 <label>Office Name
                     <select id="graph-division">
                         <option value="all">All</option>
-                        <?php foreach ($division_list as $div): ?>
-                            <option value="<?= e((string)$div['id']); ?>"><?= e($div['office_name']); ?></option>
+                        <?php foreach ($graph_divisions as $div): ?>
+                            <option value="<?= e((string)$div['id']); ?>" data-zone="<?= e((string)($div['zone_id'] ?? '')); ?>">
+                                <?= e($div['office_name']); ?>
+                            </option>
                         <?php endforeach; ?>
                     </select>
                 </label>
@@ -1040,6 +1142,7 @@ $render_card = function (string $title, string $table, string $edit_modal, strin
             <div class="graph-meta" id="graph-meta">
                 <div>Office: <span id="graph-office-name"><?= e($office_name); ?></span></div>
                 <div>Division: <span id="graph-division-name"><?= is_division_user() ? e($office_name) : 'All'; ?></span></div>
+                <div>Ministry: <span id="graph-ministry-name">All</span></div>
                 <div>Metric: <span id="graph-metric-name">Total no. of packages</span></div>
                 <div>Date: <span id="graph-date"><?= e($today); ?></span></div>
             </div>
@@ -1051,12 +1154,12 @@ $render_card = function (string $title, string $table, string $edit_modal, strin
     </div>
 </div>
 
-<div class="modal-backdrop" id="info-opr-repair" aria-hidden="true">
-    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="info-opr-repair-title">
-        <h3 id="info-opr-repair-title">Operational Budget (Repair Works)</h3>
-        <p><?= e((string)($info['i_opr_repair'] ?? 'No message')); ?></p>
+<div class="modal-backdrop" id="info-opr" aria-hidden="true">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="info-opr-title">
+        <h3 id="info-opr-title">Operational Budget</h3>
+        <p><?= e((string)($info['i_opr'] ?? 'No message')); ?></p>
         <div class="modal-actions">
-            <button type="button" class="modal-close" data-close="info-opr-repair">Close</button>
+            <button type="button" class="modal-close" data-close="info-opr">Close</button>
         </div>
     </div>
 </div>
@@ -1071,12 +1174,12 @@ $render_card = function (string $title, string $table, string $edit_modal, strin
     </div>
 </div>
 
-<div class="modal-backdrop" id="info-dev-pw" aria-hidden="true">
-    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="info-dev-pw-title">
-        <h3 id="info-dev-pw-title">Development Budget (MoHPW)</h3>
-        <p><?= e((string)($info['i_dev_pw'] ?? 'No message')); ?></p>
+<div class="modal-backdrop" id="info-dev" aria-hidden="true">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="info-dev-title">
+        <h3 id="info-dev-title">Development Budget</h3>
+        <p><?= e((string)($info['i_dev'] ?? 'No message')); ?></p>
         <div class="modal-actions">
-            <button type="button" class="modal-close" data-close="info-dev-pw">Close</button>
+            <button type="button" class="modal-close" data-close="info-dev">Close</button>
         </div>
     </div>
 </div>

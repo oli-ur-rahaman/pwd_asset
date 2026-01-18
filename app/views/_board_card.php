@@ -12,7 +12,20 @@
                 </button>
             <?php endif; ?>
         <?php endif; ?>
-        <button type="button" class="icon-link" title="Graph" aria-label="Graph" data-modal="graph-modal" data-table="<?= e($table); ?>">
+        <?php
+            $card_ministry_id = $card_meta['ministry_id'] ?? null;
+            $card_ministry_name = $card_meta['ministry_name'] ?? null;
+            $card_division_id = $card_meta['division_id'] ?? null;
+            $card_division_name = $card_meta['division_name'] ?? null;
+            $card_view_mode = $card_meta['view_mode'] ?? null;
+        ?>
+        <button type="button" class="icon-link" title="Graph" aria-label="Graph" data-modal="graph-modal" data-table="<?= e($table); ?>"
+            <?= $card_ministry_id ? 'data-ministry-id="' . e((string)$card_ministry_id) . '"' : ''; ?>
+            <?= $card_ministry_name ? 'data-ministry-name="' . e((string)$card_ministry_name) . '"' : ''; ?>
+            <?= $card_division_id ? 'data-division-id="' . e((string)$card_division_id) . '"' : ''; ?>
+            <?= $card_division_name ? 'data-division-name="' . e((string)$card_division_name) . '"' : ''; ?>
+            <?= $card_view_mode ? 'data-view-mode="' . e((string)$card_view_mode) . '"' : ''; ?>
+        >
             <svg viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M4 18V6"></path>
                 <path d="M4 18h16"></path>

@@ -304,6 +304,36 @@ function get_monthly_series(string $table, int $fy_id, int $division_id, string 
     return $series;
 }
 
+function get_monthly_series_ministry(string $table, int $fy_id, int $division_id, int $ministry_id, string $metric, string $fy_label): array
+{
+    $series = [];
+    $last_value = 0.0;
+    $current_val = current_month_val_for_fy($fy_label);
+    foreach (fy_months($fy_label) as $month) {
+        $month_val = (int)$month['label_index'];
+        if ($month_val > $current_val) {
+            $series[] = [
+                'label' => $month['label'],
+                'value' => 0,
+            ];
+            continue;
+        }
+        $stmt = db()->prepare("SELECT {$metric} FROM {$table} WHERE fy_id = ? AND division_id = ? AND ministry_id = ? AND month_val = ? ORDER BY id DESC LIMIT 1");
+        $stmt->execute([$fy_id, $division_id, $ministry_id, $month_val]);
+        $value = $stmt->fetchColumn();
+        if ($value === false) {
+            $value = $last_value;
+        } else {
+            $last_value = (float)$value;
+        }
+        $series[] = [
+            'label' => $month['label'],
+            'value' => (float)$value,
+        ];
+    }
+    return $series;
+}
+
 function get_monthly_series_all(string $table, int $fy_id, array $division_ids, string $metric, string $fy_label): array
 {
     $series = [];
@@ -324,6 +354,42 @@ function get_monthly_series_all(string $table, int $fy_id, array $division_ids, 
 SELECT division_id, MAX(id) AS max_id FROM {$table} WHERE fy_id = ? AND month_val = ? AND division_id IN ({$in}) GROUP BY division_id
 ) latest ON latest.max_id = t.id";
         $params = array_merge([$fy_id, $month_val], $division_ids);
+        $stmt = db()->prepare($sql);
+        $stmt->execute($params);
+        $value = $stmt->fetchColumn();
+        if ($value === false || $value === null) {
+            $value = $last_value;
+        } else {
+            $last_value = (float)$value;
+        }
+        $series[] = [
+            'label' => $month['label'],
+            'value' => (float)$value,
+        ];
+    }
+    return $series;
+}
+
+function get_monthly_series_all_ministry(string $table, int $fy_id, array $division_ids, int $ministry_id, string $metric, string $fy_label): array
+{
+    $series = [];
+    $last_value = 0.0;
+    $current_val = current_month_val_for_fy($fy_label);
+    foreach (fy_months($fy_label) as $month) {
+        $month_val = (int)$month['label_index'];
+        if ($month_val > $current_val) {
+            $series[] = ['label' => $month['label'], 'value' => 0];
+            continue;
+        }
+        if (!$division_ids) {
+            $series[] = ['label' => $month['label'], 'value' => $last_value];
+            continue;
+        }
+        $in = implode(',', array_fill(0, count($division_ids), '?'));
+        $sql = "SELECT SUM(t.{$metric}) FROM {$table} t JOIN (
+SELECT division_id, MAX(id) AS max_id FROM {$table} WHERE fy_id = ? AND month_val = ? AND ministry_id = ? AND division_id IN ({$in}) GROUP BY division_id
+) latest ON latest.max_id = t.id";
+        $params = array_merge([$fy_id, $month_val, $ministry_id], $division_ids);
         $stmt = db()->prepare($sql);
         $stmt->execute($params);
         $value = $stmt->fetchColumn();
@@ -407,13 +473,15 @@ function save_info_row(?string $video_url, ?string $login_message, array $extras
     $dev_pw = $extras['i_dev_pw'] ?? ($existing['i_dev_pw'] ?? null);
     $opr_min = $extras['i_opr_min'] ?? ($existing['i_opr_min'] ?? null);
     $dev_min = $extras['i_dev_min'] ?? ($existing['i_dev_min'] ?? null);
+    $opr_msg = $extras['i_opr'] ?? ($existing['i_opr'] ?? null);
+    $dev_msg = $extras['i_dev'] ?? ($existing['i_dev'] ?? null);
     if ($existing) {
-        $stmt = db()->prepare('UPDATE info SET site_name = ?, video_tutorial_url = ?, login_message = ?, i_opr_repair = ?, i_opr_other = ?, i_dev_pw = ?, i_opr_min = ?, i_dev_min = ?, updated_at = NOW() WHERE id = ?');
-        $stmt->execute([$site_name, $video_url, $login_message, $opr_repair, $opr_other, $dev_pw, $opr_min, $dev_min, (int)$existing['id']]);
+        $stmt = db()->prepare('UPDATE info SET site_name = ?, video_tutorial_url = ?, login_message = ?, i_opr_repair = ?, i_opr_other = ?, i_dev_pw = ?, i_opr_min = ?, i_dev_min = ?, i_opr = ?, i_dev = ?, updated_at = NOW() WHERE id = ?');
+        $stmt->execute([$site_name, $video_url, $login_message, $opr_repair, $opr_other, $dev_pw, $opr_min, $dev_min, $opr_msg, $dev_msg, (int)$existing['id']]);
         return;
     }
-    $stmt = db()->prepare('INSERT INTO info (site_name, video_tutorial_url, login_message, i_opr_repair, i_opr_other, i_dev_pw, i_opr_min, i_dev_min, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())');
-    $stmt->execute([$site_name, $video_url, $login_message, $opr_repair, $opr_other, $dev_pw, $opr_min, $dev_min]);
+    $stmt = db()->prepare('INSERT INTO info (site_name, video_tutorial_url, login_message, i_opr_repair, i_opr_other, i_dev_pw, i_opr_min, i_dev_min, i_opr, i_dev, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())');
+    $stmt->execute([$site_name, $video_url, $login_message, $opr_repair, $opr_other, $dev_pw, $opr_min, $dev_min, $opr_msg, $dev_msg]);
 }
 
 function get_office_name_for_user(array $user): string

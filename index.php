@@ -162,8 +162,26 @@ if ($action === 'csv_import') {
                 $skipped++;
                 continue;
             }
-            $stmt = db()->prepare('INSERT INTO ministries (name, created_at) VALUES (?, NOW())');
-            $stmt->execute([$name]);
+            $get_int = function (string $key, int $default) use ($data): int {
+                if (!array_key_exists($key, $data)) {
+                    return $default;
+                }
+                $raw = trim((string)($data[$key] ?? ''));
+                if ($raw === '' || strcasecmp($raw, 'NULL') === 0) {
+                    return $default;
+                }
+                return (int)$raw;
+            };
+            $vis_opr = $get_int('vis_opr', 1);
+            $vis_dev = $get_int('vis_dev', 1);
+            $inuse_status = $get_int('inuse_status', 1);
+            $def_opr = $get_int('def_opr', 0);
+            $def_dev = $get_int('def_dev', 0);
+            $def_opr_sl = $get_int('def_opr_sl', 0);
+            $def_dev_sl = $get_int('def_dev_sl', 0);
+
+            $stmt = db()->prepare('INSERT INTO ministries (name, vis_opr, vis_dev, inuse_status, def_opr, def_dev, def_opr_sl, def_dev_sl, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())');
+            $stmt->execute([$name, $vis_opr, $vis_dev, $inuse_status, $def_opr, $def_dev, $def_opr_sl, $def_dev_sl]);
         } elseif ($type === 'circles') {
             $stmt = db()->prepare('INSERT INTO circles (office_name, office_address, office_type, zone_id, created_at) VALUES (?, ?, ?, ?, NOW())');
             $stmt->execute([
@@ -480,7 +498,7 @@ if ($action === 'save_interface') {
     }
 
     $extras = [];
-    $extra_keys = ['site_name', 'i_opr_repair', 'i_opr_other', 'i_dev_pw', 'i_opr_min', 'i_dev_min'];
+    $extra_keys = ['site_name', 'i_opr_repair', 'i_opr_other', 'i_dev_pw', 'i_opr_min', 'i_dev_min', 'i_opr', 'i_dev'];
     foreach ($extra_keys as $key) {
         if (array_key_exists($key, $_POST)) {
             $value = input_str($key);

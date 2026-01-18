@@ -167,6 +167,48 @@ if ($scope === 'latest') {
     $stmt = db()->prepare($sql);
     $stmt->execute($params);
     $all_rows = $stmt->fetchAll();
+    if ($include_ministry) {
+        $defaults = $table === 'operational'
+            ? get_ministries_for_budget('opr', true)
+            : get_ministries_for_budget('dev', true);
+        if ($defaults && $division_list) {
+            $existing = [];
+            foreach ($all_rows as $row) {
+                $div_id = (int)($row['division_id'] ?? 0);
+                $min_id = (int)($row['ministry_id'] ?? 0);
+                if ($div_id > 0 && $min_id > 0) {
+                    $existing[$div_id][$min_id] = true;
+                }
+            }
+            foreach ($division_list as $div) {
+                $div_id = (int)($div['id'] ?? 0);
+                if ($div_id <= 0) {
+                    continue;
+                }
+                foreach ($defaults as $ministry) {
+                    $min_id = (int)$ministry['id'];
+                    if (!empty($existing[$div_id][$min_id])) {
+                        continue;
+                    }
+                    $all_rows[] = [
+                        'division_id' => $div_id,
+                        'office_name' => $div['office_name'] ?? $office_name,
+                        'ministry_id' => $min_id,
+                        'ministry_name' => $ministry['name'] ?? '',
+                        'fiscal_years' => $fy['fiscal_years'] ?? '',
+                        'month_val' => 0,
+                        'pkg' => 0,
+                        'est' => 0,
+                        'pkg_live' => 0,
+                        'pkg_eval' => 0,
+                        'pkg_cont' => 0,
+                        'cont' => 0,
+                        'created_at' => '',
+                    ];
+                }
+            }
+        }
+    }
     foreach ($all_rows as $row) {
         $entry = [
             'fiscal_years' => $row['fiscal_years'],

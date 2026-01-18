@@ -62,6 +62,12 @@ $info = get_info_row();
         <label>Development Budget (Other than MoHPW)
             <textarea name="i_dev_min" rows="3"><?= e((string)($info['i_dev_min'] ?? '')); ?></textarea>
         </label>
+        <label>Operational Budget (Overall)
+            <textarea name="i_opr" rows="3"><?= e((string)($info['i_opr'] ?? '')); ?></textarea>
+        </label>
+        <label>Development Budget (Overall)
+            <textarea name="i_dev" rows="3"><?= e((string)($info['i_dev'] ?? '')); ?></textarea>
+        </label>
         <button type="submit">Save</button>
     </form>
 </section>
