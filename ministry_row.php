@@ -9,8 +9,8 @@ if (!is_division_user()) {
 }
 
 $table = request_str('table');
-$ministry_id = input_int('ministry_id');
-$fy_id = input_int('fy_id');
+$ministry_id = (int)request_str('ministry_id', '0');
+$fy_id = (int)request_str('fy_id', '0');
 
 if (!in_array($table, ['operational', 'development'], true) || $ministry_id <= 0) {
     http_response_code(400);
