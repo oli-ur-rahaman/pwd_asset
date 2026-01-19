@@ -1,7 +1,11 @@
 <div class="card card-actions">
     <?php $current = current_user(); ?>
     <?php $is_office_type4 = (int)($current['office_type'] ?? 0) === 4; ?>
-    <div class="card-actions-bar">
+    <div class="card-head">
+        <?php if ($title !== ''): ?>
+            <h2><?= e($title); ?></h2>
+        <?php endif; ?>
+        <div class="card-actions-bar">
         <?php if (is_division_user() && $show_ministry_col): ?>
             <?php if ((int)($current['office_type'] ?? 0) === 4): ?>
                 <button type="button" class="icon-link" title="Add Ministry Row" aria-label="Add Ministry Row" data-ministry-list="<?= e($table); ?>">
@@ -40,10 +44,8 @@
             </svg>
         </button>
         <button type="button" class="icon-link" title="Information" aria-label="Information" data-modal="<?= e($info_modal); ?>">i</button>
+        </div>
     </div>
-    <?php if ($title !== ''): ?>
-        <h2><?= e($title); ?></h2>
-    <?php endif; ?>
     <div class="table-wrap">
         <table>
             <thead>

@@ -231,31 +231,6 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
 
-        const filterBar = document.querySelector('.sticky-filters');
-        const spacer = document.getElementById('filter-bar-spacer');
-        if (filterBar && spacer) {
-            let stickyStart = filterBar.getBoundingClientRect().top + window.scrollY;
-            const updateStickyBar = () => {
-                if (window.scrollY >= stickyStart) {
-                    if (!filterBar.classList.contains('is-sticky')) {
-                        filterBar.classList.add('is-sticky');
-                        spacer.style.height = filterBar.offsetHeight + 'px';
-                    }
-                } else {
-                    filterBar.classList.remove('is-sticky');
-                    spacer.style.height = '0px';
-                }
-            };
-            const recalcStickyStart = () => {
-                if (!filterBar.classList.contains('is-sticky')) {
-                    stickyStart = filterBar.getBoundingClientRect().top + window.scrollY;
-                }
-                updateStickyBar();
-            };
-            updateStickyBar();
-            window.addEventListener('scroll', updateStickyBar);
-            window.addEventListener('resize', recalcStickyStart);
-        }
     }
 
     const usersFilters = document.getElementById('users-filters');
@@ -372,6 +347,34 @@ document.addEventListener('DOMContentLoaded', () => {
 
         filterUserCircles();
         filterUserDivisions();
+    }
+
+    const stickyCards = document.querySelectorAll('.card.card-actions');
+    if (stickyCards.length) {
+        stickyCards.forEach((card) => {
+            const head = card.querySelector('.card-head');
+            if (!head) {
+                return;
+            }
+            const styles = window.getComputedStyle(head);
+            const marginTop = parseFloat(styles.marginTop) || 0;
+            const marginBottom = parseFloat(styles.marginBottom) || 0;
+            const height = head.offsetHeight + marginTop + marginBottom;
+            card.style.setProperty('--card-sticky-top', `${height}px`);
+        });
+        window.addEventListener('resize', () => {
+            stickyCards.forEach((card) => {
+                const head = card.querySelector('.card-head');
+                if (!head) {
+                    return;
+                }
+                const styles = window.getComputedStyle(head);
+                const marginTop = parseFloat(styles.marginTop) || 0;
+                const marginBottom = parseFloat(styles.marginBottom) || 0;
+                const height = head.offsetHeight + marginTop + marginBottom;
+                card.style.setProperty('--card-sticky-top', `${height}px`);
+            });
+        });
     }
 
     const graphModal = document.getElementById('graph-modal');
@@ -1006,6 +1009,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 const name = (btn.getAttribute('data-ministry-name') || '').toLowerCase();
                 btn.style.display = name.includes(query) ? '' : 'none';
             });
+        });
+    });
+
+    document.querySelectorAll('.jump-btn').forEach((button) => {
+        button.addEventListener('click', () => {
+            const targetId = button.getAttribute('data-jump-target');
+            if (!targetId) {
+                return;
+            }
+            const target = document.getElementById(targetId);
+            if (!target) {
+                return;
+            }
+            target.scrollIntoView({ behavior: 'smooth', block: 'start' });
         });
     });
 

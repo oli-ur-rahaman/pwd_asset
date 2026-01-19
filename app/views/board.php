@@ -278,8 +278,7 @@ $render_card = function (string $title, string $table, string $edit_modal, strin
 </section>
 
 <?php if (!$is_division): ?>
-    <div id="filter-bar-spacer" class="filter-bar-spacer" aria-hidden="true"></div>
-    <section class="card sticky-filters">
+    <section class="card">
         <h2>Filters</h2>
         <form method="get" action="index.php" id="board-filters" class="grid board-filters-grid">
             <input type="hidden" name="page" value="board">
@@ -480,7 +479,7 @@ $render_card = function (string $title, string $table, string $edit_modal, strin
     ?>
 
     <?php if ($budget_type_filter !== 'development' && $view_mode === 'ministry'): ?>
-        <section class="card card-plain section-heading section-heading-tight">
+        <section class="card card-plain section-heading section-heading-tight" id="operational-heading">
             <h2 class="center">Operational Budget</h2>
         </section>
         <section class="board-grid">
@@ -502,7 +501,7 @@ $render_card = function (string $title, string $table, string $edit_modal, strin
     <?php endif; ?>
 
     <?php if ($budget_type_filter !== 'operational' && $view_mode === 'ministry'): ?>
-        <section class="card card-plain section-heading section-heading-tight">
+        <section class="card card-plain section-heading section-heading-tight" id="development-heading">
             <h2 class="center">Development Budget</h2>
         </section>
         <section class="board-grid">
@@ -524,7 +523,7 @@ $render_card = function (string $title, string $table, string $edit_modal, strin
     <?php endif; ?>
 
     <?php if ($budget_type_filter !== 'development' && $view_mode === 'division'): ?>
-        <section class="card card-plain section-heading section-heading-tight">
+        <section class="card card-plain section-heading section-heading-tight" id="operational-heading">
             <h2 class="center">Operational Budget</h2>
         </section>
         <section class="board-grid">
@@ -555,7 +554,7 @@ $render_card = function (string $title, string $table, string $edit_modal, strin
     <?php endif; ?>
 
     <?php if ($budget_type_filter !== 'operational' && $view_mode === 'division'): ?>
-        <section class="card card-plain section-heading section-heading-tight">
+        <section class="card card-plain section-heading section-heading-tight" id="development-heading">
             <h2 class="center">Development Budget</h2>
         </section>
         <section class="board-grid">
@@ -585,7 +584,7 @@ $render_card = function (string $title, string $table, string $edit_modal, strin
         </section>
     <?php endif; ?>
 <?php else: ?>
-    <section class="card card-plain section-heading section-heading-tight">
+    <section class="card card-plain section-heading section-heading-tight" id="operational-heading">
         <h2 class="center">Operational Budget</h2>
     </section>
     <div class="operational-budget-card" data-table="operational" data-fy-id="<?= e((string)($fy['id'] ?? 0)); ?>">
@@ -594,7 +593,7 @@ $render_card = function (string $title, string $table, string $edit_modal, strin
     ]); ?>
     </div>
 
-    <section class="card card-plain section-heading section-heading-tight">
+    <section class="card card-plain section-heading section-heading-tight" id="development-heading">
         <h2 class="center">Development Budget</h2>
     </section>
     <div class="operational-budget-card" data-table="development" data-fy-id="<?= e((string)($fy['id'] ?? 0)); ?>">
@@ -1220,5 +1219,13 @@ $render_card = function (string $title, string $table, string $edit_modal, strin
             <button type="button" class="modal-close" data-close="info-dev-min">Close</button>
         </div>
     </div>
+</div>
+<div class="jump-buttons" aria-label="Jump to budget sections">
+    <button type="button" class="jump-btn" data-jump-target="operational-heading" data-tooltip="Operational Budget" aria-label="Go to Operational Budget">
+        O
+    </button>
+    <button type="button" class="jump-btn" data-jump-target="development-heading" data-tooltip="Development Budget" aria-label="Go to Development Budget">
+        D
+    </button>
 </div>
 <?php require __DIR__ . '/footer.php'; ?>
