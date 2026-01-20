@@ -34,6 +34,8 @@ input, select, textarea { padding: 8px; border: 1px solid #cbd5e1; border-radius
 button { padding: 8px 16px; background: #0f3d5e; color: #fff; border: none; border-radius: 4px; cursor: pointer; }
 .profile-form input { padding: 6px 8px; font-size: 13px; width: 25vw; min-width: 220px; }
 .btn-small { padding: 6px 12px; font-size: 13px; align-self: start; width: 10vw; min-width: 140px; }
+.btn-danger { background: #c02626; }
+.btn-danger:hover { background: #a11e1e; }
 .small-input { padding: 6px 8px; font-size: 12px; width: 180px; }
 .table-wrap { overflow-x: auto; overflow-y: visible; }
 table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 14px; }

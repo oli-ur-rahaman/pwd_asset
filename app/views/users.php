@@ -147,6 +147,7 @@ $users = array_values(array_filter($users, function ($u) use ($role_filter, $zon
                     <th>Email ID</th>
                     <th>Office Name</th>
                     <th>Officer Name</th>
+                    <th>Status</th>
                     <th>New Password</th>
                     <th>Edit User</th>
                     <th>Reset Pass</th>
@@ -160,6 +161,18 @@ $users = array_values(array_filter($users, function ($u) use ($role_filter, $zon
                         <td><?= e($user_row['email_id']); ?></td>
                         <td><?= e(user_office_name($user_row, $zone_by_id, $circle_by_id, $division_by_id)); ?></td>
                         <td><?= e((string)($user_row['officer_name'] ?? '')); ?></td>
+                        <td>
+                            <form method="post" action="index.php" class="inline-form">
+                                <?= csrf_input(); ?>
+                                <input type="hidden" name="action" value="toggle_user_status">
+                                <input type="hidden" name="user_id" value="<?= e((string)$user_row['id']); ?>">
+                                <?php $is_active = (int)($user_row['active_status'] ?? 1) === 1; ?>
+                                <input type="hidden" name="active_status" value="<?= $is_active ? '0' : '1'; ?>">
+                                <button type="submit" class="btn-small <?= $is_active ? '' : 'btn-danger'; ?>">
+                                    <?= $is_active ? 'Deactivate' : 'Activate'; ?>
+                                </button>
+                            </form>
+                        </td>
                         <td>
                             <form method="post" action="index.php" class="inline-form">
                                 <?= csrf_input(); ?>

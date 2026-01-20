@@ -19,6 +19,9 @@ function login_user(string $email, string $password): bool
     if (!$user || !password_verify($password, $user['password'])) {
         return false;
     }
+    if (isset($user['active_status']) && (int)$user['active_status'] === 0) {
+        return false;
+    }
     session_regenerate_id(true);
     $_SESSION['user'] = $user;
     return true;

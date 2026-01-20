@@ -81,6 +81,15 @@ if ($office_role === 2 || $office_role === 3 || ($office_role === 1 && $office_t
 } else {
     $allowed_divisions = get_divisions_for_user($user);
 }
+$apply_active_filter = $office_role === 2 || $office_role === 3 || ($office_role === 1 && ($office_type === 2 || $office_type === 3));
+if ($apply_active_filter) {
+    $active_division_ids = db()->query('SELECT DISTINCT division_id FROM users WHERE active_status = 1 AND division_id IS NOT NULL')->fetchAll(PDO::FETCH_COLUMN);
+    $active_division_ids = array_map('intval', $active_division_ids);
+    $allowed_divisions = array_values(array_filter(
+        $allowed_divisions,
+        fn($d) => in_array((int)($d['id'] ?? 0), $active_division_ids, true)
+    ));
+}
 $allowed_division_ids = array_map(fn($d) => (int)$d['id'], $allowed_divisions);
 $graph_divisions = array_values(array_filter(
     $all_divisions,

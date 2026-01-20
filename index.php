@@ -380,6 +380,33 @@ if ($action === 'reset_user_password') {
     redirect('index.php?page=users');
 }
 
+if ($action === 'toggle_user_status') {
+    require_login();
+    if (!is_superadmin()) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
+    if (!csrf_validate($_POST['csrf_token'] ?? null)) {
+        http_response_code(400);
+        exit('Invalid CSRF token.');
+    }
+    $user_id = input_int('user_id');
+    $active_status = input_int('active_status', 1);
+    if ($user_id <= 0) {
+        flash('error', 'Invalid user.');
+        redirect('index.php?page=users');
+    }
+    $current = current_user();
+    if ($current && (int)$current['id'] === $user_id && $active_status === 0) {
+        flash('error', 'You cannot deactivate your own account.');
+        redirect('index.php?page=users');
+    }
+    $stmt = db()->prepare('UPDATE users SET active_status = ?, updated_at = NOW() WHERE id = ?');
+    $stmt->execute([$active_status === 1 ? 1 : 0, $user_id]);
+    flash('success', $active_status === 1 ? 'User activated.' : 'User deactivated.');
+    redirect('index.php?page=users');
+}
+
 if ($action === 'update_user') {
     require_login();
     if (!is_superadmin()) {
