@@ -22,6 +22,8 @@
             <a href="index.php?page=users">Users</a>
         <?php endif; ?>
         <a href="index.php?page=profile">Profile</a>
+        <?php $info = get_info_row(); ?>
+        <a href="<?= e((string)($info['video_tutorial_url'] ?? '#')); ?>" target="_blank" rel="noopener">Tutorial_video</a>
         <form method="post" action="index.php" class="logout-form">
             <?= csrf_input(); ?>
             <input type="hidden" name="action" value="logout">
