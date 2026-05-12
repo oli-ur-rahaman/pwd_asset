@@ -1,0 +1,7 @@
+Missing table in dump: development
+Missing table in dump: ministries
+Missing table in dump: operational
+Missing index in dump: dev_pw.idx_development_fy_div
+Missing column in dump: info.i_opr
+Missing column in dump: info.i_dev
+Missing index in dump: opr_repair.idx_revenue_fy_div

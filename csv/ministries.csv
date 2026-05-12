@@ -1,0 +1,52 @@
+﻿name,vis_opr,vis_dev,inuse_status,def_opr,def_dev,def_opr_sl,def_dev_sl
+Anti-Corruption Commission,1,1,1,0,0,0,0
+Bangladesh Parliament Secretariat,1,1,1,0,0,0,0
+Cabinet Division,1,1,1,0,0,0,0
+Election Commission Secretariat,1,1,1,0,0,0,0
+Ministry of Agriculture,1,1,1,0,0,0,0
+Ministry of chittagong Hill Tract's Affairs,1,1,1,0,0,0,0
+Ministry of Civil Aviation & Tourism,1,1,1,0,0,0,0
+Ministry of Commerce,1,1,1,0,0,0,0
+Ministry of Cultural Affairs,1,1,1,0,0,0,0
+Ministry of Defence,1,1,1,0,0,0,0
+Ministry of Disaster Management & Relief,1,1,1,0,0,0,0
+Ministry of Education,1,1,1,0,0,0,0
+Ministry of Energy Power and Minearal Resources,1,1,1,0,0,0,0
+Ministry of Environment  Forest and Climate Change,1,1,1,0,0,0,0
+Ministry of Expatriates' Welfare and Overseas Employment,1,1,1,0,0,0,0
+Ministry of Finance,1,1,1,0,0,0,0
+Ministry of Fisheries & Livestock,1,1,1,0,0,0,0
+Ministry of Food,1,1,1,0,0,0,0
+Ministry of Foreign Affairs,1,1,1,0,0,0,0
+Ministry of Health and Family Welfare,0,1,1,0,1,0,3
+Ministry of Home Affairs,1,1,1,0,1,0,2
+Ministry of Housing and Public Works,0,1,1,0,1,0,1
+Ministry of Industries,1,1,1,0,0,0,0
+Ministry of Information,1,1,1,0,0,0,0
+Ministry of Labour and Employment,1,1,1,0,0,0,0
+Ministry of Land,1,1,1,0,0,0,0
+Ministry of Law Justice and Parliamentary Affairs,1,1,1,0,0,0,0
+Ministry of Liberation War Affairs,1,1,1,0,0,0,0
+Ministry of Local Government Rural Development and Co-operatives,1,1,1,0,0,0,0
+Ministry of Planning,1,1,1,0,0,0,0
+Ministry of Post Telecommunications & Information Technology,1,1,1,0,0,0,0
+Ministry of Primary and Mass Education,1,1,1,0,0,0,0
+Ministry of Public Administration,1,1,1,0,0,0,0
+Ministry of Railways,1,1,1,0,0,0,0
+Ministry of Religious Affairs,1,1,1,0,0,0,0
+Ministry of Road Transport and Bridges,1,1,1,0,0,0,0
+Ministry of Science and Technology,1,1,1,0,0,0,0
+Ministry of Shipping,1,1,1,0,0,0,0
+Ministry of Social Welfare,1,1,1,0,0,0,0
+Ministry of Textiles & Jute,1,1,1,0,0,0,0
+Ministry of Water Resources,1,1,1,0,0,0,0
+Ministry of Women and Children Affairs,1,1,1,0,0,0,0
+Ministry of Youth & Sports,1,1,1,0,0,0,0
+Office of the Comptroller and Auditor General of Bangladesh,1,1,1,0,0,0,0
+President's Office,1,1,1,0,0,0,0
+Prime Minister's Office,1,1,1,0,0,0,0
+Supreme Court of Bangladesh,1,1,1,0,0,0,0
+PWD Repair,1,1,1,1,0,1,0
+PWD other than Repair,1,1,1,1,0,2,0
+Health Education,1,1,1,1,0,3,0
+Health Service,1,1,1,1,0,4,0
