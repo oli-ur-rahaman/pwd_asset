@@ -22,8 +22,11 @@ require __DIR__ . '/db.php';
 require __DIR__ . '/auth.php';
 require __DIR__ . '/data.php';
 require __DIR__ . '/exports.php';
+require __DIR__ . '/asset.php';
 
 $autoload = __DIR__ . '/../../vendor/autoload.php';
 if (file_exists($autoload)) {
     require $autoload;
 }
+
+ensure_asset_schema();

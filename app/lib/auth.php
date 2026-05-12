@@ -73,5 +73,5 @@ function is_chief_user(): bool
 
 function can_view_logs(): bool
 {
-    return is_division_user() || is_superadmin();
+    return current_user() !== null;
 }

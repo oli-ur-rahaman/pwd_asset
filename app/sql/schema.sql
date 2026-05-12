@@ -3,6 +3,7 @@ CREATE TABLE IF NOT EXISTS zones (
     office_name VARCHAR(255) NOT NULL,
     office_address VARCHAR(255) DEFAULT NULL,
     office_type TINYINT NOT NULL DEFAULT 2,
+    active_status TINYINT NOT NULL DEFAULT 1,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -13,6 +14,7 @@ CREATE TABLE IF NOT EXISTS circles (
     office_address VARCHAR(255) DEFAULT NULL,
     office_type TINYINT NOT NULL DEFAULT 2,
     zone_id INT DEFAULT NULL,
+    active_status TINYINT NOT NULL DEFAULT 1,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT NULL,
     KEY idx_circles_zone (zone_id)
@@ -26,6 +28,7 @@ CREATE TABLE IF NOT EXISTS divisions (
     zone_id INT DEFAULT NULL,
     circle_id INT DEFAULT NULL,
     field_office TINYINT NOT NULL DEFAULT 1,
+    active_status TINYINT NOT NULL DEFAULT 1,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT NULL,
     KEY idx_divisions_zone (zone_id),
@@ -42,6 +45,7 @@ CREATE TABLE IF NOT EXISTS users (
     zone_id INT DEFAULT NULL,
     circle_id INT DEFAULT NULL,
     division_id INT DEFAULT NULL,
+    active_status TINYINT NOT NULL DEFAULT 1,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT NULL,
     KEY idx_users_zone (zone_id),
@@ -216,6 +220,122 @@ CREATE TABLE IF NOT EXISTS ministries (
     def_dev TINYINT NOT NULL DEFAULT 0,
     def_opr_sl INT NOT NULL DEFAULT 0,
     def_dev_sl INT NOT NULL DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS asset_categories (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    active_status TINYINT NOT NULL DEFAULT 1,
+    sort_order INT NOT NULL DEFAULT 0,
+    deleted_at DATETIME DEFAULT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT NULL,
+    UNIQUE KEY uniq_asset_categories_name (name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS asset_subcategories (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    category_id INT NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    active_status TINYINT NOT NULL DEFAULT 1,
+    sort_order INT NOT NULL DEFAULT 0,
+    deleted_at DATETIME DEFAULT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT NULL,
+    KEY idx_asset_subcategories_category (category_id),
+    UNIQUE KEY uniq_asset_subcategories_name (category_id, name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS asset_fields (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    field_key VARCHAR(100) NOT NULL,
+    label VARCHAR(255) NOT NULL,
+    data_type VARCHAR(20) NOT NULL,
+    is_required TINYINT NOT NULL DEFAULT 0,
+    is_displayed TINYINT NOT NULL DEFAULT 1,
+    is_import_enabled TINYINT NOT NULL DEFAULT 1,
+    active_status TINYINT NOT NULL DEFAULT 1,
+    sort_order INT NOT NULL DEFAULT 0,
+    deleted_at DATETIME DEFAULT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT NULL,
+    UNIQUE KEY uniq_asset_fields_key (field_key)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS asset_field_options (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    field_id INT NOT NULL,
+    option_value VARCHAR(255) NOT NULL,
+    option_label VARCHAR(255) NOT NULL,
+    sort_order INT NOT NULL DEFAULT 0,
+    active_status TINYINT NOT NULL DEFAULT 1,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT NULL,
+    KEY idx_asset_field_options_field (field_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS assets (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    asset_number VARCHAR(50) NOT NULL,
+    category_id INT NOT NULL,
+    subcategory_id INT NOT NULL,
+    office_type TINYINT NOT NULL,
+    office_id INT NOT NULL,
+    active_status TINYINT NOT NULL DEFAULT 1,
+    deleted_at DATETIME DEFAULT NULL,
+    created_by INT NOT NULL,
+    updated_by INT DEFAULT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT NULL,
+    UNIQUE KEY uniq_assets_number (asset_number),
+    KEY idx_assets_category (category_id),
+    KEY idx_assets_subcategory (subcategory_id),
+    KEY idx_assets_office (office_type, office_id),
+    KEY idx_assets_active (active_status, deleted_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS asset_values (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    asset_id INT NOT NULL,
+    field_id INT NOT NULL,
+    value_text TEXT DEFAULT NULL,
+    value_number DECIMAL(18,4) DEFAULT NULL,
+    value_date DATE DEFAULT NULL,
+    value_bool TINYINT DEFAULT NULL,
+    value_option VARCHAR(255) DEFAULT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT NULL,
+    UNIQUE KEY uniq_asset_values (asset_id, field_id),
+    KEY idx_asset_values_asset (asset_id),
+    KEY idx_asset_values_field (field_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS office_asset_declarations (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    office_type TINYINT NOT NULL,
+    office_id INT NOT NULL,
+    declared_status TINYINT NOT NULL DEFAULT 0,
+    declared_at DATETIME DEFAULT NULL,
+    declared_by INT DEFAULT NULL,
+    declared_officer_name VARCHAR(255) DEFAULT NULL,
+    reset_at DATETIME DEFAULT NULL,
+    reset_by INT DEFAULT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT NULL,
+    UNIQUE KEY uniq_asset_declaration (office_type, office_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS asset_import_batches (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    office_type TINYINT NOT NULL,
+    office_id INT NOT NULL,
+    uploaded_by INT NOT NULL,
+    original_filename VARCHAR(255) NOT NULL,
+    imported_count INT NOT NULL DEFAULT 0,
+    skipped_count INT NOT NULL DEFAULT 0,
+    status VARCHAR(20) NOT NULL DEFAULT 'pending',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

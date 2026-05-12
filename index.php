@@ -27,523 +27,554 @@ if ($action === 'logout') {
     redirect('index.php?page=login');
 }
 
-if ($action === 'add_record') {
-    require_login();
-    if (!is_division_user()) {
-        http_response_code(403);
-        exit('Not allowed.');
-    }
-    if (!csrf_validate($_POST['csrf_token'] ?? null)) {
-        http_response_code(400);
-        exit('Invalid CSRF token.');
-    }
-
-    $table = input_str('table');
-    if (!in_array($table, ['operational', 'development', 'opr_repair', 'opr_other', 'dev_pw', 'opr_other_min', 'dev_other_min'], true)) {
-        http_response_code(400);
-        exit('Invalid table.');
-    }
-
-    $user = current_user();
-    $fy = get_current_fy();
-    if (!$fy) {
-        http_response_code(400);
-        exit('No current fiscal year set.');
-    }
-
-    $month_val = input_int('month_val', 1);
-    if (!is_month_allowed($fy['fiscal_years'], $month_val)) {
-        flash('error', 'Selected month is beyond the current fiscal year month.');
-        redirect('index.php?page=board');
-    }
-
-    $data = [
-        'fy_id' => (int)$fy['id'],
-        'division_id' => (int)$user['division_id'],
-        'month_val' => $month_val,
-        'pkg' => input_int('pkg'),
-        'est' => input_float('est'),
-        'pkg_live' => input_int('pkg_live'),
-        'pkg_eval' => input_int('pkg_eval'),
-        'pkg_cont' => input_int('pkg_cont'),
-        'cont' => input_float('cont'),
-        'note' => input_str('note'),
-        'created_at' => date('Y-m-d H:i:s'),
-    ];
-    if (in_array($table, ['operational', 'development'], true)) {
-        $ministry_id = input_int('ministry_id');
-        if ($ministry_id <= 0) {
-            flash('error', 'Ministry is required.');
-            redirect('index.php?page=board');
-        }
-        $data['ministry_id'] = $ministry_id;
-    }
-
-    $record_id = insert_record($table, $data);
-    add_log((int)$user['id'], $table, $record_id, 'Added new entry.');
-
-    flash('success', 'Data saved.');
-    redirect('index.php?page=board');
-}
-
-if ($action === 'csv_import') {
-    require_login();
-    if (!is_superadmin()) {
-        http_response_code(403);
-        exit('Not allowed.');
-    }
-    if (!csrf_validate($_POST['csrf_token'] ?? null)) {
-        http_response_code(400);
-        exit('Invalid CSRF token.');
-    }
-
-    if (empty($_FILES['csv_file']['tmp_name'])) {
-        flash('error', 'CSV file is required.');
-        redirect('index.php?page=admin');
-    }
-
-    $type = input_str('import_type');
-    $handle = fopen($_FILES['csv_file']['tmp_name'], 'r');
-    if (!$handle) {
-        flash('error', 'Unable to read CSV.');
-        redirect('index.php?page=admin');
-    }
-
-    $headers = fgetcsv($handle);
-    if (!$headers) {
-        flash('error', 'Invalid CSV headers.');
-        redirect('index.php?page=admin');
-    }
-    $headers[0] = ltrim($headers[0], "\xEF\xBB\xBF");
-
-    $count = 0;
-    $skipped = 0;
-    $header_count = count($headers);
-    while (($row = fgetcsv($handle)) !== false) {
-        if (count($row) < $header_count) {
-            $row = array_pad($row, $header_count, '');
-        } elseif (count($row) > $header_count) {
-            $row = array_slice($row, 0, $header_count);
-        }
-        $data = array_combine($headers, $row);
-        $get_id = function (string $key) use ($data): ?int {
-            $raw = $data[$key] ?? '';
-            $raw = trim((string)$raw);
-            if ($raw === '' || strcasecmp($raw, 'NULL') === 0) {
-                return null;
-            }
-            $value = (int)$raw;
-            return $value > 0 ? $value : null;
-        };
-        $get_text = function (string $key) use ($data): ?string {
-            $raw = $data[$key] ?? null;
-            if ($raw === null) {
-                return null;
-            }
-            $value = trim((string)$raw);
-            if ($value === '' || strcasecmp($value, 'NULL') === 0) {
-                return null;
-            }
-            return $value;
-        };
-        if ($type === 'divisions') {
-            $stmt = db()->prepare('INSERT INTO divisions (office_name, office_address, office_type, zone_id, circle_id, field_office, created_at) VALUES (?, ?, ?, ?, ?, ?, NOW())');
-            $stmt->execute([
-                $get_text('office_name') ?? '',
-                $get_text('office_address'),
-                (int)($data['office_type'] ?? 2),
-                $get_id('zone_id'),
-                $get_id('circle_id'),
-                (int)($data['field_office'] ?? 1),
-            ]);
-        } elseif ($type === 'ministries') {
-            $name = $get_text('name');
-            if ($name === null || $name === '') {
-                $skipped++;
-                continue;
-            }
-            $get_int = function (string $key, int $default) use ($data): int {
-                if (!array_key_exists($key, $data)) {
-                    return $default;
-                }
-                $raw = trim((string)($data[$key] ?? ''));
-                if ($raw === '' || strcasecmp($raw, 'NULL') === 0) {
-                    return $default;
-                }
-                return (int)$raw;
-            };
-            $vis_opr = $get_int('vis_opr', 1);
-            $vis_dev = $get_int('vis_dev', 1);
-            $inuse_status = $get_int('inuse_status', 1);
-            $def_opr = $get_int('def_opr', 0);
-            $def_dev = $get_int('def_dev', 0);
-            $def_opr_sl = $get_int('def_opr_sl', 0);
-            $def_dev_sl = $get_int('def_dev_sl', 0);
-
-            $stmt = db()->prepare('INSERT INTO ministries (name, vis_opr, vis_dev, inuse_status, def_opr, def_dev, def_opr_sl, def_dev_sl, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())');
-            $stmt->execute([$name, $vis_opr, $vis_dev, $inuse_status, $def_opr, $def_dev, $def_opr_sl, $def_dev_sl]);
-        } elseif ($type === 'circles') {
-            $stmt = db()->prepare('INSERT INTO circles (office_name, office_address, office_type, zone_id, created_at) VALUES (?, ?, ?, ?, NOW())');
-            $stmt->execute([
-                $get_text('office_name') ?? '',
-                $get_text('office_address'),
-                (int)($data['office_type'] ?? 2),
-                $get_id('zone_id'),
-            ]);
-        } elseif ($type === 'zones') {
-            $stmt = db()->prepare('INSERT INTO zones (office_name, office_address, office_type, created_at) VALUES (?, ?, ?, NOW())');
-            $stmt->execute([
-                $get_text('office_name') ?? '',
-                $get_text('office_address'),
-                (int)($data['office_type'] ?? 2),
-            ]);
-        } elseif ($type === 'users') {
-            $email = $get_text('email_id');
-            if (!$email) {
-                $skipped++;
-                continue;
-            }
-            $exists = db()->prepare('SELECT id FROM users WHERE email_id = ? LIMIT 1');
-            $exists->execute([$email]);
-            if ($exists->fetchColumn()) {
-                $skipped++;
-                continue;
-            }
-
-            $password = $data['password'] ?? 'changeme';
-            $stmt = db()->prepare('INSERT INTO users (email_id, officer_name, password, office_type, office_role, zone_id, circle_id, division_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())');
-            $stmt->execute([
-                $email,
-                $get_text('officer_name'),
-                password_hash($password, PASSWORD_DEFAULT),
-                (int)($data['office_type'] ?? 4),
-                (int)($data['office_role'] ?? 1),
-                $get_id('zone_id'),
-                $get_id('circle_id'),
-                $get_id('division_id'),
-            ]);
-        }
-        $count++;
-    }
-    fclose($handle);
-
-    $message = 'Imported ' . $count . ' rows.';
-    if ($skipped > 0) {
-        $message .= ' Skipped ' . $skipped . ' rows (missing or duplicate email).';
-    }
-    flash('success', $message);
-    redirect('index.php?page=admin');
-}
-
-if ($action === 'add_fy') {
-    require_login();
-    if (!is_superadmin()) {
-        http_response_code(403);
-        exit('Not allowed.');
-    }
-    if (!csrf_validate($_POST['csrf_token'] ?? null)) {
-        http_response_code(400);
-        exit('Invalid CSRF token.');
-    }
-
-    $fy_label = input_str('fiscal_years');
-    $make_current = input_int('make_current') === 1;
-    if ($fy_label === '') {
-        flash('error', 'Fiscal year is required.');
-        redirect('index.php?page=admin');
-    }
-
-    if ($make_current) {
-        db()->exec('UPDATE fy SET now_flag = 0');
-    }
-    $stmt = db()->prepare('INSERT INTO fy (fiscal_years, now_flag, created_at) VALUES (?, ?, NOW())');
-    $stmt->execute([$fy_label, $make_current ? 1 : 0]);
-    flash('success', 'Fiscal year added.');
-    redirect('index.php?page=admin');
-}
-
-if ($action === 'set_current_fy') {
-    require_login();
-    if (!is_superadmin()) {
-        http_response_code(403);
-        exit('Not allowed.');
-    }
-    if (!csrf_validate($_POST['csrf_token'] ?? null)) {
-        http_response_code(400);
-        exit('Invalid CSRF token.');
-    }
-    $fy_id = input_int('fy_id');
-    if ($fy_id <= 0) {
-        flash('error', 'Invalid fiscal year.');
-        redirect('index.php?page=admin');
-    }
-    db()->exec('UPDATE fy SET now_flag = 0');
-    $stmt = db()->prepare('UPDATE fy SET now_flag = 1 WHERE id = ?');
-    $stmt->execute([$fy_id]);
-    flash('success', 'Current fiscal year updated.');
-    redirect('index.php?page=admin');
-}
-
-if ($action === 'create_user') {
-    require_login();
-    if (!is_superadmin()) {
-        http_response_code(403);
-        exit('Not allowed.');
-    }
-    if (!csrf_validate($_POST['csrf_token'] ?? null)) {
-        http_response_code(400);
-        exit('Invalid CSRF token.');
-    }
-
-    $email = input_str('email_id');
-    $name = input_str('officer_name');
-    $password = input_str('password');
-    $office_type = input_int('office_type');
-    $office_role = input_int('office_role');
-    $office_role = input_int('office_role', 1);
-    $zone_id = input_int('zone_id');
-    $circle_id = input_int('circle_id');
-    $division_id = input_int('division_id');
-
-    if ($email === '' || $password === '') {
-        flash('error', 'Email and password are required.');
-        redirect('index.php?page=admin');
-    }
-
-    $stmt = db()->prepare('INSERT INTO users (email_id, officer_name, password, office_type, office_role, zone_id, circle_id, division_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())');
-    $stmt->execute([
-        $email,
-        $name,
-        password_hash($password, PASSWORD_DEFAULT),
-        $office_type,
-        $office_role,
-        $zone_id,
-        $circle_id,
-        $division_id,
-    ]);
-
-    flash('success', 'User created.');
-    redirect('index.php?page=admin');
-}
-
-if ($action === 'update_profile') {
-    require_login();
-    if (!csrf_validate($_POST['csrf_token'] ?? null)) {
-        http_response_code(400);
-        exit('Invalid CSRF token.');
-    }
-
-    $name = input_str('officer_name');
-    $password = input_str('password');
-    $password_confirm = input_str('password_confirm');
-    $user = current_user();
-    if ($name === '') {
-        $name = $user['officer_name'] ?? '';
-    }
-
-    if ($password !== '') {
-        if ($password !== $password_confirm) {
-            flash('error', 'Passwords do not match.');
-            redirect('index.php?page=profile');
-        }
-        $stmt = db()->prepare('UPDATE users SET officer_name = ?, password = ?, updated_at = NOW() WHERE id = ?');
-        $stmt->execute([$name, password_hash($password, PASSWORD_DEFAULT), (int)$user['id']]);
-    } else {
-        $stmt = db()->prepare('UPDATE users SET officer_name = ?, updated_at = NOW() WHERE id = ?');
-        $stmt->execute([$name, (int)$user['id']]);
-    }
-
-    $_SESSION['user']['officer_name'] = $name;
-    flash('success', 'Profile updated.');
-    redirect('index.php?page=profile');
-}
-
-if ($action === 'reset_user_password') {
-    require_login();
-    if (!is_superadmin()) {
-        http_response_code(403);
-        exit('Not allowed.');
-    }
-    if (!csrf_validate($_POST['csrf_token'] ?? null)) {
-        http_response_code(400);
-        exit('Invalid CSRF token.');
-    }
-    $user_id = input_int('user_id');
-    $new_password = input_str('new_password');
-    if ($user_id <= 0 || $new_password === '') {
-        flash('error', 'User and password are required.');
-        redirect('index.php?page=users');
-    }
-    $stmt = db()->prepare('UPDATE users SET password = ?, updated_at = NOW() WHERE id = ?');
-    $stmt->execute([password_hash($new_password, PASSWORD_DEFAULT), $user_id]);
-    flash('success', 'Password reset.');
-    redirect('index.php?page=users');
-}
-
-if ($action === 'toggle_user_status') {
-    require_login();
-    if (!is_superadmin()) {
-        http_response_code(403);
-        exit('Not allowed.');
-    }
-    if (!csrf_validate($_POST['csrf_token'] ?? null)) {
-        http_response_code(400);
-        exit('Invalid CSRF token.');
-    }
-    $user_id = input_int('user_id');
-    $active_status = input_int('active_status', 1);
-    if ($user_id <= 0) {
-        flash('error', 'Invalid user.');
-        redirect('index.php?page=users');
-    }
-    $current = current_user();
-    if ($current && (int)$current['id'] === $user_id && $active_status === 0) {
-        flash('error', 'You cannot deactivate your own account.');
-        redirect('index.php?page=users');
-    }
-    $stmt = db()->prepare('UPDATE users SET active_status = ?, updated_at = NOW() WHERE id = ?');
-    $stmt->execute([$active_status === 1 ? 1 : 0, $user_id]);
-    flash('success', $active_status === 1 ? 'User activated.' : 'User deactivated.');
-    redirect('index.php?page=users');
-}
-
-if ($action === 'update_user') {
-    require_login();
-    if (!is_superadmin()) {
-        http_response_code(403);
-        exit('Not allowed.');
-    }
-    if (!csrf_validate($_POST['csrf_token'] ?? null)) {
-        http_response_code(400);
-        exit('Invalid CSRF token.');
-    }
-    $user_id = input_int('user_id');
-    $email = input_str('email_id');
-    $name = input_str('officer_name');
-    $office_role = input_int('office_role', 1);
-    $office_type = input_int('office_type', 1);
-    $zone_id = input_int('zone_id');
-    $circle_id = input_int('circle_id');
-    $division_id = input_int('division_id');
-
-    if ($user_id <= 0 || $email === '') {
-        flash('error', 'User and email are required.');
-        redirect('index.php?page=users');
-    }
-
-    $stmt = db()->prepare('SELECT id FROM users WHERE email_id = ? AND id <> ?');
-    $stmt->execute([$email, $user_id]);
-    if ($stmt->fetchColumn()) {
-        flash('error', 'Email already exists.');
-        redirect('index.php?page=users');
-    }
-
-    if ($office_role === 2 || $office_role === 3) {
-        $office_type = 1;
-        $zone_id = 0;
-        $circle_id = 0;
-        $division_id = 0;
-    } else {
-        $office_role = 1;
-        if ($division_id > 0) {
-            $stmt = db()->prepare('SELECT zone_id, circle_id FROM divisions WHERE id = ? LIMIT 1');
-            $stmt->execute([$division_id]);
-            $division = $stmt->fetch();
-            if (!$division) {
-                flash('error', 'Invalid division selection.');
-                redirect('index.php?page=users');
-            }
-            $circle_id = (int)($division['circle_id'] ?? 0);
-            $zone_id = (int)($division['zone_id'] ?? 0);
-            $office_type = 4;
-        } elseif ($circle_id > 0) {
-            $stmt = db()->prepare('SELECT zone_id FROM circles WHERE id = ? LIMIT 1');
-            $stmt->execute([$circle_id]);
-            $circle = $stmt->fetch();
-            if (!$circle) {
-                flash('error', 'Invalid circle selection.');
-                redirect('index.php?page=users');
-            }
-            $zone_id = (int)($circle['zone_id'] ?? 0);
-            $office_type = 3;
-            $division_id = 0;
-        } elseif ($zone_id > 0) {
-            $stmt = db()->prepare('SELECT id FROM zones WHERE id = ? LIMIT 1');
-            $stmt->execute([$zone_id]);
-            if (!$stmt->fetchColumn()) {
-                flash('error', 'Invalid zone selection.');
-                redirect('index.php?page=users');
-            }
-            $office_type = 2;
-            $circle_id = 0;
-            $division_id = 0;
-        } else {
-            $office_type = 1;
-            $circle_id = 0;
-            $division_id = 0;
-            $zone_id = 0;
-        }
-    }
-
-    $stmt = db()->prepare('UPDATE users SET email_id = ?, officer_name = ?, office_role = ?, office_type = ?, zone_id = ?, circle_id = ?, division_id = ?, updated_at = NOW() WHERE id = ?');
-    $stmt->execute([
-        $email,
-        $name === '' ? null : $name,
-        $office_role,
-        $office_type,
-        $zone_id > 0 ? $zone_id : null,
-        $circle_id > 0 ? $circle_id : null,
-        $division_id > 0 ? $division_id : null,
-        $user_id,
-    ]);
-    flash('success', 'User updated.');
-    redirect('index.php?page=users');
-}
-
-if ($action === 'save_interface') {
-    require_login();
-    if (!is_superadmin()) {
-        http_response_code(403);
-        exit('Not allowed.');
-    }
-    if (!csrf_validate($_POST['csrf_token'] ?? null)) {
-        http_response_code(400);
-        exit('Invalid CSRF token.');
-    }
-    $existing = get_info_row();
-    $has_video = array_key_exists('video_tutorial_url', $_POST);
-    $has_message = array_key_exists('login_message', $_POST);
-
-    $video_url = $has_video ? input_str('video_tutorial_url') : ($existing['video_tutorial_url'] ?? null);
-    $login_message = $has_message ? input_str('login_message') : ($existing['login_message'] ?? null);
-
-    if ($has_video && $video_url === '') {
-        $video_url = null;
-    }
-    if ($has_message && $login_message === '') {
-        $login_message = null;
-    }
-
-    $extras = [];
-    $extra_keys = ['site_name', 'i_opr_repair', 'i_opr_other', 'i_dev_pw', 'i_opr_min', 'i_dev_min', 'i_opr', 'i_dev'];
-    foreach ($extra_keys as $key) {
-        if (array_key_exists($key, $_POST)) {
-            $value = input_str($key);
-            $extras[$key] = $value === '' ? null : $value;
-        }
-    }
-
-    save_info_row($video_url, $login_message, $extras);
-    flash('success', 'Interface settings saved.');
-    redirect('index.php?page=interface');
-}
-
 if ($page === 'login') {
     require __DIR__ . '/app/views/login.php';
     exit;
 }
 
 require_login();
+
+if ($action !== null && !csrf_validate($_POST['csrf_token'] ?? null)) {
+    http_response_code(400);
+    exit('Invalid CSRF token.');
+}
+
+if ($action === 'create_asset_category') {
+    if (!is_superadmin()) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
+    $name = input_str('name');
+    if ($name === '') {
+        flash('error', 'Category name is required.');
+    } else {
+        create_asset_category($name);
+        flash('success', 'Category created.');
+    }
+    redirect('index.php?page=admin');
+}
+
+if ($action === 'update_asset_category') {
+    if (!is_superadmin()) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
+    $id = input_int('category_id');
+    $name = input_str('name');
+    if ($id <= 0 || $name === '') {
+        flash('error', 'Category update failed.');
+    } else {
+        update_asset_category($id, $name);
+        flash('success', 'Category updated.');
+    }
+    redirect('index.php?page=admin');
+}
+
+if ($action === 'toggle_asset_category') {
+    if (!is_superadmin()) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
+    set_asset_category_status(input_int('category_id'), input_int('active_status', 1));
+    flash('success', 'Category status updated.');
+    redirect('index.php?page=admin');
+}
+
+if ($action === 'delete_asset_category') {
+    if (!is_superadmin()) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
+    if (!delete_asset_category(input_int('category_id'))) {
+        flash('error', 'Used categories cannot be deleted. Disable it instead.');
+    } else {
+        flash('success', 'Category deleted.');
+    }
+    redirect('index.php?page=admin');
+}
+
+if ($action === 'create_asset_subcategory') {
+    if (!is_superadmin()) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
+    $categoryId = input_int('category_id');
+    $name = input_str('name');
+    if ($categoryId <= 0 || $name === '') {
+        flash('error', 'Sub-category তথ্য অসম্পূর্ণ।');
+    } else {
+        create_asset_subcategory($categoryId, $name);
+        flash('success', 'Sub-category created.');
+    }
+    redirect('index.php?page=admin');
+}
+
+if ($action === 'update_asset_subcategory') {
+    if (!is_superadmin()) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
+    $id = input_int('subcategory_id');
+    $categoryId = input_int('category_id');
+    $name = input_str('name');
+    if ($id <= 0 || $categoryId <= 0 || $name === '') {
+        flash('error', 'Sub-category update failed.');
+    } else {
+        update_asset_subcategory($id, $categoryId, $name);
+        flash('success', 'Sub-category updated.');
+    }
+    redirect('index.php?page=admin');
+}
+
+if ($action === 'toggle_asset_subcategory') {
+    if (!is_superadmin()) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
+    set_asset_subcategory_status(input_int('subcategory_id'), input_int('active_status', 1));
+    flash('success', 'Sub-category status updated.');
+    redirect('index.php?page=admin');
+}
+
+if ($action === 'delete_asset_subcategory') {
+    if (!is_superadmin()) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
+    if (!delete_asset_subcategory(input_int('subcategory_id'))) {
+        flash('error', 'Used sub-categories cannot be deleted. Disable it instead.');
+    } else {
+        flash('success', 'Sub-category deleted.');
+    }
+    redirect('index.php?page=admin');
+}
+
+if ($action === 'create_asset_field' || $action === 'update_asset_field') {
+    if (!is_superadmin()) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
+    $fieldId = input_int('field_id');
+    $validation = validate_asset_field_definition($_POST, $action === 'update_asset_field' ? $fieldId : null);
+    if ($validation['errors']) {
+        flash('error', implode(' ', $validation['errors']));
+        redirect('index.php?page=admin');
+    }
+    if ($action === 'create_asset_field') {
+        create_asset_field($validation['payload']);
+        flash('success', 'Field created.');
+    } else {
+        update_asset_field($fieldId, $validation['payload']);
+        flash('success', 'Field updated.');
+    }
+    redirect('index.php?page=admin');
+}
+
+if ($action === 'toggle_asset_field') {
+    if (!is_superadmin()) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
+    set_asset_field_status(input_int('field_id'), input_int('active_status', 1));
+    flash('success', 'Field status updated.');
+    redirect('index.php?page=admin');
+}
+
+if ($action === 'delete_asset_field') {
+    if (!is_superadmin()) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
+    if (!delete_asset_field(input_int('field_id'))) {
+        flash('error', 'This field cannot be deleted. Disable it instead.');
+    } else {
+        flash('success', 'Field deleted.');
+    }
+    redirect('index.php?page=admin');
+}
+
+if ($action === 'upload_asset_template') {
+    if (!is_superadmin()) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
+    try {
+        save_uploaded_asset_template($_FILES['template_file'] ?? []);
+        flash('success', 'Excel template uploaded.');
+    } catch (Throwable $e) {
+        flash('error', $e->getMessage());
+    }
+    redirect('index.php?page=admin');
+}
+
+if ($action === 'asset_save') {
+    $user = current_user();
+    $assetId = input_int('asset_id');
+    $validation = validate_asset_payload($_POST);
+    if ($validation['errors']) {
+        flash('error', implode(' ', array_values($validation['errors'])));
+        redirect('index.php?page=board');
+    }
+    try {
+        if ($assetId > 0) {
+            $asset = get_asset($assetId, true);
+            if (!$asset || !user_can_manage_asset($user, $asset)) {
+                http_response_code(403);
+                exit('Not allowed.');
+            }
+            update_asset($assetId, $validation['payload'], $user);
+            flash('success', 'Asset updated.');
+        } else {
+            create_asset($validation['payload'], $user);
+            flash('success', 'Asset saved.');
+        }
+    } catch (Throwable $e) {
+        flash('error', 'Asset save failed: ' . $e->getMessage());
+    }
+    redirect('index.php?page=board');
+}
+
+if ($action === 'asset_bulk_delete') {
+    $ids = $_POST['asset_ids'] ?? [];
+    $deleted = soft_delete_assets(is_array($ids) ? $ids : [], current_user());
+    flash($deleted > 0 ? 'success' : 'error', $deleted > 0 ? $deleted . ' asset(s) deleted.' : 'No assets were deleted.');
+    redirect('index.php?page=board');
+}
+
+if ($action === 'asset_declare') {
+    $ctx = current_office_context();
+    if (!$ctx) {
+        flash('error', 'Office declaration is not available for this user.');
+    } else {
+        declare_office_assets($ctx['office_type'], $ctx['office_id'], (int)current_user()['id']);
+        add_log((int)current_user()['id'], 'office_asset_declarations', $ctx['office_id'], 'Office asset data declared up to date.');
+        flash('success', 'Declaration saved.');
+    }
+    redirect('index.php?page=board');
+}
+
+if ($action === 'asset_reset_declarations') {
+    if (!is_superadmin()) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
+    $pairs = [];
+    $rawPairs = $_POST['declarations'] ?? [];
+    if (is_array($rawPairs)) {
+        foreach ($rawPairs as $raw) {
+            [$officeType, $officeId] = array_pad(explode(':', (string)$raw), 2, 0);
+            $pairs[] = ['office_type' => (int)$officeType, 'office_id' => (int)$officeId];
+        }
+    } else {
+        $pairs[] = ['office_type' => input_int('office_type'), 'office_id' => input_int('office_id')];
+    }
+    $count = reset_office_asset_declarations($pairs, (int)current_user()['id']);
+    flash('success', $count . ' declaration(s) reset.');
+    redirect('index.php?page=declarations');
+}
+
+if ($action === 'create_office') {
+    if (!is_superadmin()) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
+    $officeKind = input_str('office_kind');
+    $name = input_str('office_name');
+    $address = input_str('office_address');
+    $email = input_str('email_id');
+    if ($name === '' || $email === '') {
+        flash('error', 'Office name and user email are required.');
+        redirect('index.php?page=offices');
+    }
+    try {
+        create_office_with_user($officeKind, $name, $address, $email, input_int('zone_id'), input_int('circle_id'));
+        flash('success', 'Office and linked user created.');
+    } catch (Throwable $e) {
+        flash('error', $e->getMessage());
+    }
+    redirect('index.php?page=offices');
+}
+
+if ($action === 'update_office') {
+    if (!is_superadmin()) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
+    $officeKind = input_str('office_kind');
+    $officeId = input_int('office_id');
+    $name = input_str('office_name');
+    $address = input_str('office_address');
+    $email = input_str('email_id');
+    if ($officeId <= 0 || $name === '') {
+        flash('error', 'Office update failed.');
+        redirect('index.php?page=offices');
+    }
+    try {
+        update_office_with_user($officeKind, $officeId, $name, $address, $email, input_int('zone_id'), input_int('circle_id'));
+        flash('success', 'Office saved.');
+    } catch (Throwable $e) {
+        flash('error', $e->getMessage());
+    }
+    redirect('index.php?page=offices');
+}
+
+if ($action === 'toggle_office_status') {
+    if (!is_superadmin()) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
+    try {
+        toggle_office_active_status(input_str('office_kind'), input_int('office_id'), input_int('active_status', 1) === 1 ? 1 : 0);
+        flash('success', 'Office status updated.');
+    } catch (Throwable $e) {
+        flash('error', $e->getMessage());
+    }
+    redirect('index.php?page=offices');
+}
+
+if ($action === 'reset_office_password') {
+    if (!is_superadmin()) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
+    try {
+        reset_office_user_password(input_str('office_kind'), input_int('office_id'));
+        flash('success', 'Password reset to the default email-based format.');
+    } catch (Throwable $e) {
+        flash('error', $e->getMessage());
+    }
+    redirect('index.php?page=offices');
+}
+
+if ($action === 'asset_import_upload') {
+    if (empty($_FILES['asset_file']['tmp_name'])) {
+        flash('error', 'Please choose an Excel file.');
+        redirect('index.php?page=board');
+    }
+    $result = parse_asset_import_file($_FILES['asset_file']['tmp_name'], $_FILES['asset_file']['name'], current_user());
+    if ($result['errors']) {
+        flash('error', implode(' ', $result['errors']));
+    } else {
+        flash('success', 'Import file audited. Please review the rows below.');
+    }
+    redirect('index.php?page=board');
+}
+
+if ($action === 'asset_import_save') {
+    $rows = $_POST['rows'] ?? [];
+    if (!is_array($rows)) {
+        flash('error', 'No import rows submitted.');
+        redirect('index.php?page=board');
+    }
+    $reviewRows = restage_asset_import_rows($rows);
+    $hasErrors = false;
+    foreach ($reviewRows as $row) {
+        if (!empty($row['errors'])) {
+            $hasErrors = true;
+            break;
+        }
+    }
+    if ($hasErrors) {
+        flash('error', 'Please fix the highlighted import rows before saving.');
+        redirect('index.php?page=board');
+    }
+    $result = commit_asset_import_review(current_user());
+    if ($result['errors']) {
+        flash('error', implode(' ', $result['errors']));
+    } else {
+        flash('success', $result['saved'] . ' asset(s) imported successfully.');
+    }
+    redirect('index.php?page=board');
+}
+
+if ($action === 'asset_import_cancel') {
+    unset($_SESSION['asset_import_review']);
+    flash('success', 'Import review cleared.');
+    redirect('index.php?page=board');
+}
+
+if ($action === 'csv_import') {
+    if (!is_superadmin()) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
+    if (empty($_FILES['csv_file']['tmp_name'])) {
+        flash('error', 'CSV file is required.');
+        redirect('index.php?page=offices');
+    }
+    $type = input_str('import_type');
+    $handle = fopen($_FILES['csv_file']['tmp_name'], 'r');
+    if (!$handle) {
+        flash('error', 'Unable to read CSV.');
+        redirect('index.php?page=offices');
+    }
+    $headers = fgetcsv($handle);
+    if (!$headers) {
+        fclose($handle);
+        flash('error', 'Invalid CSV headers.');
+        redirect('index.php?page=offices');
+    }
+    $headers[0] = ltrim($headers[0], "\xEF\xBB\xBF");
+    $count = 0;
+    while (($row = fgetcsv($handle)) !== false) {
+        $row = array_pad($row, count($headers), '');
+        $data = array_combine($headers, array_slice($row, 0, count($headers)));
+        if ($type === 'zones') {
+            db()->prepare('INSERT INTO zones (office_name, office_address, office_type, created_at) VALUES (?, ?, ?, NOW())')->execute([
+                trim((string)($data['office_name'] ?? '')),
+                trim((string)($data['office_address'] ?? '')),
+                (int)($data['office_type'] ?? 2),
+            ]);
+            $count++;
+        } elseif ($type === 'circles') {
+            db()->prepare('INSERT INTO circles (office_name, office_address, office_type, zone_id, created_at) VALUES (?, ?, ?, ?, NOW())')->execute([
+                trim((string)($data['office_name'] ?? '')),
+                trim((string)($data['office_address'] ?? '')),
+                (int)($data['office_type'] ?? 3),
+                !empty($data['zone_id']) ? (int)$data['zone_id'] : null,
+            ]);
+            $count++;
+        } elseif ($type === 'divisions') {
+            db()->prepare('INSERT INTO divisions (office_name, office_address, office_type, zone_id, circle_id, field_office, created_at) VALUES (?, ?, ?, ?, ?, ?, NOW())')->execute([
+                trim((string)($data['office_name'] ?? '')),
+                trim((string)($data['office_address'] ?? '')),
+                (int)($data['office_type'] ?? 4),
+                !empty($data['zone_id']) ? (int)$data['zone_id'] : null,
+                !empty($data['circle_id']) ? (int)$data['circle_id'] : null,
+                (int)($data['field_office'] ?? 1),
+            ]);
+            $count++;
+        } elseif ($type === 'users') {
+            $email = trim((string)($data['email_id'] ?? ''));
+            if ($email === '') {
+                continue;
+            }
+            $exists = db()->prepare('SELECT id FROM users WHERE email_id = ? LIMIT 1');
+            $exists->execute([$email]);
+            if ($exists->fetchColumn()) {
+                continue;
+            }
+            db()->prepare('INSERT INTO users (email_id, officer_name, password, office_type, office_role, zone_id, circle_id, division_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())')->execute([
+                $email,
+                trim((string)($data['officer_name'] ?? '')),
+                password_hash((string)($data['password'] ?? 'changeme'), PASSWORD_DEFAULT),
+                (int)($data['office_type'] ?? 4),
+                (int)($data['office_role'] ?? 1),
+                !empty($data['zone_id']) ? (int)$data['zone_id'] : null,
+                !empty($data['circle_id']) ? (int)$data['circle_id'] : null,
+                !empty($data['division_id']) ? (int)$data['division_id'] : null,
+            ]);
+            $count++;
+        }
+    }
+    fclose($handle);
+    flash('success', 'Imported ' . $count . ' rows.');
+    redirect('index.php?page=offices');
+}
+
+if ($action === 'update_profile') {
+    $name = input_str('officer_name');
+    $password = input_str('password');
+    $confirm = input_str('password_confirm');
+    $user = current_user();
+    if ($name === '') {
+        $name = (string)($user['officer_name'] ?? '');
+    }
+    if ($password !== '') {
+        if ($password !== $confirm) {
+            flash('error', 'Passwords do not match.');
+            redirect('index.php?page=profile');
+        }
+        db()->prepare('UPDATE users SET officer_name = ?, password = ?, updated_at = NOW() WHERE id = ?')->execute([$name, password_hash($password, PASSWORD_DEFAULT), (int)$user['id']]);
+    } else {
+        db()->prepare('UPDATE users SET officer_name = ?, updated_at = NOW() WHERE id = ?')->execute([$name, (int)$user['id']]);
+    }
+    $_SESSION['user']['officer_name'] = $name;
+    flash('success', 'Profile updated.');
+    redirect('index.php?page=profile');
+}
+
+if ($action === 'reset_user_password') {
+    if (!is_superadmin()) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
+    $userId = input_int('user_id');
+    $newPassword = input_str('new_password');
+    if ($userId <= 0 || $newPassword === '') {
+        flash('error', 'User and password are required.');
+    } else {
+        db()->prepare('UPDATE users SET password = ?, updated_at = NOW() WHERE id = ?')->execute([password_hash($newPassword, PASSWORD_DEFAULT), $userId]);
+        flash('success', 'Password reset.');
+    }
+    redirect('index.php?page=users');
+}
+
+if ($action === 'toggle_user_status') {
+    if (!is_superadmin()) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
+    $userId = input_int('user_id');
+    $status = input_int('active_status', 1) === 1 ? 1 : 0;
+    if ((int)current_user()['id'] === $userId && $status === 0) {
+        flash('error', 'You cannot deactivate your own account.');
+    } else {
+        db()->prepare('UPDATE users SET active_status = ?, updated_at = NOW() WHERE id = ?')->execute([$status, $userId]);
+        flash('success', $status === 1 ? 'User activated.' : 'User deactivated.');
+    }
+    redirect('index.php?page=users');
+}
+
+if ($action === 'update_user') {
+    if (!is_superadmin()) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
+    $userId = input_int('user_id');
+    $email = input_str('email_id');
+    $name = input_str('officer_name');
+    $officeRole = input_int('office_role', 1);
+    $officeType = input_int('office_type', 1);
+    $zoneId = input_int('zone_id');
+    $circleId = input_int('circle_id');
+    $divisionId = input_int('division_id');
+    if ($userId <= 0 || $email === '') {
+        flash('error', 'User and email are required.');
+        redirect('index.php?page=users');
+    }
+    db()->prepare('UPDATE users SET email_id = ?, officer_name = ?, office_role = ?, office_type = ?, zone_id = ?, circle_id = ?, division_id = ?, updated_at = NOW() WHERE id = ?')->execute([
+        $email,
+        $name === '' ? null : $name,
+        $officeRole,
+        $officeType,
+        $zoneId > 0 ? $zoneId : null,
+        $circleId > 0 ? $circleId : null,
+        $divisionId > 0 ? $divisionId : null,
+        $userId,
+    ]);
+    flash('success', 'User updated.');
+    redirect('index.php?page=users');
+}
+
+if ($action === 'save_interface') {
+    if (!is_superadmin()) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
+    $existing = get_info_row();
+    $extras = [];
+    if (array_key_exists('site_name', $_POST)) {
+        $extras['site_name'] = input_str('site_name');
+    }
+    save_info_row(
+        array_key_exists('video_tutorial_url', $_POST) ? input_str('video_tutorial_url') : ($existing['video_tutorial_url'] ?? null),
+        array_key_exists('login_message', $_POST) ? input_str('login_message') : ($existing['login_message'] ?? null),
+        $extras
+    );
+    flash('success', 'Interface settings saved.');
+    redirect('index.php?page=interface');
+}
 
 if ($page === 'logout') {
     logout_user();
@@ -573,13 +604,26 @@ if ($page === 'admin') {
     exit;
 }
 
-if ($page === 'users') {
+if ($page === 'offices') {
     if (!is_superadmin()) {
         http_response_code(403);
         exit('Not allowed.');
     }
-    require __DIR__ . '/app/views/users.php';
+    require __DIR__ . '/app/views/offices.php';
     exit;
+}
+
+if ($page === 'declarations') {
+    if (!is_superadmin()) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
+    require __DIR__ . '/app/views/declarations.php';
+    exit;
+}
+
+if ($page === 'users') {
+    redirect('index.php?page=offices');
 }
 
 if ($page === 'profile') {
