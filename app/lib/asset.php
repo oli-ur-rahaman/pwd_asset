@@ -182,9 +182,8 @@ function asset_seed_default_fields(): void
             'is_required' => 1,
             'sort_order' => 30,
             'options' => [
-                ['value' => 'Very well', 'label' => 'Very well'],
-                ['value' => 'Usable', 'label' => 'Usable'],
-                ['value' => 'Unusable', 'label' => 'Unusable'],
+                ['value' => 'যোগ্য', 'label' => 'যোগ্য'],
+                ['value' => 'অযোগ্য', 'label' => 'অযোগ্য'],
             ],
         ],
         [
@@ -467,7 +466,7 @@ function create_asset_field(array $payload): void
         $payload['is_required'],
         $payload['is_displayed'],
         $payload['is_import_enabled'],
-        next_sort_order('asset_fields'),
+        $payload['sort_order'],
     ]);
     $fieldId = (int)db()->lastInsertId();
     replace_asset_field_options($fieldId, $payload['options'] ?? []);
@@ -475,13 +474,14 @@ function create_asset_field(array $payload): void
 
 function update_asset_field(int $id, array $payload): void
 {
-    $stmt = db()->prepare('UPDATE asset_fields SET label = ?, data_type = ?, is_required = ?, is_displayed = ?, is_import_enabled = ?, updated_at = NOW() WHERE id = ?');
+    $stmt = db()->prepare('UPDATE asset_fields SET label = ?, data_type = ?, is_required = ?, is_displayed = ?, is_import_enabled = ?, sort_order = ?, updated_at = NOW() WHERE id = ?');
     $stmt->execute([
         $payload['label'],
         $payload['data_type'],
         $payload['is_required'],
         $payload['is_displayed'],
         $payload['is_import_enabled'],
+        $payload['sort_order'],
         $id,
     ]);
     replace_asset_field_options($id, $payload['options'] ?? []);
@@ -584,6 +584,10 @@ function validate_asset_field_definition(array $input, ?int $fieldId = null): ar
     if (!in_array($dataType, asset_supported_data_types(), true)) {
         $errors[] = 'Invalid field type.';
     }
+    $sortOrder = (int)($input['sort_order'] ?? 0);
+    if ($sortOrder <= 0) {
+        $sortOrder = $fieldId ? (int)($existingField['sort_order'] ?? 0) : next_sort_order('asset_fields');
+    }
 
     $existing = db()->prepare('SELECT id FROM asset_fields WHERE field_key = ? LIMIT 1');
     $existing->execute([$fieldKey]);
@@ -616,6 +620,7 @@ function validate_asset_field_definition(array $input, ?int $fieldId = null): ar
             'is_required' => !empty($input['is_required']) ? 1 : 0,
             'is_displayed' => !empty($input['is_displayed']) ? 1 : 0,
             'is_import_enabled' => !empty($input['is_import_enabled']) ? 1 : 0,
+            'sort_order' => $sortOrder,
             'options' => $options,
         ],
     ];
@@ -1440,15 +1445,116 @@ function validate_uploaded_asset_template(string $tmpName): array
     if (!$rows) {
         return ['Template file is empty.'];
     }
-    $headerRow = array_values(array_filter(array_map(static fn($value) => trim((string)$value), array_values($rows[1] ?? [])), static fn($value) => $value !== ''));
-    $expectedLabels = array_map(static fn($column) => trim((string)$column['label']), asset_template_columns());
-    if ($headerRow !== $expectedLabels) {
-        return ['Template heading does not match the current active column sequence.'];
+    $headerRow = array_values($rows[1] ?? []);
+    $expectedCount = count(asset_template_columns());
+    if (count($headerRow) < $expectedCount) {
+        return ['Template column count is less than the current required column sequence.'];
     }
     return [];
 }
 
-function save_uploaded_asset_template(array $file): void
+function find_asset_category_by_name(string $name): ?array
+{
+    foreach (get_asset_categories(true) as $category) {
+        if (strcasecmp(trim((string)$category['name']), trim($name)) === 0) {
+            return $category;
+        }
+    }
+    return null;
+}
+
+function find_asset_subcategory_by_name(int $categoryId, string $name): ?array
+{
+    foreach (get_asset_subcategories($categoryId, true) as $subcategory) {
+        if (strcasecmp(trim((string)$subcategory['name']), trim($name)) === 0) {
+            return $subcategory;
+        }
+    }
+    return null;
+}
+
+function sync_asset_template_info_sheet(string $tmpName): array
+{
+    ensure_library('PhpOffice\\PhpSpreadsheet\\IOFactory', 'PhpSpreadsheet is not installed.');
+    $spreadsheet = PhpOffice\PhpSpreadsheet\IOFactory::load($tmpName);
+    $sheet = null;
+    foreach ($spreadsheet->getWorksheetIterator() as $worksheet) {
+        if (strcasecmp(trim((string)$worksheet->getTitle()), 'info') === 0) {
+            $sheet = $worksheet;
+            break;
+        }
+    }
+    if (!$sheet) {
+        return ['categories_created' => 0, 'subcategories_created' => 0];
+    }
+
+    $rows = $sheet->toArray(null, true, true, true);
+    if (!$rows) {
+        return ['categories_created' => 0, 'subcategories_created' => 0];
+    }
+
+    $headerRow = $rows[1] ?? [];
+    $categoriesCreated = 0;
+    $subcategoriesCreated = 0;
+
+    db()->beginTransaction();
+    try {
+        foreach ($headerRow as $column => $categoryNameRaw) {
+            $categoryName = trim((string)$categoryNameRaw);
+            if ($categoryName === '') {
+                continue;
+            }
+
+            $category = find_asset_category_by_name($categoryName);
+            if (!$category) {
+                create_asset_category($categoryName);
+                $category = find_asset_category_by_name($categoryName);
+                $categoriesCreated++;
+            } elseif ((int)($category['active_status'] ?? 1) !== 1) {
+                set_asset_category_status((int)$category['id'], 1);
+                $category = get_asset_category((int)$category['id']) ?? $category;
+            }
+
+            if (!$category) {
+                continue;
+            }
+
+            $seenSubcategories = [];
+            foreach ($rows as $rowNumber => $row) {
+                if ($rowNumber === 1) {
+                    continue;
+                }
+                $subcategoryName = trim((string)($row[$column] ?? ''));
+                if ($subcategoryName === '') {
+                    continue;
+                }
+                $subKey = mb_strtolower($subcategoryName, 'UTF-8');
+                if (isset($seenSubcategories[$subKey])) {
+                    continue;
+                }
+                $seenSubcategories[$subKey] = true;
+
+                $subcategory = find_asset_subcategory_by_name((int)$category['id'], $subcategoryName);
+                if (!$subcategory) {
+                    create_asset_subcategory((int)$category['id'], $subcategoryName);
+                    $subcategoriesCreated++;
+                } elseif ((int)($subcategory['active_status'] ?? 1) !== 1) {
+                    set_asset_subcategory_status((int)$subcategory['id'], 1);
+                }
+            }
+        }
+        db()->commit();
+    } catch (Throwable $e) {
+        if (db()->inTransaction()) {
+            db()->rollBack();
+        }
+        throw $e;
+    }
+
+    return ['categories_created' => $categoriesCreated, 'subcategories_created' => $subcategoriesCreated];
+}
+
+function save_uploaded_asset_template(array $file): array
 {
     if (empty($file['tmp_name']) || !is_uploaded_file($file['tmp_name'])) {
         throw new RuntimeException('Please choose a valid Excel template file.');
@@ -1461,6 +1567,7 @@ function save_uploaded_asset_template(array $file): void
     if ($errors) {
         throw new RuntimeException(implode(' ', $errors));
     }
+    $syncSummary = sync_asset_template_info_sheet($file['tmp_name']);
     $dir = asset_template_storage_dir();
     if (!is_dir($dir) && !mkdir($dir, 0777, true) && !is_dir($dir)) {
         throw new RuntimeException('Unable to create template storage directory.');
@@ -1469,6 +1576,7 @@ function save_uploaded_asset_template(array $file): void
     if (!move_uploaded_file($file['tmp_name'], $target)) {
         throw new RuntimeException('Failed to save template file.');
     }
+    return $syncSummary;
 }
 
 function output_asset_template_download(): void

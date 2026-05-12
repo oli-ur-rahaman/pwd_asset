@@ -54,38 +54,36 @@ $uploadedTemplate = asset_template_uploaded_info();
     <div class="table-wrap">
         <table>
             <thead>
-                <tr><th>Name</th><th>Status</th><th>Edit</th><th>Toggle</th><th>Delete</th></tr>
+                <tr><th>Name</th><th>Status</th><th>Action</th></tr>
             </thead>
             <tbody>
                 <?php foreach ($categories as $category): ?>
+                    <?php $formId = 'category-' . (int)$category['id']; $isActive = (int)$category['active_status'] === 1; ?>
                     <tr>
-                        <td><?= e($category['name']); ?></td>
-                        <td><?= (int)$category['active_status'] === 1 ? 'Active' : 'Disabled'; ?></td>
+                        <td><input form="<?= e($formId); ?>" class="inline-edit" type="text" name="name" value="<?= e($category['name']); ?>" required></td>
+                        <td><span class="<?= $isActive ? 'status-active' : 'status-inactive'; ?>"><?= $isActive ? 'Active' : 'Disabled'; ?></span></td>
                         <td>
-                            <form method="post" action="index.php" class="inline-form">
-                                <?= csrf_input(); ?>
-                                <input type="hidden" name="action" value="update_asset_category">
-                                <input type="hidden" name="category_id" value="<?= e((string)$category['id']); ?>">
-                                <input type="text" name="name" value="<?= e($category['name']); ?>" required>
-                                <button type="submit" class="btn-small">Save</button>
-                            </form>
-                        </td>
-                        <td>
-                            <form method="post" action="index.php" class="inline-form">
-                                <?= csrf_input(); ?>
-                                <input type="hidden" name="action" value="toggle_asset_category">
-                                <input type="hidden" name="category_id" value="<?= e((string)$category['id']); ?>">
-                                <input type="hidden" name="active_status" value="<?= (int)$category['active_status'] === 1 ? '0' : '1'; ?>">
-                                <button type="submit" class="btn-small"><?= (int)$category['active_status'] === 1 ? 'Disable' : 'Enable'; ?></button>
-                            </form>
-                        </td>
-                        <td>
-                            <form method="post" action="index.php" class="inline-form">
-                                <?= csrf_input(); ?>
-                                <input type="hidden" name="action" value="delete_asset_category">
-                                <input type="hidden" name="category_id" value="<?= e((string)$category['id']); ?>">
-                                <button type="submit" class="btn-small btn-danger">Delete</button>
-                            </form>
+                            <div class="action-row">
+                                <form method="post" action="index.php" id="<?= e($formId); ?>" class="office-inline-form">
+                                    <?= csrf_input(); ?>
+                                    <input type="hidden" name="action" value="update_asset_category">
+                                    <input type="hidden" name="category_id" value="<?= e((string)$category['id']); ?>">
+                                    <button type="submit" class="btn-small office-save-button">Save</button>
+                                </form>
+                                <form method="post" action="index.php" class="inline-form">
+                                    <?= csrf_input(); ?>
+                                    <input type="hidden" name="action" value="toggle_asset_category">
+                                    <input type="hidden" name="category_id" value="<?= e((string)$category['id']); ?>">
+                                    <input type="hidden" name="active_status" value="<?= $isActive ? '0' : '1'; ?>">
+                                    <button type="submit" class="btn-small <?= $isActive ? 'btn-danger' : ''; ?>"><?= $isActive ? 'Disable' : 'Enable'; ?></button>
+                                </form>
+                                <form method="post" action="index.php" class="inline-form">
+                                    <?= csrf_input(); ?>
+                                    <input type="hidden" name="action" value="delete_asset_category">
+                                    <input type="hidden" name="category_id" value="<?= e((string)$category['id']); ?>">
+                                    <button type="submit" class="btn-small btn-danger">Delete</button>
+                                </form>
+                            </div>
                         </td>
                     </tr>
                 <?php endforeach; ?>
@@ -111,44 +109,43 @@ $uploadedTemplate = asset_template_uploaded_info();
     <div class="table-wrap">
         <table>
             <thead>
-                <tr><th>Category</th><th>Name</th><th>Status</th><th>Edit</th><th>Toggle</th><th>Delete</th></tr>
+                <tr><th>Category</th><th>Name</th><th>Status</th><th>Action</th></tr>
             </thead>
             <tbody>
                 <?php foreach ($subcategories as $subcategory): ?>
+                    <?php $formId = 'subcategory-' . (int)$subcategory['id']; $isActive = (int)$subcategory['active_status'] === 1; ?>
                     <tr>
-                        <td><?= e($subcategory['category_name']); ?></td>
-                        <td><?= e($subcategory['name']); ?></td>
-                        <td><?= (int)$subcategory['active_status'] === 1 ? 'Active' : 'Disabled'; ?></td>
                         <td>
-                            <form method="post" action="index.php" class="inline-form">
-                                <?= csrf_input(); ?>
-                                <input type="hidden" name="action" value="update_asset_subcategory">
-                                <input type="hidden" name="subcategory_id" value="<?= e((string)$subcategory['id']); ?>">
-                                <select name="category_id" required>
-                                    <?php foreach ($categories as $category): ?>
-                                        <option value="<?= e((string)$category['id']); ?>" <?= (int)$subcategory['category_id'] === (int)$category['id'] ? 'selected' : ''; ?>><?= e($category['name']); ?></option>
-                                    <?php endforeach; ?>
-                                </select>
-                                <input type="text" name="name" value="<?= e($subcategory['name']); ?>" required>
-                                <button type="submit" class="btn-small">Save</button>
-                            </form>
+                            <select form="<?= e($formId); ?>" class="inline-edit" name="category_id" required>
+                                <?php foreach ($categories as $category): ?>
+                                    <option value="<?= e((string)$category['id']); ?>" <?= (int)$subcategory['category_id'] === (int)$category['id'] ? 'selected' : ''; ?>><?= e($category['name']); ?></option>
+                                <?php endforeach; ?>
+                            </select>
                         </td>
+                        <td><input form="<?= e($formId); ?>" class="inline-edit" type="text" name="name" value="<?= e($subcategory['name']); ?>" required></td>
+                        <td><span class="<?= $isActive ? 'status-active' : 'status-inactive'; ?>"><?= $isActive ? 'Active' : 'Disabled'; ?></span></td>
                         <td>
-                            <form method="post" action="index.php" class="inline-form">
-                                <?= csrf_input(); ?>
-                                <input type="hidden" name="action" value="toggle_asset_subcategory">
-                                <input type="hidden" name="subcategory_id" value="<?= e((string)$subcategory['id']); ?>">
-                                <input type="hidden" name="active_status" value="<?= (int)$subcategory['active_status'] === 1 ? '0' : '1'; ?>">
-                                <button type="submit" class="btn-small"><?= (int)$subcategory['active_status'] === 1 ? 'Disable' : 'Enable'; ?></button>
-                            </form>
-                        </td>
-                        <td>
-                            <form method="post" action="index.php" class="inline-form">
-                                <?= csrf_input(); ?>
-                                <input type="hidden" name="action" value="delete_asset_subcategory">
-                                <input type="hidden" name="subcategory_id" value="<?= e((string)$subcategory['id']); ?>">
-                                <button type="submit" class="btn-small btn-danger">Delete</button>
-                            </form>
+                            <div class="action-row">
+                                <form method="post" action="index.php" id="<?= e($formId); ?>" class="office-inline-form">
+                                    <?= csrf_input(); ?>
+                                    <input type="hidden" name="action" value="update_asset_subcategory">
+                                    <input type="hidden" name="subcategory_id" value="<?= e((string)$subcategory['id']); ?>">
+                                    <button type="submit" class="btn-small office-save-button">Save</button>
+                                </form>
+                                <form method="post" action="index.php" class="inline-form">
+                                    <?= csrf_input(); ?>
+                                    <input type="hidden" name="action" value="toggle_asset_subcategory">
+                                    <input type="hidden" name="subcategory_id" value="<?= e((string)$subcategory['id']); ?>">
+                                    <input type="hidden" name="active_status" value="<?= $isActive ? '0' : '1'; ?>">
+                                    <button type="submit" class="btn-small <?= $isActive ? 'btn-danger' : ''; ?>"><?= $isActive ? 'Disable' : 'Enable'; ?></button>
+                                </form>
+                                <form method="post" action="index.php" class="inline-form">
+                                    <?= csrf_input(); ?>
+                                    <input type="hidden" name="action" value="delete_asset_subcategory">
+                                    <input type="hidden" name="subcategory_id" value="<?= e((string)$subcategory['id']); ?>">
+                                    <button type="submit" class="btn-small btn-danger">Delete</button>
+                                </form>
+                            </div>
                         </td>
                     </tr>
                 <?php endforeach; ?>
@@ -162,6 +159,9 @@ $uploadedTemplate = asset_template_uploaded_info();
     <form method="post" action="index.php" class="grid">
         <?= csrf_input(); ?>
         <input type="hidden" name="action" value="create_asset_field">
+        <label>Serial
+            <input type="number" name="sort_order" min="1" step="1" value="<?= e((string)((count($fields) + 1) * 10)); ?>" required>
+        </label>
         <label>Label
             <input type="text" name="label" required>
         </label>
@@ -186,49 +186,58 @@ $uploadedTemplate = asset_template_uploaded_info();
     <div class="table-wrap">
         <table>
             <thead>
-                <tr><th>Label</th><th>Key</th><th>Type</th><th>Status</th><th>Edit</th><th>Toggle</th><th>Delete</th></tr>
+                <tr><th>Serial</th><th>Label</th><th>Key</th><th>Type</th><th>Dropdown Options</th><th>Status</th><th>Action</th></tr>
             </thead>
             <tbody>
                 <?php foreach ($fields as $field): ?>
+                    <?php
+                        $formId = 'field-' . (int)$field['id'];
+                        $isActive = (int)$field['active_status'] === 1;
+                        $optionLines = [];
+                        foreach (get_asset_field_options((int)$field['id'], true) as $option) {
+                            $optionLines[] = (string)$option['option_value'];
+                        }
+                    ?>
                     <tr>
-                        <td><?= e($field['label']); ?></td>
-                        <td><?= e($field['field_key']); ?></td>
-                        <td><?= e($field['data_type']); ?></td>
-                        <td><?= (int)$field['active_status'] === 1 ? 'Active' : 'Disabled'; ?></td>
+                        <td><input form="<?= e($formId); ?>" class="inline-edit" type="number" name="sort_order" min="1" step="1" value="<?= e((string)$field['sort_order']); ?>" required></td>
+                        <td><input form="<?= e($formId); ?>" class="inline-edit" type="text" name="label" value="<?= e($field['label']); ?>" required></td>
+                        <td><input form="<?= e($formId); ?>" class="inline-readonly" type="text" value="<?= e($field['field_key']); ?>" readonly></td>
                         <td>
-                            <form method="post" action="index.php" class="grid compact-grid">
-                                <?= csrf_input(); ?>
-                                <input type="hidden" name="action" value="update_asset_field">
-                                <input type="hidden" name="field_id" value="<?= e((string)$field['id']); ?>">
-                                <input type="text" name="label" value="<?= e($field['label']); ?>" required>
-                                <select name="data_type">
-                                    <?php foreach (asset_supported_data_types() as $type): ?>
-                                        <option value="<?= e($type); ?>" <?= $field['data_type'] === $type ? 'selected' : ''; ?>><?= e($type); ?></option>
-                                    <?php endforeach; ?>
-                                </select>
-                                <textarea name="options_text" rows="2"><?php foreach (get_asset_field_options((int)$field['id'], true) as $option) { echo e($option['option_value']) . "\n"; } ?></textarea>
-                                <label><input type="checkbox" name="is_required" value="1" <?= (int)$field['is_required'] === 1 ? 'checked' : ''; ?>> Required</label>
-                                <label><input type="checkbox" name="is_displayed" value="1" <?= (int)$field['is_displayed'] === 1 ? 'checked' : ''; ?>> Display</label>
-                                <label><input type="checkbox" name="is_import_enabled" value="1" <?= (int)$field['is_import_enabled'] === 1 ? 'checked' : ''; ?>> Import</label>
-                                <button type="submit" class="btn-small">Save</button>
-                            </form>
+                            <select form="<?= e($formId); ?>" class="inline-edit" name="data_type">
+                                <?php foreach (asset_supported_data_types() as $type): ?>
+                                    <option value="<?= e($type); ?>" <?= $field['data_type'] === $type ? 'selected' : ''; ?>><?= e($type); ?></option>
+                                <?php endforeach; ?>
+                            </select>
                         </td>
+                        <td><textarea form="<?= e($formId); ?>" class="inline-edit field-options-box" name="options_text" rows="3" placeholder="One option per line"><?= e(implode("\n", $optionLines)); ?></textarea></td>
+                        <td><span class="<?= $isActive ? 'status-active' : 'status-inactive'; ?>"><?= $isActive ? 'Active' : 'Disabled'; ?></span></td>
                         <td>
-                            <form method="post" action="index.php" class="inline-form">
-                                <?= csrf_input(); ?>
-                                <input type="hidden" name="action" value="toggle_asset_field">
-                                <input type="hidden" name="field_id" value="<?= e((string)$field['id']); ?>">
-                                <input type="hidden" name="active_status" value="<?= (int)$field['active_status'] === 1 ? '0' : '1'; ?>">
-                                <button type="submit" class="btn-small"><?= (int)$field['active_status'] === 1 ? 'Disable' : 'Enable'; ?></button>
-                            </form>
-                        </td>
-                        <td>
-                            <form method="post" action="index.php" class="inline-form">
-                                <?= csrf_input(); ?>
-                                <input type="hidden" name="action" value="delete_asset_field">
-                                <input type="hidden" name="field_id" value="<?= e((string)$field['id']); ?>">
-                                <button type="submit" class="btn-small btn-danger">Delete</button>
-                            </form>
+                            <div class="action-row">
+                                <form method="post" action="index.php" id="<?= e($formId); ?>" class="office-inline-form">
+                                    <?= csrf_input(); ?>
+                                    <input type="hidden" name="action" value="update_asset_field">
+                                    <input type="hidden" name="field_id" value="<?= e((string)$field['id']); ?>">
+                                    <input type="hidden" name="field_key" value="<?= e($field['field_key']); ?>">
+                                    <label class="inline-check"><input form="<?= e($formId); ?>" type="checkbox" name="is_required" value="1" <?= (int)$field['is_required'] === 1 ? 'checked' : ''; ?>> Required</label>
+                                    <label class="inline-check"><input form="<?= e($formId); ?>" type="checkbox" name="is_displayed" value="1" <?= (int)$field['is_displayed'] === 1 ? 'checked' : ''; ?>> Display</label>
+                                    <label class="inline-check"><input form="<?= e($formId); ?>" type="checkbox" name="is_import_enabled" value="1" <?= (int)$field['is_import_enabled'] === 1 ? 'checked' : ''; ?>> Import</label>
+                                    <button type="submit" class="btn-small office-save-button">Save</button>
+                                </form>
+                                <form method="post" action="index.php" class="inline-form">
+                                    <?= csrf_input(); ?>
+                                    <input type="hidden" name="action" value="toggle_asset_field">
+                                    <input type="hidden" name="field_id" value="<?= e((string)$field['id']); ?>">
+                                    <input type="hidden" name="active_status" value="<?= $isActive ? '0' : '1'; ?>">
+                                    <button type="submit" class="btn-small <?= $isActive ? 'btn-danger' : ''; ?>"><?= $isActive ? 'Disable' : 'Enable'; ?></button>
+                                </form>
+                                <form method="post" action="index.php" class="inline-form">
+                                    <?= csrf_input(); ?>
+                                    <input type="hidden" name="action" value="delete_asset_field">
+                                    <input type="hidden" name="field_id" value="<?= e((string)$field['id']); ?>">
+                                    <button type="submit" class="btn-small btn-danger">Delete</button>
+                                </form>
+                            </div>
+                            <div class="hint">Use one line per dropdown option.</div>
                         </td>
                     </tr>
                 <?php endforeach; ?>

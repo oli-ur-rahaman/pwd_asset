@@ -199,8 +199,8 @@ if ($action === 'upload_asset_template') {
         exit('Not allowed.');
     }
     try {
-        save_uploaded_asset_template($_FILES['template_file'] ?? []);
-        flash('success', 'Excel template uploaded.');
+        $summary = save_uploaded_asset_template($_FILES['template_file'] ?? []);
+        flash('success', 'Excel template uploaded. Categories added: ' . (int)($summary['categories_created'] ?? 0) . ', sub-categories added: ' . (int)($summary['subcategories_created'] ?? 0) . '.');
     } catch (Throwable $e) {
         flash('error', $e->getMessage());
     }

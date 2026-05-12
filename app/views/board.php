@@ -56,6 +56,12 @@ $review = $_SESSION['asset_import_review'] ?? null;
 $zones = db()->query('SELECT id, office_name FROM zones ORDER BY office_name')->fetchAll();
 $circles = db()->query('SELECT id, office_name, zone_id FROM circles ORDER BY office_name')->fetchAll();
 $divisions = db()->query('SELECT id, office_name, zone_id, circle_id FROM divisions ORDER BY office_name')->fetchAll();
+$uiFieldLabels = [];
+foreach ($fields as $field) {
+    $rawLabel = trim((string)($field['label'] ?? ''));
+    $parts = preg_split('/\s*\/\s*/u', $rawLabel);
+    $uiFieldLabels[$field['field_key']] = trim((string)($parts[0] ?? $rawLabel));
+}
 ?>
 <section class="card hero-card">
     <div class="hero-row">
@@ -67,9 +73,7 @@ $divisions = db()->query('SELECT id, office_name, zone_id, circle_id FROM divisi
             <form method="post" action="index.php" class="inline-form">
                 <?= csrf_input(); ?>
                 <input type="hidden" name="action" value="asset_declare">
-                <button type="submit" <?= !empty($declaration['declared_status']) ? 'disabled' : ''; ?>>
-                    <?= !empty($declaration['declared_status']) ? 'Data Declared / ঘোষণা সম্পন্ন' : 'Declare Data Up To Date / হালনাগাদ ঘোষণা'; ?>
-                </button>
+                <button type="submit" <?= !empty($declaration['declared_status']) ? 'disabled' : ''; ?>>Declare as Completed</button>
             </form>
         <?php endif; ?>
     </div>
@@ -80,7 +84,7 @@ $divisions = db()->query('SELECT id, office_name, zone_id, circle_id FROM divisi
 
 <?php if (is_superadmin()): ?>
 <section class="card">
-    <h2>Master Filters / ফিল্টার</h2>
+    <h2>Master Filters</h2>
     <form method="get" action="index.php" id="asset-filters" class="grid board-filters-grid">
         <input type="hidden" name="page" value="board">
         <label>Zone
@@ -126,9 +130,8 @@ $divisions = db()->query('SELECT id, office_name, zone_id, circle_id FROM divisi
         <label>Condition
             <select name="condition_value">
                 <option value="">All</option>
-                <option value="Very well" <?= ($filters['condition_value'] ?? '') === 'Very well' ? 'selected' : ''; ?>>Very well</option>
-                <option value="Usable" <?= ($filters['condition_value'] ?? '') === 'Usable' ? 'selected' : ''; ?>>Usable</option>
-                <option value="Unusable" <?= ($filters['condition_value'] ?? '') === 'Unusable' ? 'selected' : ''; ?>>Unusable</option>
+                <option value="যোগ্য" <?= ($filters['condition_value'] ?? '') === 'যোগ্য' ? 'selected' : ''; ?>>যোগ্য</option>
+                <option value="অযোগ্য" <?= ($filters['condition_value'] ?? '') === 'অযোগ্য' ? 'selected' : ''; ?>>অযোগ্য</option>
             </select>
         </label>
         <label>Declaration
@@ -146,9 +149,9 @@ $divisions = db()->query('SELECT id, office_name, zone_id, circle_id FROM divisi
 <?php if (!is_superadmin()): ?>
 <section class="card">
     <div class="toolbar-row">
-        <button type="button" data-modal="asset-modal">Manual Data Entry / ম্যানুয়াল এন্ট্রি</button>
-        <button type="button" data-modal="import-modal">Bulk Entry / এক্সেল আপলোড</button>
-        <a href="asset_template.php" class="button-link">Download Template / টেমপ্লেট</a>
+        <button type="button" data-modal="asset-modal">+Add Asset</button>
+        <button type="button" data-modal="import-modal">Bulk Entry</button>
+        <a href="asset_template.php" class="button-link">Excel Template</a>
     </div>
 </section>
 <?php endif; ?>
@@ -178,7 +181,7 @@ $divisions = db()->query('SELECT id, office_name, zone_id, circle_id FROM divisi
                                 <th>Sub-category</th>
                                 <?php foreach ($fields as $field): ?>
                                     <?php if ((int)$field['is_displayed'] === 1 && (int)$field['active_status'] === 1): ?>
-                                        <th><?= e($field['label']); ?></th>
+                                        <th><?= e((string)($uiFieldLabels[$field['field_key']] ?? $field['label'])); ?></th>
                                     <?php endif; ?>
                                 <?php endforeach; ?>
                                 <th>Action</th>
@@ -219,20 +222,20 @@ $divisions = db()->query('SELECT id, office_name, zone_id, circle_id FROM divisi
     </section>
     <?php if (!is_superadmin()): ?>
         <div class="bulk-actions">
-            <button type="submit" class="btn-danger">Soft Delete Selected / ডিলিট</button>
+            <button type="submit" class="btn-danger">Soft Delete Selected</button>
         </div>
     <?php endif; ?>
 </form>
 
 <?php if (!is_superadmin()): ?>
 <div class="modal-backdrop<?= $editingAsset ? ' open' : ''; ?>" id="asset-modal" aria-hidden="<?= $editingAsset ? 'false' : 'true'; ?>">
-    <div class="modal-card modal-wide" role="dialog" aria-modal="true" aria-labelledby="asset-modal-title">
-        <h3 id="asset-modal-title"><?= $editingAsset ? 'Edit Asset / সম্পদ সম্পাদনা' : 'Manual Asset Entry / সম্পদ এন্ট্রি'; ?></h3>
+    <div class="modal-card asset-entry-modal" role="dialog" aria-modal="true" aria-labelledby="asset-modal-title">
+        <h3 id="asset-modal-title"><?= $editingAsset ? 'Edit Asset' : 'Add Asset'; ?></h3>
         <form method="post" action="index.php" class="grid">
             <?= csrf_input(); ?>
             <input type="hidden" name="action" value="asset_save">
             <input type="hidden" name="asset_id" value="<?= e((string)($editingAsset['id'] ?? '0')); ?>">
-            <label>Category / শ্রেণি
+            <label>Category *
                 <select name="category_id" id="asset-category-select" required>
                     <option value="">Select</option>
                     <?php foreach ($categories as $category): ?>
@@ -240,7 +243,7 @@ $divisions = db()->query('SELECT id, office_name, zone_id, circle_id FROM divisi
                     <?php endforeach; ?>
                 </select>
             </label>
-            <label>Sub-category / উপ-শ্রেণি
+            <label>Sub-category *
                 <select name="subcategory_id" id="asset-subcategory-select" required>
                     <option value="">Select</option>
                     <?php foreach ($subcategories as $subcategory): ?>
@@ -250,7 +253,7 @@ $divisions = db()->query('SELECT id, office_name, zone_id, circle_id FROM divisi
             </label>
             <?php foreach ($fields as $field): ?>
                 <?php if ((int)$field['active_status'] !== 1) { continue; } ?>
-                <label><?= e($field['label']); ?>
+                <label><?= e((string)($uiFieldLabels[$field['field_key']] ?? $field['label'])); ?><?= (int)$field['is_required'] === 1 ? ' *' : ''; ?>
                     <?php $value = (string)($editValues[$field['field_key']] ?? ''); ?>
                     <?php if ($field['data_type'] === 'date'): ?>
                         <input type="date" name="fields[<?= e($field['field_key']); ?>]" value="<?= e($value); ?>" <?= (int)$field['is_required'] === 1 ? 'required' : ''; ?>>
@@ -286,7 +289,7 @@ $divisions = db()->query('SELECT id, office_name, zone_id, circle_id FROM divisi
 
 <div class="modal-backdrop" id="import-modal" aria-hidden="true">
     <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="import-modal-title">
-        <h3 id="import-modal-title">Bulk Asset Upload / এক্সেল আপলোড</h3>
+        <h3 id="import-modal-title">Bulk Entry</h3>
         <form method="post" action="index.php" enctype="multipart/form-data" class="grid">
             <?= csrf_input(); ?>
             <input type="hidden" name="action" value="asset_import_upload">
@@ -305,7 +308,7 @@ $divisions = db()->query('SELECT id, office_name, zone_id, circle_id FROM divisi
 <?php if ($review && !empty($review['rows'])): ?>
 <div class="modal-backdrop open" id="import-review-modal" aria-hidden="false">
     <div class="modal-card modal-wide" role="dialog" aria-modal="true" aria-labelledby="import-review-title">
-        <h3 id="import-review-title">Import Audit Review / অডিট রিভিউ</h3>
+        <h3 id="import-review-title">Import Audit Review</h3>
         <form method="post" action="index.php" class="grid">
             <?= csrf_input(); ?>
             <input type="hidden" name="action" value="asset_import_save">
@@ -318,7 +321,7 @@ $divisions = db()->query('SELECT id, office_name, zone_id, circle_id FROM divisi
                             <th>Sub-category</th>
                             <?php foreach ($fields as $field): ?>
                                 <?php if ((int)$field['is_import_enabled'] === 1 && (int)$field['active_status'] === 1): ?>
-                                    <th><?= e($field['label']); ?></th>
+                                    <th><?= e((string)($uiFieldLabels[$field['field_key']] ?? $field['label'])); ?></th>
                                 <?php endif; ?>
                             <?php endforeach; ?>
                             <th>Audit</th>
