@@ -140,10 +140,34 @@ function ensure_asset_schema(): void
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
     );
 
+    db()->exec(
+        "CREATE TABLE IF NOT EXISTS office_orders (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            subject VARCHAR(255) NOT NULL,
+            uploaded_by INT NOT NULL,
+            uploaded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    );
+
+    db()->exec(
+        "CREATE TABLE IF NOT EXISTS office_order_files (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            office_order_id INT NOT NULL,
+            original_name VARCHAR(255) NOT NULL,
+            stored_name VARCHAR(255) NOT NULL,
+            file_ext VARCHAR(20) NOT NULL,
+            mime_type VARCHAR(100) NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            KEY idx_office_order_files_order (office_order_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    );
+
     asset_ensure_column('zones', 'active_status', 'TINYINT NOT NULL DEFAULT 1');
     asset_ensure_column('circles', 'active_status', 'TINYINT NOT NULL DEFAULT 1');
     asset_ensure_column('divisions', 'active_status', 'TINYINT NOT NULL DEFAULT 1');
     asset_ensure_column('office_asset_declarations', 'declared_officer_name', 'VARCHAR(255) DEFAULT NULL');
+    asset_ensure_column('info', 'welcome_message', 'LONGTEXT DEFAULT NULL');
 
     asset_seed_default_fields();
 }
@@ -290,6 +314,211 @@ function office_name_from_type_id(int $officeType, int $officeId): string
     $stmt = db()->prepare("SELECT {$meta['column']} FROM {$meta['table']} WHERE id = ? LIMIT 1");
     $stmt->execute([$officeId]);
     return (string)($stmt->fetchColumn() ?: '-');
+}
+
+function office_order_storage_dir(): string
+{
+    return dirname(__DIR__, 2) . '/storage/office_orders';
+}
+
+function ensure_office_order_storage_dir(): string
+{
+    $dir = office_order_storage_dir();
+    if (!is_dir($dir) && !mkdir($dir, 0777, true) && !is_dir($dir)) {
+        throw new RuntimeException('Unable to create office order storage directory.');
+    }
+    return $dir;
+}
+
+function office_order_allowed_extensions(): array
+{
+    return [
+        'pdf' => 'application/pdf',
+        'txt' => 'text/plain',
+        'doc' => 'application/msword',
+        'docx' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'xls' => 'application/vnd.ms-excel',
+        'xlsx' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'jpg' => 'image/jpeg',
+        'jpeg' => 'image/jpeg',
+        'png' => 'image/png',
+        'gif' => 'image/gif',
+        'webp' => 'image/webp',
+        'bmp' => 'image/bmp',
+    ];
+}
+
+function normalize_uploaded_files_array(array $fileBag): array
+{
+    if (!isset($fileBag['name'])) {
+        return [];
+    }
+    if (!is_array($fileBag['name'])) {
+        return [$fileBag];
+    }
+
+    $files = [];
+    foreach ($fileBag['name'] as $index => $name) {
+        $files[] = [
+            'name' => $name,
+            'type' => $fileBag['type'][$index] ?? '',
+            'tmp_name' => $fileBag['tmp_name'][$index] ?? '',
+            'error' => $fileBag['error'][$index] ?? UPLOAD_ERR_NO_FILE,
+            'size' => $fileBag['size'][$index] ?? 0,
+        ];
+    }
+    return $files;
+}
+
+function validate_office_order_upload(array $file): array
+{
+    $errors = [];
+    if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+        $errors[] = 'One of the selected files failed to upload.';
+        return $errors;
+    }
+    $originalName = (string)($file['name'] ?? '');
+    $extension = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
+    $allowed = office_order_allowed_extensions();
+    if (!isset($allowed[$extension])) {
+        $errors[] = 'Unsupported file type: ' . $originalName;
+    }
+    return $errors;
+}
+
+function create_office_order(string $subject, array $fileBag, int $userId): void
+{
+    $subject = trim($subject);
+    if ($subject === '') {
+        throw new RuntimeException('Order subject is required.');
+    }
+
+    $files = array_values(array_filter(
+        normalize_uploaded_files_array($fileBag),
+        static fn(array $file): bool => !empty($file['tmp_name'])
+    ));
+
+    if (!$files) {
+        throw new RuntimeException('Please choose at least one PDF or image file.');
+    }
+
+    $uploadErrors = [];
+    foreach ($files as $file) {
+        $uploadErrors = array_merge($uploadErrors, validate_office_order_upload($file));
+    }
+    if ($uploadErrors) {
+        throw new RuntimeException(implode(' ', $uploadErrors));
+    }
+
+    $dir = ensure_office_order_storage_dir();
+    $allowed = office_order_allowed_extensions();
+    $finfo = finfo_open(FILEINFO_MIME_TYPE);
+
+    db()->beginTransaction();
+    try {
+        $stmt = db()->prepare('INSERT INTO office_orders (subject, uploaded_by, uploaded_at, created_at) VALUES (?, ?, NOW(), NOW())');
+        $stmt->execute([$subject, $userId]);
+        $orderId = (int)db()->lastInsertId();
+
+        $fileStmt = db()->prepare('INSERT INTO office_order_files (office_order_id, original_name, stored_name, file_ext, mime_type, created_at) VALUES (?, ?, ?, ?, ?, NOW())');
+
+        foreach ($files as $file) {
+            $originalName = (string)$file['name'];
+            $extension = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
+            $storedName = sprintf('order_%d_%s.%s', $orderId, bin2hex(random_bytes(8)), $extension);
+            $targetPath = $dir . '/' . $storedName;
+            $detectedMime = $finfo ? (string)finfo_file($finfo, (string)$file['tmp_name']) : '';
+            $mimeType = $allowed[$extension];
+            if ($detectedMime !== '' && str_starts_with($mimeType, 'image/') && !str_starts_with($detectedMime, 'image/')) {
+                throw new RuntimeException('Invalid image file detected: ' . $originalName);
+            }
+            if ($mimeType === 'application/pdf' && $detectedMime !== '' && $detectedMime !== 'application/pdf') {
+                throw new RuntimeException('Invalid PDF file detected: ' . $originalName);
+            }
+            if (!move_uploaded_file((string)$file['tmp_name'], $targetPath)) {
+                throw new RuntimeException('Failed to store uploaded file: ' . $originalName);
+            }
+            $fileStmt->execute([$orderId, $originalName, $storedName, $extension, $mimeType]);
+        }
+
+        db()->commit();
+        add_log($userId, 'office_orders', $orderId, 'Office order uploaded.');
+    } catch (Throwable $e) {
+        if (db()->inTransaction()) {
+            db()->rollBack();
+        }
+        throw $e;
+    } finally {
+        if ($finfo) {
+            finfo_close($finfo);
+        }
+    }
+}
+
+function get_office_orders(): array
+{
+    $orders = db()->query('
+        SELECT o.*, u.officer_name, u.email_id
+        FROM office_orders o
+        LEFT JOIN users u ON u.id = o.uploaded_by
+        ORDER BY o.id DESC
+    ')->fetchAll();
+
+    if (!$orders) {
+        return [];
+    }
+
+    $orderIds = array_map(static fn(array $order): int => (int)$order['id'], $orders);
+    $placeholders = implode(',', array_fill(0, count($orderIds), '?'));
+    $fileStmt = db()->prepare("SELECT * FROM office_order_files WHERE office_order_id IN ({$placeholders}) ORDER BY id ASC");
+    $fileStmt->execute($orderIds);
+    $filesByOrder = [];
+    foreach ($fileStmt->fetchAll() as $file) {
+        $filesByOrder[(int)$file['office_order_id']][] = $file;
+    }
+
+    foreach ($orders as &$order) {
+        $order['files'] = $filesByOrder[(int)$order['id']] ?? [];
+    }
+    unset($order);
+
+    return $orders;
+}
+
+function get_office_order_file(int $fileId): ?array
+{
+    $stmt = db()->prepare('
+        SELECT f.*, o.subject
+        FROM office_order_files f
+        JOIN office_orders o ON o.id = f.office_order_id
+        WHERE f.id = ?
+        LIMIT 1
+    ');
+    $stmt->execute([$fileId]);
+    $row = $stmt->fetch();
+    return $row ?: null;
+}
+
+function stream_office_order_file(int $fileId): void
+{
+    $file = get_office_order_file($fileId);
+    if (!$file) {
+        http_response_code(404);
+        exit('File not found.');
+    }
+
+    $path = office_order_storage_dir() . '/' . $file['stored_name'];
+    if (!is_file($path)) {
+        http_response_code(404);
+        exit('Stored file not found.');
+    }
+
+    header('Content-Type: ' . (string)$file['mime_type']);
+    header('Content-Length: ' . (string)filesize($path));
+    header('Content-Disposition: inline; filename="' . rawurlencode((string)$file['original_name']) . '"');
+    header('X-Content-Type-Options: nosniff');
+    readfile($path);
+    exit;
 }
 
 function current_office_label(?array $user = null): string
@@ -742,32 +971,40 @@ function normalize_asset_field_value(array $field, mixed $raw, array $fieldMap, 
 
 function create_asset(array $validated, array $user): int
 {
-    $ctx = current_office_context($user);
-    if (!$ctx) {
-        throw new RuntimeException('Office context not found.');
-    }
     db()->beginTransaction();
     try {
-        $stmt = db()->prepare('INSERT INTO assets (asset_number, category_id, subcategory_id, office_type, office_id, active_status, created_by, created_at) VALUES (?, ?, ?, ?, ?, 1, ?, NOW())');
-        $stmt->execute([
-            'PENDING',
-            $validated['category_id'],
-            $validated['subcategory_id'],
-            $ctx['office_type'],
-            $ctx['office_id'],
-            (int)$user['id'],
-        ]);
-        $assetId = (int)db()->lastInsertId();
-        $assetNumber = sprintf('AST-%s-%06d', date('Y'), $assetId);
-        db()->prepare('UPDATE assets SET asset_number = ? WHERE id = ?')->execute([$assetNumber, $assetId]);
-        save_asset_values($assetId, $validated['field_values']);
+        $assetId = persist_asset_record($validated, $user);
         db()->commit();
         add_log((int)$user['id'], 'assets', $assetId, 'Asset created.');
         return $assetId;
     } catch (Throwable $e) {
-        db()->rollBack();
+        if (db()->inTransaction()) {
+            db()->rollBack();
+        }
         throw $e;
     }
+}
+
+function persist_asset_record(array $validated, array $user): int
+{
+    $ctx = current_office_context($user);
+    if (!$ctx) {
+        throw new RuntimeException('Office context not found.');
+    }
+    $stmt = db()->prepare('INSERT INTO assets (asset_number, category_id, subcategory_id, office_type, office_id, active_status, created_by, created_at) VALUES (?, ?, ?, ?, ?, 1, ?, NOW())');
+    $stmt->execute([
+        'PENDING',
+        $validated['category_id'],
+        $validated['subcategory_id'],
+        $ctx['office_type'],
+        $ctx['office_id'],
+        (int)$user['id'],
+    ]);
+    $assetId = (int)db()->lastInsertId();
+    $assetNumber = sprintf('AST-%s-%06d', date('Y'), $assetId);
+    db()->prepare('UPDATE assets SET asset_number = ? WHERE id = ?')->execute([$assetNumber, $assetId]);
+    save_asset_values($assetId, $validated['field_values']);
+    return $assetId;
 }
 
 function update_asset(int $assetId, array $validated, array $user): void
@@ -1005,12 +1242,128 @@ function get_assets_grouped_by_category(array $filters = [], ?array $user = null
     return $grouped;
 }
 
+function asset_export_active_fields(): array
+{
+    return array_values(array_filter(
+        get_asset_fields(),
+        static fn(array $field): bool => (int)$field['active_status'] === 1 && (int)$field['is_import_enabled'] === 1
+    ));
+}
+
+function asset_export_headers(bool $includeOfficeName = false): array
+{
+    $headers = ['serial' => 'Serial No'];
+    if ($includeOfficeName) {
+        $headers['office_name'] = 'Office Name';
+    }
+    $headers['category'] = 'Category';
+    $headers['subcategory'] = 'Sub-category';
+
+    foreach (asset_export_active_fields() as $field) {
+        $rawLabel = trim((string)($field['label'] ?? ''));
+        $parts = preg_split('/\s*\/\s*/u', $rawLabel);
+        $headers[$field['field_key']] = trim((string)($parts[0] ?? $rawLabel));
+    }
+
+    return $headers;
+}
+
+function build_asset_export_rows(array $filters = [], ?array $user = null, bool $includeOfficeName = false): array
+{
+    $rows = [];
+    $fields = asset_export_active_fields();
+    $assets = get_assets($filters, $user);
+
+    foreach ($assets as $index => $asset) {
+        $row = [
+            'serial' => $index + 1,
+            'category' => (string)($asset['category_name'] ?? ''),
+            'subcategory' => (string)($asset['subcategory_name'] ?? ''),
+        ];
+        if ($includeOfficeName) {
+            $row['office_name'] = trim((string)(($asset['office_type_label'] ?? '') . ' - ' . ($asset['office_name'] ?? '')), ' -');
+        }
+        foreach ($fields as $field) {
+            $row[$field['field_key']] = (string)($asset['values'][$field['field_key']] ?? '');
+        }
+        $rows[] = $row;
+    }
+
+    return $rows;
+}
+
+function export_asset_data_excel(array $filters = [], ?array $user = null, bool $includeOfficeName = false): void
+{
+    $headers = asset_export_headers($includeOfficeName);
+    $rows = build_asset_export_rows($filters, $user, $includeOfficeName);
+    $suffix = $includeOfficeName ? 'superadmin' : 'office';
+    export_excel($rows, $headers, 'asset_data_' . $suffix . '.xlsx', 'Asset Data');
+}
+
 function get_asset_declaration(int $officeType, int $officeId): ?array
 {
     $stmt = db()->prepare('SELECT * FROM office_asset_declarations WHERE office_type = ? AND office_id = ? LIMIT 1');
     $stmt->execute([$officeType, $officeId]);
     $row = $stmt->fetch();
     return $row ?: null;
+}
+
+function asset_relative_time_label(?string $datetime, string $emptyLabel = 'Never'): string
+{
+    $datetime = trim((string)$datetime);
+    if ($datetime === '') {
+        return $emptyLabel;
+    }
+    $timestamp = strtotime($datetime);
+    if ($timestamp === false) {
+        return $emptyLabel;
+    }
+    $diff = max(0, time() - $timestamp);
+    if ($diff < 86400) {
+        $hours = max(1, (int)floor($diff / 3600));
+        return $hours . ' hr' . ($hours === 1 ? '' : 's') . ' ago';
+    }
+    $days = max(1, (int)floor($diff / 86400));
+    return $days . ' day' . ($days === 1 ? '' : 's') . ' ago';
+}
+
+function asset_relative_age_days(?string $datetime): ?float
+{
+    $datetime = trim((string)$datetime);
+    if ($datetime === '') {
+        return null;
+    }
+    $timestamp = strtotime($datetime);
+    if ($timestamp === false) {
+        return null;
+    }
+    return max(0, (time() - $timestamp) / 86400);
+}
+
+function get_office_last_asset_update_at(int $officeType, int $officeId): ?string
+{
+    $stmt = db()->prepare('
+        SELECT MAX(COALESCE(updated_at, created_at)) AS last_update_at
+        FROM assets
+        WHERE office_type = ? AND office_id = ?
+    ');
+    $stmt->execute([$officeType, $officeId]);
+    $value = $stmt->fetchColumn();
+    return $value !== false && $value !== null ? (string)$value : null;
+}
+
+function get_office_activity_summary(int $officeType, int $officeId): array
+{
+    $declaration = get_asset_declaration($officeType, $officeId);
+    $lastSentAt = (string)($declaration['declared_at'] ?? '');
+    $lastUpdateAt = (string)(get_office_last_asset_update_at($officeType, $officeId) ?? '');
+
+    return [
+        'last_sent_at' => $lastSentAt,
+        'last_sent_label' => asset_relative_time_label($lastSentAt),
+        'last_update_at' => $lastUpdateAt,
+        'last_update_label' => asset_relative_time_label($lastUpdateAt, 'No updates yet'),
+    ];
 }
 
 function declare_office_assets(int $officeType, int $officeId, int $userId): void
@@ -1049,16 +1402,16 @@ function reset_office_asset_declarations(array $pairs, int $userId): int
     return $count;
 }
 
-function get_declaration_status_tables(): array
+function get_declaration_status_tables(array $filters = []): array
 {
     return [
-        2 => get_declarations_for_office_type(2),
-        3 => get_declarations_for_office_type(3),
-        4 => get_declarations_for_office_type(4),
+        2 => get_declarations_for_office_type(2, $filters),
+        3 => get_declarations_for_office_type(3, $filters),
+        4 => get_declarations_for_office_type(4, $filters),
     ];
 }
 
-function get_declarations_for_office_type(int $officeType): array
+function get_declarations_for_office_type(int $officeType, array $filters = []): array
 {
     $tableMap = [
         2 => 'zones',
@@ -1076,7 +1429,41 @@ function get_declarations_for_office_type(int $officeType): array
         ORDER BY o.office_name ASC";
     $stmt = db()->prepare($sql);
     $stmt->execute([$officeType]);
-    return $stmt->fetchAll();
+    $rows = [];
+    foreach ($stmt->fetchAll() as $row) {
+        $officeId = (int)$row['office_id'];
+        $lastSentAt = (string)($row['declared_at'] ?? '');
+        $lastUpdateAt = (string)(get_office_last_asset_update_at($officeType, $officeId) ?? '');
+        $status = !empty($row['declared_status']) ? 'declared' : 'undeclared';
+
+        $sentAge = asset_relative_age_days($lastSentAt);
+        $updatedAge = asset_relative_age_days($lastUpdateAt);
+
+        if (!empty($filters['status']) && $filters['status'] !== $status) {
+            continue;
+        }
+        if (isset($filters['sent_earlier']) && $filters['sent_earlier'] !== null && ($sentAge === null || $sentAge < (int)$filters['sent_earlier'])) {
+            continue;
+        }
+        if (isset($filters['sent_sooner']) && $filters['sent_sooner'] !== null && ($sentAge === null || $sentAge > (int)$filters['sent_sooner'])) {
+            continue;
+        }
+        if (isset($filters['updated_earlier']) && $filters['updated_earlier'] !== null && ($updatedAge === null || $updatedAge < (int)$filters['updated_earlier'])) {
+            continue;
+        }
+        if (isset($filters['updated_sooner']) && $filters['updated_sooner'] !== null && ($updatedAge === null || $updatedAge > (int)$filters['updated_sooner'])) {
+            continue;
+        }
+
+        $row['status_key'] = $status;
+        $row['last_sent_at'] = $lastSentAt;
+        $row['last_sent_label'] = asset_relative_time_label($lastSentAt);
+        $row['last_update_at'] = $lastUpdateAt;
+        $row['last_update_label'] = asset_relative_time_label($lastUpdateAt, 'No updates yet');
+        $rows[] = $row;
+    }
+
+    return $rows;
 }
 
 function office_kind_to_type(string $kind): int
@@ -1741,7 +2128,11 @@ function restage_asset_import_rows(array $submittedRows): array
         }
         $reviewRows[] = stage_asset_import_row($payload, (int)($row['row_number'] ?? ($index + 1)));
     }
-    $_SESSION['asset_import_review']['rows'] = $reviewRows;
+    if ($reviewRows) {
+        $_SESSION['asset_import_review']['rows'] = $reviewRows;
+    } else {
+        unset($_SESSION['asset_import_review']);
+    }
     return $reviewRows;
 }
 
@@ -1754,6 +2145,7 @@ function commit_asset_import_review(array $user): array
 
     $saved = 0;
     $errors = [];
+    $invalidRows = [];
     $batchStmt = db()->prepare('INSERT INTO asset_import_batches (office_type, office_id, uploaded_by, original_filename, status, created_at) VALUES (?, ?, ?, ?, ?, NOW())');
     $ctx = current_office_context($user);
     if (!$ctx) {
@@ -1762,29 +2154,52 @@ function commit_asset_import_review(array $user): array
     $batchStmt->execute([$ctx['office_type'], $ctx['office_id'], (int)$user['id'], (string)($review['filename'] ?? 'import.xlsx'), 'completed']);
     $batchId = (int)db()->lastInsertId();
 
+    $validRows = [];
     foreach ($review['rows'] as $row) {
-        if (!empty($row['errors'])) {
-            $errors[] = 'Row ' . $row['row_number'] . ' still has validation errors.';
-            continue;
-        }
         $validated = validate_asset_payload([
             'category_id' => (int)$row['category_id'],
             'subcategory_id' => (int)$row['subcategory_id'],
             'fields' => $row['fields'] ?? [],
         ]);
         if (!empty($validated['errors'])) {
-            $errors[] = 'Row ' . $row['row_number'] . ' failed re-validation.';
+            $row['errors'] = $validated['errors'];
+            $invalidRows[] = $row;
+            $errors[] = 'Row ' . $row['row_number'] . ' still has validation errors.';
             continue;
         }
-        create_asset($validated['payload'], $user);
-        $saved++;
+        $validRows[] = ['row' => $row, 'payload' => $validated['payload']];
     }
 
-    db()->prepare('UPDATE asset_import_batches SET imported_count = ?, skipped_count = ?, updated_at = NOW() WHERE id = ?')->execute([$saved, count($review['rows']) - $saved, $batchId]);
+    if ($validRows) {
+        db()->beginTransaction();
+        try {
+            foreach ($validRows as $item) {
+                persist_asset_record($item['payload'], $user);
+                $saved++;
+            }
+            db()->prepare('UPDATE asset_import_batches SET imported_count = ?, skipped_count = ?, updated_at = NOW() WHERE id = ?')->execute([$saved, count($invalidRows), $batchId]);
+            db()->commit();
+        } catch (Throwable $e) {
+            if (db()->inTransaction()) {
+                db()->rollBack();
+            }
+            foreach ($validRows as $item) {
+                $invalidRows[] = $item['row'];
+            }
+            $saved = 0;
+            $errors[] = 'Database save failed. No rows were imported.';
+        }
+    } else {
+        db()->prepare('UPDATE asset_import_batches SET imported_count = ?, skipped_count = ?, updated_at = NOW() WHERE id = ?')->execute([$saved, count($invalidRows), $batchId]);
+    }
 
-    if (!$errors) {
+    if ($invalidRows) {
+        $_SESSION['asset_import_review']['rows'] = $invalidRows;
+    } else {
         unset($_SESSION['asset_import_review']);
+    }
+    if ($saved > 0 && !$errors) {
         add_log((int)$user['id'], 'asset_import_batches', $batchId, 'Bulk asset import completed.');
     }
-    return ['saved' => $saved, 'errors' => $errors];
+    return ['saved' => $saved, 'errors' => $errors, 'remaining' => count($invalidRows)];
 }

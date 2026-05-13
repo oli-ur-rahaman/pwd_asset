@@ -24,6 +24,7 @@ function login_user(string $email, string $password): bool
     }
     session_regenerate_id(true);
     $_SESSION['user'] = $user;
+    $_SESSION['show_welcome_message'] = true;
     return true;
 }
 
@@ -73,5 +74,5 @@ function is_chief_user(): bool
 
 function can_view_logs(): bool
 {
-    return current_user() !== null;
+    return false;
 }

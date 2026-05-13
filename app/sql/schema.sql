@@ -161,6 +161,7 @@ CREATE TABLE IF NOT EXISTS info (
     site_name VARCHAR(255) DEFAULT NULL,
     video_tutorial_url VARCHAR(255) DEFAULT NULL,
     login_message TEXT DEFAULT NULL,
+    welcome_message LONGTEXT DEFAULT NULL,
     i_opr_repair TEXT DEFAULT NULL,
     i_opr_other TEXT DEFAULT NULL,
     i_dev_pw TEXT DEFAULT NULL,
@@ -338,4 +339,23 @@ CREATE TABLE IF NOT EXISTS asset_import_batches (
     status VARCHAR(20) NOT NULL DEFAULT 'pending',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS office_orders (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    subject VARCHAR(255) NOT NULL,
+    uploaded_by INT NOT NULL,
+    uploaded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS office_order_files (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    office_order_id INT NOT NULL,
+    original_name VARCHAR(255) NOT NULL,
+    stored_name VARCHAR(255) NOT NULL,
+    file_ext VARCHAR(20) NOT NULL,
+    mime_type VARCHAR(100) NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_office_order_files_order (office_order_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

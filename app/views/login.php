@@ -11,7 +11,6 @@
 <div class="auth-wrap">
     <div class="auth-logo-row">
         <div class="logo-stack" aria-hidden="true">
-            <span class="logo-dot"></span>
             <img src="public/assets/login_logo.png" alt="Organization Logo" class="auth-logo">
         </div>
     </div>
@@ -41,7 +40,9 @@
             </form>
         </div>
         <div class="auth-info">
-            <?= $info && !empty($info['login_message']) ? $info['login_message'] : '<p>Please sign in to continue.</p>'; ?>
+            <div class="auth-info-content">
+                <?= $info && !empty($info['login_message']) ? $info['login_message'] : '<p>Please sign in to continue.</p>'; ?>
+            </div>
         </div>
     </div>
 </div>

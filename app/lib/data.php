@@ -479,6 +479,7 @@ function save_info_row(?string $video_url, ?string $login_message, array $extras
 {
     $existing = get_info_row();
     $site_name = $extras['site_name'] ?? ($existing['site_name'] ?? null);
+    $welcome_message = $extras['welcome_message'] ?? ($existing['welcome_message'] ?? null);
     $opr_repair = $extras['i_opr_repair'] ?? ($existing['i_opr_repair'] ?? null);
     $opr_other = $extras['i_opr_other'] ?? ($existing['i_opr_other'] ?? null);
     $dev_pw = $extras['i_dev_pw'] ?? ($existing['i_dev_pw'] ?? null);
@@ -487,12 +488,12 @@ function save_info_row(?string $video_url, ?string $login_message, array $extras
     $opr_msg = $extras['i_opr'] ?? ($existing['i_opr'] ?? null);
     $dev_msg = $extras['i_dev'] ?? ($existing['i_dev'] ?? null);
     if ($existing) {
-        $stmt = db()->prepare('UPDATE info SET site_name = ?, video_tutorial_url = ?, login_message = ?, i_opr_repair = ?, i_opr_other = ?, i_dev_pw = ?, i_opr_min = ?, i_dev_min = ?, i_opr = ?, i_dev = ?, updated_at = NOW() WHERE id = ?');
-        $stmt->execute([$site_name, $video_url, $login_message, $opr_repair, $opr_other, $dev_pw, $opr_min, $dev_min, $opr_msg, $dev_msg, (int)$existing['id']]);
+        $stmt = db()->prepare('UPDATE info SET site_name = ?, video_tutorial_url = ?, login_message = ?, welcome_message = ?, i_opr_repair = ?, i_opr_other = ?, i_dev_pw = ?, i_opr_min = ?, i_dev_min = ?, i_opr = ?, i_dev = ?, updated_at = NOW() WHERE id = ?');
+        $stmt->execute([$site_name, $video_url, $login_message, $welcome_message, $opr_repair, $opr_other, $dev_pw, $opr_min, $dev_min, $opr_msg, $dev_msg, (int)$existing['id']]);
         return;
     }
-    $stmt = db()->prepare('INSERT INTO info (site_name, video_tutorial_url, login_message, i_opr_repair, i_opr_other, i_dev_pw, i_opr_min, i_dev_min, i_opr, i_dev, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())');
-    $stmt->execute([$site_name, $video_url, $login_message, $opr_repair, $opr_other, $dev_pw, $opr_min, $dev_min, $opr_msg, $dev_msg]);
+    $stmt = db()->prepare('INSERT INTO info (site_name, video_tutorial_url, login_message, welcome_message, i_opr_repair, i_opr_other, i_dev_pw, i_opr_min, i_dev_min, i_opr, i_dev, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())');
+    $stmt->execute([$site_name, $video_url, $login_message, $welcome_message, $opr_repair, $opr_other, $dev_pw, $opr_min, $dev_min, $opr_msg, $dev_msg]);
 }
 
 function get_office_name_for_user(array $user): string

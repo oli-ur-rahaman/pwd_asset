@@ -41,10 +41,12 @@ if (is_superadmin()) {
 
 $groupedAssets = get_assets_grouped_by_category($filters, $user);
 $declaration = null;
+$officeSummary = null;
 if (!is_superadmin()) {
     $ctx = current_office_context($user);
     if ($ctx) {
         $declaration = get_asset_declaration($ctx['office_type'], $ctx['office_id']);
+        $officeSummary = get_office_activity_summary($ctx['office_type'], $ctx['office_id']);
     }
 }
 
@@ -62,19 +64,55 @@ foreach ($fields as $field) {
     $parts = preg_split('/\s*\/\s*/u', $rawLabel);
     $uiFieldLabels[$field['field_key']] = trim((string)($parts[0] ?? $rawLabel));
 }
+$categoryNameById = [];
+foreach ($categories as $category) {
+    $categoryNameById[(int)$category['id']] = (string)$category['name'];
+}
+$importFieldDefs = [];
+foreach ($fields as $field) {
+    if ((int)$field['is_import_enabled'] !== 1 || (int)$field['active_status'] !== 1) {
+        continue;
+    }
+    $importFieldDefs[] = [
+        'field_key' => (string)$field['field_key'],
+        'label' => (string)($uiFieldLabels[$field['field_key']] ?? $field['label']),
+        'data_type' => (string)$field['data_type'],
+        'required' => (int)$field['is_required'] === 1,
+        'options' => array_map(
+            static fn(array $option): string => (string)$option['option_value'],
+            get_asset_field_options((int)$field['id'])
+        ),
+    ];
+}
+$downloadFilters = [
+    'office_type' => $selectedOfficeType,
+    'office_id' => $selectedOfficeId,
+    'category_id' => (int)($filters['category_id'] ?? 0),
+    'subcategory_id' => (int)($filters['subcategory_id'] ?? 0),
+    'condition_value' => (string)($filters['condition_value'] ?? ''),
+];
+$conditionOptions = isset($fieldMap['condition_value']) ? get_asset_field_options((int)$fieldMap['condition_value']['id']) : [];
 ?>
 <section class="card hero-card">
     <div class="hero-row">
-        <div>
-            <h2><?= e((string)($info['site_name'] ?? 'PWD Asset Management System')); ?></h2>
-            <p class="muted">Office: <?= e(current_office_label($user)); ?> | User: <?= e((string)($user['email_id'] ?? '')); ?></p>
+        <div class="hero-copy">
+            <h2 class="hero-title"><?= e((string)($info['site_name'] ?? 'PWD Asset Management System')); ?></h2>
+            <p class="hero-subtitle">Office: <?= e(current_office_label($user)); ?> | User: <?= e((string)($user['email_id'] ?? '')); ?></p>
         </div>
         <?php if (!is_superadmin()): ?>
-            <form method="post" action="index.php" class="inline-form">
-                <?= csrf_input(); ?>
-                <input type="hidden" name="action" value="asset_declare">
-                <button type="submit" <?= !empty($declaration['declared_status']) ? 'disabled' : ''; ?>>Declare as Completed</button>
-            </form>
+            <div class="hero-actions">
+                <?php if ($officeSummary): ?>
+                    <div class="hero-summary">
+                        <div class="hero-summary-item"><strong>Last Sent</strong><br><span class="muted"><?= e($officeSummary['last_sent_label']); ?></span></div>
+                        <div class="hero-summary-item"><strong>Last Update</strong><br><span class="muted"><?= e($officeSummary['last_update_label']); ?></span></div>
+                    </div>
+                <?php endif; ?>
+                <form method="post" action="index.php" class="inline-form">
+                    <?= csrf_input(); ?>
+                    <input type="hidden" name="action" value="asset_declare">
+                    <button type="submit" class="hero-declare-button" <?= !empty($declaration['declared_status']) ? 'disabled' : ''; ?>>Declare as Completed</button>
+                </form>
+            </div>
         <?php endif; ?>
     </div>
     <?php if (!empty($declaration['declared_status'])): ?>
@@ -142,6 +180,7 @@ foreach ($fields as $field) {
             </select>
         </label>
         <button type="submit">Apply</button>
+        <a href="index.php?page=board" class="icon-only-button" title="Refresh Filters" aria-label="Refresh Filters">&#x21bb;</a>
     </form>
 </section>
 <?php endif; ?>
@@ -152,6 +191,18 @@ foreach ($fields as $field) {
         <button type="button" data-modal="asset-modal">+Add Asset</button>
         <button type="button" data-modal="import-modal">Bulk Entry</button>
         <a href="asset_template.php" class="button-link">Excel Template</a>
+        <form method="post" action="index.php" class="inline-form">
+            <?= csrf_input(); ?>
+            <input type="hidden" name="action" value="asset_download_data">
+            <button type="submit" class="btn-secondary">Download Data</button>
+        </form>
+    </div>
+</section>
+<?php else: ?>
+<section class="card">
+    <div class="toolbar-row">
+        <a href="asset_template.php" class="button-link">Excel Template</a>
+        <button type="button" data-modal="superadmin-download-modal" class="btn-secondary">Download Data</button>
     </div>
 </section>
 <?php endif; ?>
@@ -307,11 +358,28 @@ foreach ($fields as $field) {
 
 <?php if ($review && !empty($review['rows'])): ?>
 <div class="modal-backdrop open" id="import-review-modal" aria-hidden="false">
-    <div class="modal-card modal-wide" role="dialog" aria-modal="true" aria-labelledby="import-review-title">
+    <div class="modal-card modal-wide import-review-modal-card" role="dialog" aria-modal="true" aria-labelledby="import-review-title">
         <h3 id="import-review-title">Import Audit Review</h3>
+        <script type="application/json" id="import-review-meta"><?= json_encode([
+            'categories' => array_map(static fn(array $category): array => [
+                'id' => (int)$category['id'],
+                'name' => (string)$category['name'],
+            ], get_asset_categories()),
+            'subcategories' => array_map(static fn(array $subcategory): array => [
+                'id' => (int)$subcategory['id'],
+                'category_id' => (int)$subcategory['category_id'],
+                'name' => (string)$subcategory['name'],
+            ], get_asset_subcategories(null, true)),
+            'fields' => $importFieldDefs,
+        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?></script>
         <form method="post" action="index.php" class="grid">
             <?= csrf_input(); ?>
             <input type="hidden" name="action" value="asset_import_save">
+            <div class="modal-actions">
+                <button type="button" id="import-review-add-row">+Add Row</button>
+                <button type="submit">Save Validated Rows</button>
+            </div>
+            <p class="import-review-summary" id="import-review-summary">Number of Rows need attention - 0</p>
             <div class="table-wrap">
                 <table class="audit-table">
                     <thead>
@@ -325,26 +393,76 @@ foreach ($fields as $field) {
                                 <?php endif; ?>
                             <?php endforeach; ?>
                             <th>Audit</th>
+                            <th>Action</th>
                         </tr>
                     </thead>
-                    <tbody>
+                    <tbody id="import-review-body">
                         <?php foreach ($review['rows'] as $rowIndex => $row): ?>
-                            <tr class="<?= !empty($row['errors']) ? 'has-errors' : ''; ?>">
+                            <tr class="review-row <?= !empty($row['errors']) ? 'has-errors' : 'is-valid'; ?>">
                                 <td>
                                     <?= e((string)$row['row_number']); ?>
                                     <input type="hidden" name="rows[<?= $rowIndex; ?>][row_number]" value="<?= e((string)$row['row_number']); ?>">
                                 </td>
-                                <td><input type="text" name="rows[<?= $rowIndex; ?>][category]" value="<?= e($row['category']); ?>"></td>
-                                <td><input type="text" name="rows[<?= $rowIndex; ?>][subcategory]" value="<?= e($row['subcategory']); ?>"></td>
+                                <td class="<?= !empty($row['errors']['category_id']) ? 'cell-error' : 'cell-valid'; ?>">
+                                    <select class="review-input" data-review-role="category" name="rows[<?= $rowIndex; ?>][category]">
+                                        <option value="">Select</option>
+                                        <?php foreach ($categories as $category): ?>
+                                            <option value="<?= e($category['name']); ?>" <?= strcasecmp((string)$row['category'], (string)$category['name']) === 0 ? 'selected' : ''; ?>><?= e($category['name']); ?></option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </td>
+                                <td class="<?= !empty($row['errors']['subcategory_id']) ? 'cell-error' : 'cell-valid'; ?>">
+                                    <select class="review-input" data-review-role="subcategory" name="rows[<?= $rowIndex; ?>][subcategory]">
+                                        <option value="">Select</option>
+                                        <?php foreach ($subcategories as $subcategory): ?>
+                                            <option value="<?= e($subcategory['name']); ?>" data-category-name="<?= e((string)($categoryNameById[(int)$subcategory['category_id']] ?? '')); ?>" data-category-id="<?= e((string)$subcategory['category_id']); ?>" <?= strcasecmp((string)$row['subcategory'], (string)$subcategory['name']) === 0 ? 'selected' : ''; ?>><?= e($subcategory['name']); ?></option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </td>
                                 <?php foreach ($fields as $field): ?>
                                     <?php if ((int)$field['is_import_enabled'] === 1 && (int)$field['active_status'] === 1): ?>
                                         <?php $fieldError = $row['errors'][$field['field_key']] ?? null; ?>
-                                        <td class="<?= $fieldError ? 'cell-error' : ''; ?>">
-                                            <input type="text" name="rows[<?= $rowIndex; ?>][fields][<?= e($field['field_key']); ?>]" value="<?= e((string)($row['fields'][$field['field_key']] ?? '')); ?>">
+                                        <td class="<?= $fieldError ? 'cell-error' : 'cell-valid'; ?>">
+                                            <?php $fieldValue = (string)($row['fields'][$field['field_key']] ?? ''); ?>
+                                            <?php if (in_array($field['data_type'], ['dropdown', 'yes_no'], true)): ?>
+                                                <select
+                                                    class="review-input"
+                                                    data-review-role="field"
+                                                    data-field-key="<?= e($field['field_key']); ?>"
+                                                    data-field-type="<?= e($field['data_type']); ?>"
+                                                    data-required="<?= (int)$field['is_required']; ?>"
+                                                    name="rows[<?= $rowIndex; ?>][fields][<?= e($field['field_key']); ?>]"
+                                                >
+                                                    <option value="">Select</option>
+                                                    <?php
+                                                        $options = get_asset_field_options((int)$field['id']);
+                                                        if ($field['data_type'] === 'yes_no' && !$options) {
+                                                            $options = [
+                                                                ['option_value' => 'Yes', 'option_label' => 'Yes'],
+                                                                ['option_value' => 'No', 'option_label' => 'No'],
+                                                            ];
+                                                        }
+                                                    ?>
+                                                    <?php foreach ($options as $option): ?>
+                                                        <option value="<?= e((string)$option['option_value']); ?>" <?= strcasecmp($fieldValue, (string)$option['option_value']) === 0 ? 'selected' : ''; ?>><?= e((string)$option['option_label']); ?></option>
+                                                    <?php endforeach; ?>
+                                                </select>
+                                            <?php else: ?>
+                                                <input
+                                                    type="<?= $field['data_type'] === 'number' ? 'number' : ($field['data_type'] === 'date' ? 'date' : 'text'); ?>"
+                                                    <?= $field['data_type'] === 'number' ? 'step="0.01"' : ''; ?>
+                                                    class="review-input"
+                                                    data-review-role="field"
+                                                    data-field-key="<?= e($field['field_key']); ?>"
+                                                    data-field-type="<?= e($field['data_type']); ?>"
+                                                    data-required="<?= (int)$field['is_required']; ?>"
+                                                    name="rows[<?= $rowIndex; ?>][fields][<?= e($field['field_key']); ?>]"
+                                                    value="<?= e($fieldValue); ?>">
+                                            <?php endif; ?>
                                         </td>
                                     <?php endif; ?>
                                 <?php endforeach; ?>
-                                <td>
+                                <td class="audit-cell">
                                     <?php if (!empty($row['errors'])): ?>
                                         <?php foreach ($row['errors'] as $message): ?>
                                             <div class="error-text"><?= e($message); ?></div>
@@ -353,19 +471,106 @@ foreach ($fields as $field) {
                                         <span class="success-text">OK</span>
                                     <?php endif; ?>
                                 </td>
+                                <td>
+                                    <button type="button" class="icon-only-button icon-delete-button review-delete-row" title="Delete Row" aria-label="Delete Row">&#x1f5d1;</button>
+                                </td>
                             </tr>
                         <?php endforeach; ?>
                     </tbody>
                 </table>
-            </div>
-            <div class="modal-actions">
-                <button type="submit">Save Validated Rows</button>
             </div>
         </form>
         <form method="post" action="index.php" class="inline-form">
             <?= csrf_input(); ?>
             <input type="hidden" name="action" value="asset_import_cancel">
             <button type="submit" class="btn-small">Cancel Review</button>
+        </form>
+</div>
+</div>
+<?php endif; ?>
+
+<?php if (is_superadmin()): ?>
+<div class="modal-backdrop" id="superadmin-download-modal" aria-hidden="true">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="superadmin-download-title">
+        <h3 id="superadmin-download-title">Download Asset Data</h3>
+        <?php
+            $downloadScope = 'zone';
+            if ($downloadFilters['office_type'] === 3) {
+                $downloadScope = 'circle';
+            } elseif ($downloadFilters['office_type'] === 4) {
+                $downloadScope = 'division';
+            }
+        ?>
+        <form method="post" action="index.php" class="grid" id="superadmin-download-form">
+            <?= csrf_input(); ?>
+            <input type="hidden" name="action" value="asset_download_data">
+            <input type="hidden" name="office_scope" id="download-office-scope" value="<?= e($downloadScope); ?>">
+            <div class="download-modal-scope-row">
+                <div class="segmented-control" id="download-scope-toggle" role="tablist" aria-label="Office Level">
+                    <button type="button" class="segment<?= $downloadScope === 'zone' ? ' is-active' : ''; ?>" data-download-scope="zone">Zone</button>
+                    <button type="button" class="segment<?= $downloadScope === 'circle' ? ' is-active' : ''; ?>" data-download-scope="circle">Circle</button>
+                    <button type="button" class="segment<?= $downloadScope === 'division' ? ' is-active' : ''; ?>" data-download-scope="division">Division</button>
+                </div>
+                <button type="button" class="icon-only-button" id="download-reset-filters" title="Refresh Filters" aria-label="Refresh Filters">&#x21bb;</button>
+            </div>
+            <div class="download-modal-row">
+                <label data-download-level="zone">Zone
+                    <select name="zone_id" id="download-zone-select">
+                        <option value="0">All</option>
+                        <?php foreach ($zones as $zone): ?>
+                            <option value="<?= e((string)$zone['id']); ?>" <?= $selectedZone === (int)$zone['id'] ? 'selected' : ''; ?>><?= e($zone['office_name']); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </label>
+                <label data-download-level="circle">Circle
+                    <select name="circle_id" id="download-circle-select">
+                        <option value="0">All</option>
+                        <?php foreach ($circles as $circle): ?>
+                            <option value="<?= e((string)$circle['id']); ?>" data-zone="<?= e((string)$circle['zone_id']); ?>" <?= $selectedCircle === (int)$circle['id'] ? 'selected' : ''; ?>><?= e($circle['office_name']); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </label>
+                <label data-download-level="division">Division
+                    <select name="division_id" id="download-division-select">
+                        <option value="0">All</option>
+                        <?php foreach ($divisions as $division): ?>
+                            <option value="<?= e((string)$division['id']); ?>" data-zone="<?= e((string)$division['zone_id']); ?>" data-circle="<?= e((string)$division['circle_id']); ?>" <?= $selectedDivision === (int)$division['id'] ? 'selected' : ''; ?>><?= e($division['office_name']); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </label>
+            </div>
+            <div class="download-modal-row">
+                <label>Category
+                    <select name="category_id" id="download-category-select">
+                        <option value="0">All</option>
+                        <?php foreach ($categories as $category): ?>
+                            <option value="<?= e((string)$category['id']); ?>" <?= $downloadFilters['category_id'] === (int)$category['id'] ? 'selected' : ''; ?>><?= e($category['name']); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </label>
+                <label>Sub-category
+                    <select name="subcategory_id" id="download-subcategory-select">
+                        <option value="0">All</option>
+                        <?php foreach ($subcategories as $subcategory): ?>
+                            <option value="<?= e((string)$subcategory['id']); ?>" data-category="<?= e((string)$subcategory['category_id']); ?>" <?= $downloadFilters['subcategory_id'] === (int)$subcategory['id'] ? 'selected' : ''; ?>><?= e($subcategory['name']); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </label>
+            </div>
+            <div class="download-modal-row download-modal-row-single">
+                <label>Condition
+                    <select name="condition_value" id="download-condition-select">
+                        <option value="">All</option>
+                        <?php foreach ($conditionOptions as $option): ?>
+                            <option value="<?= e((string)$option['option_value']); ?>" <?= $downloadFilters['condition_value'] === (string)$option['option_value'] ? 'selected' : ''; ?>><?= e((string)$option['option_label']); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </label>
+            </div>
+            <div class="modal-actions">
+                <button type="submit" class="btn-secondary">Download</button>
+                <button type="button" class="modal-close" data-close="superadmin-download-modal">Cancel</button>
+            </div>
         </form>
     </div>
 </div>

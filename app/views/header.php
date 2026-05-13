@@ -12,10 +12,8 @@
 <nav class="nav">
     <div class="nav-title"><?= e((string)($info['site_name'] ?? 'PWD Asset Management System')); ?></div>
     <div class="nav-links">
-        <a href="index.php?page=board">Assets / সম্পদ</a>
-        <?php if (can_view_logs()): ?>
-            <a href="index.php?page=logs">Logs</a>
-        <?php endif; ?>
+        <a href="index.php?page=board">Assets</a>
+        <a href="index.php?page=office_orders">Office Orders</a>
         <?php if (is_superadmin()): ?>
             <a href="index.php?page=admin">Management</a>
             <a href="index.php?page=offices">Offices</a>
@@ -40,6 +38,10 @@
 <?php endif; ?>
 <?php
     $needs_name = $user && (empty($user['officer_name']) || $user['officer_name'] === '0');
+    $show_welcome_message = !$needs_name && !empty($_SESSION['show_welcome_message']) && !empty($info['welcome_message']);
+    if ($show_welcome_message) {
+        unset($_SESSION['show_welcome_message']);
+    }
 ?>
 <?php if ($needs_name): ?>
     <div class="modal-backdrop open" id="name-modal" aria-hidden="false">
@@ -57,6 +59,16 @@
                     <button type="button" class="modal-close" id="name-cancel">Cancel</button>
                 </div>
             </form>
+        </div>
+    </div>
+<?php endif; ?>
+<?php if ($show_welcome_message): ?>
+    <div class="modal-backdrop open" id="welcome-modal" aria-hidden="false">
+        <div class="modal-card welcome-modal-card" role="dialog" aria-modal="true" aria-label="Welcome message">
+            <button type="button" class="welcome-modal-close modal-close" data-close="welcome-modal" aria-label="Close">×</button>
+            <div class="welcome-message-body">
+                <?= (string)$info['welcome_message']; ?>
+            </div>
         </div>
     </div>
 <?php endif; ?>

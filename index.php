@@ -207,6 +207,20 @@ if ($action === 'upload_asset_template') {
     redirect('index.php?page=admin');
 }
 
+if ($action === 'create_office_order') {
+    if (!is_superadmin()) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
+    try {
+        create_office_order(input_str('subject'), $_FILES['order_files'] ?? [], (int)current_user()['id']);
+        flash('success', 'Office order uploaded.');
+    } catch (Throwable $e) {
+        flash('error', $e->getMessage());
+    }
+    redirect('index.php?page=office_orders');
+}
+
 if ($action === 'asset_save') {
     $user = current_user();
     $assetId = input_int('asset_id');
@@ -363,26 +377,24 @@ if ($action === 'asset_import_upload') {
 if ($action === 'asset_import_save') {
     $rows = $_POST['rows'] ?? [];
     if (!is_array($rows)) {
-        flash('error', 'No import rows submitted.');
+        unset($_SESSION['asset_import_review']);
+        flash('success', 'Import review cleared.');
         redirect('index.php?page=board');
     }
     $reviewRows = restage_asset_import_rows($rows);
-    $hasErrors = false;
-    foreach ($reviewRows as $row) {
-        if (!empty($row['errors'])) {
-            $hasErrors = true;
-            break;
-        }
-    }
-    if ($hasErrors) {
-        flash('error', 'Please fix the highlighted import rows before saving.');
+    if (!$reviewRows) {
+        flash('success', 'Import review cleared.');
         redirect('index.php?page=board');
     }
     $result = commit_asset_import_review(current_user());
-    if ($result['errors']) {
-        flash('error', implode(' ', $result['errors']));
-    } else {
+    if (($result['saved'] ?? 0) > 0 && ($result['remaining'] ?? 0) > 0) {
+        flash('success', $result['saved'] . ' asset(s) imported. ' . $result['remaining'] . ' row(s) still need fixes.');
+    } elseif (($result['saved'] ?? 0) > 0) {
         flash('success', $result['saved'] . ' asset(s) imported successfully.');
+    } elseif ($result['errors']) {
+        flash('error', 'Please fix the highlighted import rows before saving.');
+    } else {
+        flash('success', 'No rows were imported.');
     }
     redirect('index.php?page=board');
 }
@@ -391,6 +403,35 @@ if ($action === 'asset_import_cancel') {
     unset($_SESSION['asset_import_review']);
     flash('success', 'Import review cleared.');
     redirect('index.php?page=board');
+}
+
+if ($action === 'asset_download_data') {
+    try {
+        if (is_superadmin()) {
+            $scope = input_str('office_scope', 'zone');
+            $filters = [
+                'category_id' => input_int('category_id'),
+                'subcategory_id' => input_int('subcategory_id'),
+                'condition_value' => input_str('condition_value', ''),
+            ];
+            if ($scope === 'zone') {
+                $filters['office_type'] = 2;
+                $filters['office_id'] = input_int('zone_id');
+            } elseif ($scope === 'circle') {
+                $filters['office_type'] = 3;
+                $filters['office_id'] = input_int('circle_id');
+            } elseif ($scope === 'division') {
+                $filters['office_type'] = 4;
+                $filters['office_id'] = input_int('division_id');
+            }
+            export_asset_data_excel($filters, current_user(), true);
+        } else {
+            export_asset_data_excel([], current_user(), false);
+        }
+    } catch (Throwable $e) {
+        flash('error', 'Download failed: ' . $e->getMessage());
+        redirect('index.php?page=board');
+    }
 }
 
 if ($action === 'csv_import') {
@@ -567,6 +608,9 @@ if ($action === 'save_interface') {
     if (array_key_exists('site_name', $_POST)) {
         $extras['site_name'] = input_str('site_name');
     }
+    if (array_key_exists('welcome_message', $_POST)) {
+        $extras['welcome_message'] = input_str('welcome_message');
+    }
     save_info_row(
         array_key_exists('video_tutorial_url', $_POST) ? input_str('video_tutorial_url') : ($existing['video_tutorial_url'] ?? null),
         array_key_exists('login_message', $_POST) ? input_str('login_message') : ($existing['login_message'] ?? null),
@@ -582,16 +626,20 @@ if ($page === 'logout') {
 }
 
 if ($page === 'logs') {
-    if (!can_view_logs()) {
-        http_response_code(403);
-        exit('Not allowed.');
-    }
-    require __DIR__ . '/app/views/logs.php';
-    exit;
+    redirect('index.php?page=board');
 }
 
 if ($page === 'board') {
     require __DIR__ . '/app/views/board.php';
+    exit;
+}
+
+if ($page === 'office_order_file') {
+    stream_office_order_file((int)request_str('id', '0'));
+}
+
+if ($page === 'office_orders') {
+    require __DIR__ . '/app/views/office_orders.php';
     exit;
 }
 
