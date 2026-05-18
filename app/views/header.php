@@ -18,6 +18,7 @@
             <a href="index.php?page=admin">Management</a>
             <a href="index.php?page=offices">Offices</a>
             <a href="index.php?page=declarations">Declarations</a>
+            <a href="index.php?page=user_permissions">User Permissions</a>
             <a href="index.php?page=interface">Interface</a>
         <?php endif; ?>
         <a href="index.php?page=profile">Profile</a>

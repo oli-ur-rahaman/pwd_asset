@@ -40,7 +40,7 @@ if ($action !== null && !csrf_validate($_POST['csrf_token'] ?? null)) {
 }
 
 if ($action === 'create_asset_category') {
-    if (!is_superadmin()) {
+    if (!can_manage_superadmin_scope()) {
         http_response_code(403);
         exit('Not allowed.');
     }
@@ -55,7 +55,7 @@ if ($action === 'create_asset_category') {
 }
 
 if ($action === 'update_asset_category') {
-    if (!is_superadmin()) {
+    if (!can_manage_superadmin_scope()) {
         http_response_code(403);
         exit('Not allowed.');
     }
@@ -71,7 +71,7 @@ if ($action === 'update_asset_category') {
 }
 
 if ($action === 'toggle_asset_category') {
-    if (!is_superadmin()) {
+    if (!can_manage_superadmin_scope()) {
         http_response_code(403);
         exit('Not allowed.');
     }
@@ -81,7 +81,7 @@ if ($action === 'toggle_asset_category') {
 }
 
 if ($action === 'delete_asset_category') {
-    if (!is_superadmin()) {
+    if (!can_manage_superadmin_scope()) {
         http_response_code(403);
         exit('Not allowed.');
     }
@@ -94,7 +94,7 @@ if ($action === 'delete_asset_category') {
 }
 
 if ($action === 'create_asset_subcategory') {
-    if (!is_superadmin()) {
+    if (!can_manage_superadmin_scope()) {
         http_response_code(403);
         exit('Not allowed.');
     }
@@ -110,7 +110,7 @@ if ($action === 'create_asset_subcategory') {
 }
 
 if ($action === 'update_asset_subcategory') {
-    if (!is_superadmin()) {
+    if (!can_manage_superadmin_scope()) {
         http_response_code(403);
         exit('Not allowed.');
     }
@@ -127,7 +127,7 @@ if ($action === 'update_asset_subcategory') {
 }
 
 if ($action === 'toggle_asset_subcategory') {
-    if (!is_superadmin()) {
+    if (!can_manage_superadmin_scope()) {
         http_response_code(403);
         exit('Not allowed.');
     }
@@ -137,7 +137,7 @@ if ($action === 'toggle_asset_subcategory') {
 }
 
 if ($action === 'delete_asset_subcategory') {
-    if (!is_superadmin()) {
+    if (!can_manage_superadmin_scope()) {
         http_response_code(403);
         exit('Not allowed.');
     }
@@ -149,8 +149,18 @@ if ($action === 'delete_asset_subcategory') {
     redirect('index.php?page=admin');
 }
 
+if ($action === 'save_subcategory_visibility') {
+    if (!can_manage_superadmin_scope()) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
+    set_asset_subcategory_enabled(!empty($_POST['asset_subcategory_enabled']) ? 1 : 0);
+    flash('success', 'Sub-category visibility updated.');
+    redirect('index.php?page=admin');
+}
+
 if ($action === 'create_asset_field' || $action === 'update_asset_field') {
-    if (!is_superadmin()) {
+    if (!can_manage_superadmin_scope()) {
         http_response_code(403);
         exit('Not allowed.');
     }
@@ -171,7 +181,7 @@ if ($action === 'create_asset_field' || $action === 'update_asset_field') {
 }
 
 if ($action === 'toggle_asset_field') {
-    if (!is_superadmin()) {
+    if (!can_manage_superadmin_scope()) {
         http_response_code(403);
         exit('Not allowed.');
     }
@@ -181,7 +191,7 @@ if ($action === 'toggle_asset_field') {
 }
 
 if ($action === 'delete_asset_field') {
-    if (!is_superadmin()) {
+    if (!can_manage_superadmin_scope()) {
         http_response_code(403);
         exit('Not allowed.');
     }
@@ -194,7 +204,7 @@ if ($action === 'delete_asset_field') {
 }
 
 if ($action === 'upload_asset_template') {
-    if (!is_superadmin()) {
+    if (!can_manage_superadmin_scope()) {
         http_response_code(403);
         exit('Not allowed.');
     }
@@ -208,7 +218,7 @@ if ($action === 'upload_asset_template') {
 }
 
 if ($action === 'create_office_order') {
-    if (!is_superadmin()) {
+    if (!can_manage_superadmin_scope()) {
         http_response_code(403);
         exit('Not allowed.');
     }
@@ -223,8 +233,12 @@ if ($action === 'create_office_order') {
 
 if ($action === 'asset_save') {
     $user = current_user();
+    if (!can_modify_office_assets($user)) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
     $assetId = input_int('asset_id');
-    $validation = validate_asset_payload($_POST);
+    $validation = validate_asset_payload($_POST, $assetId > 0 ? $assetId : null, $_FILES);
     if ($validation['errors']) {
         flash('error', implode(' ', array_values($validation['errors'])));
         redirect('index.php?page=board');
@@ -249,6 +263,10 @@ if ($action === 'asset_save') {
 }
 
 if ($action === 'asset_bulk_delete') {
+    if (!can_modify_office_assets(current_user())) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
     $ids = $_POST['asset_ids'] ?? [];
     $deleted = soft_delete_assets(is_array($ids) ? $ids : [], current_user());
     flash($deleted > 0 ? 'success' : 'error', $deleted > 0 ? $deleted . ' asset(s) deleted.' : 'No assets were deleted.');
@@ -256,6 +274,10 @@ if ($action === 'asset_bulk_delete') {
 }
 
 if ($action === 'asset_declare') {
+    if (!can_modify_office_assets(current_user())) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
     $ctx = current_office_context();
     if (!$ctx) {
         flash('error', 'Office declaration is not available for this user.');
@@ -268,7 +290,7 @@ if ($action === 'asset_declare') {
 }
 
 if ($action === 'asset_reset_declarations') {
-    if (!is_superadmin()) {
+    if (!can_manage_superadmin_scope()) {
         http_response_code(403);
         exit('Not allowed.');
     }
@@ -288,7 +310,7 @@ if ($action === 'asset_reset_declarations') {
 }
 
 if ($action === 'create_office') {
-    if (!is_superadmin()) {
+    if (!can_manage_superadmin_scope()) {
         http_response_code(403);
         exit('Not allowed.');
     }
@@ -301,7 +323,7 @@ if ($action === 'create_office') {
         redirect('index.php?page=offices');
     }
     try {
-        create_office_with_user($officeKind, $name, $address, $email, input_int('zone_id'), input_int('circle_id'));
+        create_office_with_user($officeKind, $name, $address, $email, input_int('zone_id'), input_int('circle_id'), input_int('division_id'));
         flash('success', 'Office and linked user created.');
     } catch (Throwable $e) {
         flash('error', $e->getMessage());
@@ -310,7 +332,7 @@ if ($action === 'create_office') {
 }
 
 if ($action === 'update_office') {
-    if (!is_superadmin()) {
+    if (!can_manage_superadmin_scope()) {
         http_response_code(403);
         exit('Not allowed.');
     }
@@ -324,7 +346,7 @@ if ($action === 'update_office') {
         redirect('index.php?page=offices');
     }
     try {
-        update_office_with_user($officeKind, $officeId, $name, $address, $email, input_int('zone_id'), input_int('circle_id'));
+        update_office_with_user($officeKind, $officeId, $name, $address, $email, input_int('zone_id'), input_int('circle_id'), input_int('division_id'));
         flash('success', 'Office saved.');
     } catch (Throwable $e) {
         flash('error', $e->getMessage());
@@ -332,8 +354,126 @@ if ($action === 'update_office') {
     redirect('index.php?page=offices');
 }
 
+if ($action === 'save_office_user_management_flag') {
+    if (!can_manage_superadmin_scope()) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
+    try {
+        set_office_user_management_flag(input_str('office_kind'), input_int('office_id'), !empty($_POST['allow_office_user_management']) ? 1 : 0);
+        flash('success', 'Office user management permission updated.');
+    } catch (Throwable $e) {
+        flash('error', $e->getMessage());
+    }
+    redirect('index.php?page=offices');
+}
+
+if ($action === 'save_superadmin_additional_user') {
+    if (!can_manage_superadmin_scope()) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
+    try {
+        create_or_update_superadmin_additional_user(
+            input_str('email_id'),
+            input_str('officer_name'),
+            ($id = input_int('managed_user_id')) > 0 ? $id : null
+        );
+        flash('success', 'Superadmin additional user saved. Default password is 1234.');
+    } catch (Throwable $e) {
+        flash('error', $e->getMessage());
+    }
+    redirect('index.php?page=profile');
+}
+
+if ($action === 'reset_superadmin_additional_user_password') {
+    if (!can_manage_superadmin_scope()) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
+    try {
+        reset_superadmin_additional_user_password(input_int('managed_user_id'));
+        flash('success', 'Password reset to 1234.');
+    } catch (Throwable $e) {
+        flash('error', $e->getMessage());
+    }
+    redirect('index.php?page=profile');
+}
+
+if ($action === 'toggle_superadmin_additional_user_status') {
+    if (!can_manage_superadmin_scope()) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
+    try {
+        toggle_superadmin_additional_user_status(input_int('managed_user_id'), input_int('active_status', 1));
+        flash('success', 'Superadmin additional user status updated.');
+    } catch (Throwable $e) {
+        flash('error', $e->getMessage());
+    }
+    redirect('index.php?page=profile');
+}
+
+if ($action === 'save_additional_office_user') {
+    $officeType = input_int('office_type');
+    $officeId = input_int('office_id');
+    if (!user_can_manage_office_users(current_user(), $officeType, $officeId)) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
+    $returnPage = input_str('return_page', is_superadmin() ? 'offices' : 'profile');
+    try {
+        create_or_update_additional_office_user(
+            $officeType,
+            $officeId,
+            input_str('email_id'),
+            input_str('officer_name'),
+            input_int('office_access_level', 2),
+            ($id = input_int('managed_user_id')) > 0 ? $id : null
+        );
+        flash('success', 'Office user saved. Default password for newly added users is 1234.');
+    } catch (Throwable $e) {
+        flash('error', $e->getMessage());
+    }
+    redirect('index.php?page=' . $returnPage);
+}
+
+if ($action === 'reset_additional_office_user_password') {
+    $officeType = input_int('office_type');
+    $officeId = input_int('office_id');
+    if (!user_can_manage_office_users(current_user(), $officeType, $officeId)) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
+    $returnPage = input_str('return_page', is_superadmin() ? 'offices' : 'profile');
+    try {
+        reset_additional_office_user_password($officeType, $officeId, input_int('managed_user_id'));
+        flash('success', 'Password reset to 1234.');
+    } catch (Throwable $e) {
+        flash('error', $e->getMessage());
+    }
+    redirect('index.php?page=' . $returnPage);
+}
+
+if ($action === 'toggle_additional_office_user_status') {
+    $officeType = input_int('office_type');
+    $officeId = input_int('office_id');
+    if (!user_can_manage_office_users(current_user(), $officeType, $officeId)) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
+    $returnPage = input_str('return_page', is_superadmin() ? 'offices' : 'profile');
+    try {
+        toggle_additional_office_user_status($officeType, $officeId, input_int('managed_user_id'), input_int('active_status', 1));
+        flash('success', 'Office user status updated.');
+    } catch (Throwable $e) {
+        flash('error', $e->getMessage());
+    }
+    redirect('index.php?page=' . $returnPage);
+}
+
 if ($action === 'toggle_office_status') {
-    if (!is_superadmin()) {
+    if (!can_manage_superadmin_scope()) {
         http_response_code(403);
         exit('Not allowed.');
     }
@@ -347,7 +487,7 @@ if ($action === 'toggle_office_status') {
 }
 
 if ($action === 'reset_office_password') {
-    if (!is_superadmin()) {
+    if (!can_manage_superadmin_scope()) {
         http_response_code(403);
         exit('Not allowed.');
     }
@@ -361,6 +501,10 @@ if ($action === 'reset_office_password') {
 }
 
 if ($action === 'asset_import_upload') {
+    if (!can_modify_office_assets(current_user())) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
     if (empty($_FILES['asset_file']['tmp_name'])) {
         flash('error', 'Please choose an Excel file.');
         redirect('index.php?page=board');
@@ -375,6 +519,10 @@ if ($action === 'asset_import_upload') {
 }
 
 if ($action === 'asset_import_save') {
+    if (!can_modify_office_assets(current_user())) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
     $rows = $_POST['rows'] ?? [];
     if (!is_array($rows)) {
         unset($_SESSION['asset_import_review']);
@@ -406,14 +554,20 @@ if ($action === 'asset_import_cancel') {
 }
 
 if ($action === 'asset_download_data') {
+    if (!is_superadmin() && !can_modify_office_assets(current_user())) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
     try {
         if (is_superadmin()) {
             $scope = input_str('office_scope', 'zone');
             $filters = [
                 'category_id' => input_int('category_id'),
-                'subcategory_id' => input_int('subcategory_id'),
                 'condition_value' => input_str('condition_value', ''),
             ];
+            if (asset_subcategory_enabled()) {
+                $filters['subcategory_id'] = input_int('subcategory_id');
+            }
             if ($scope === 'zone') {
                 $filters['office_type'] = 2;
                 $filters['office_id'] = input_int('zone_id');
@@ -423,6 +577,9 @@ if ($action === 'asset_download_data') {
             } elseif ($scope === 'division') {
                 $filters['office_type'] = 4;
                 $filters['office_id'] = input_int('division_id');
+            } elseif ($scope === 'subdivision') {
+                $filters['office_type'] = 5;
+                $filters['office_id'] = input_int('subdivision_id');
             }
             export_asset_data_excel($filters, current_user(), true);
         } else {
@@ -435,7 +592,7 @@ if ($action === 'asset_download_data') {
 }
 
 if ($action === 'csv_import') {
-    if (!is_superadmin()) {
+    if (!can_manage_superadmin_scope()) {
         http_response_code(403);
         exit('Not allowed.');
     }
@@ -485,6 +642,17 @@ if ($action === 'csv_import') {
                 (int)($data['field_office'] ?? 1),
             ]);
             $count++;
+        } elseif ($type === 'subdivisions') {
+            db()->prepare('INSERT INTO subdivisions (office_name, office_address, office_type, zone_id, circle_id, division_id, active_status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())')->execute([
+                trim((string)($data['office_name'] ?? '')),
+                trim((string)($data['office_address'] ?? '')),
+                (int)($data['office_type'] ?? 5),
+                !empty($data['zone_id']) ? (int)$data['zone_id'] : null,
+                !empty($data['circle_id']) ? (int)$data['circle_id'] : null,
+                !empty($data['division_id']) ? (int)$data['division_id'] : null,
+                (int)($data['active_status'] ?? 1),
+            ]);
+            $count++;
         } elseif ($type === 'users') {
             $email = trim((string)($data['email_id'] ?? ''));
             if ($email === '') {
@@ -495,15 +663,32 @@ if ($action === 'csv_import') {
             if ($exists->fetchColumn()) {
                 continue;
             }
-            db()->prepare('INSERT INTO users (email_id, officer_name, password, office_type, office_role, zone_id, circle_id, division_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())')->execute([
+            $officeType = (int)($data['office_type'] ?? 4);
+            $zoneId = !empty($data['zone_id']) ? (int)$data['zone_id'] : null;
+            $circleId = !empty($data['circle_id']) ? (int)$data['circle_id'] : null;
+            $divisionId = !empty($data['division_id']) ? (int)$data['division_id'] : null;
+            $subdivisionId = !empty($data['subdivision_id']) ? (int)$data['subdivision_id'] : null;
+            $officeRole = (int)($data['office_role'] ?? 1);
+            $primaryOfficeId = match ($officeType) {
+                2 => $zoneId,
+                3 => $circleId,
+                4 => $divisionId,
+                5 => $subdivisionId,
+                default => null,
+            };
+            $isPrimary = $officeRole === 1 && $primaryOfficeId && !find_primary_office_user($officeType, (int)$primaryOfficeId);
+            db()->prepare('INSERT INTO users (email_id, officer_name, password, office_type, office_role, zone_id, circle_id, division_id, subdivision_id, is_primary_office_user, office_access_level, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())')->execute([
                 $email,
                 trim((string)($data['officer_name'] ?? '')),
                 password_hash((string)($data['password'] ?? 'changeme'), PASSWORD_DEFAULT),
-                (int)($data['office_type'] ?? 4),
-                (int)($data['office_role'] ?? 1),
-                !empty($data['zone_id']) ? (int)$data['zone_id'] : null,
-                !empty($data['circle_id']) ? (int)$data['circle_id'] : null,
-                !empty($data['division_id']) ? (int)$data['division_id'] : null,
+                $officeType,
+                $officeRole,
+                $zoneId,
+                $circleId,
+                $divisionId,
+                $subdivisionId,
+                $isPrimary ? 1 : 0,
+                $isPrimary ? 1 : 2,
             ]);
             $count++;
         }
@@ -536,7 +721,7 @@ if ($action === 'update_profile') {
 }
 
 if ($action === 'reset_user_password') {
-    if (!is_superadmin()) {
+    if (!can_manage_superadmin_scope()) {
         http_response_code(403);
         exit('Not allowed.');
     }
@@ -552,7 +737,7 @@ if ($action === 'reset_user_password') {
 }
 
 if ($action === 'toggle_user_status') {
-    if (!is_superadmin()) {
+    if (!can_manage_superadmin_scope()) {
         http_response_code(403);
         exit('Not allowed.');
     }
@@ -568,7 +753,7 @@ if ($action === 'toggle_user_status') {
 }
 
 if ($action === 'update_user') {
-    if (!is_superadmin()) {
+    if (!can_manage_superadmin_scope()) {
         http_response_code(403);
         exit('Not allowed.');
     }
@@ -580,11 +765,12 @@ if ($action === 'update_user') {
     $zoneId = input_int('zone_id');
     $circleId = input_int('circle_id');
     $divisionId = input_int('division_id');
+    $subdivisionId = input_int('subdivision_id');
     if ($userId <= 0 || $email === '') {
         flash('error', 'User and email are required.');
         redirect('index.php?page=users');
     }
-    db()->prepare('UPDATE users SET email_id = ?, officer_name = ?, office_role = ?, office_type = ?, zone_id = ?, circle_id = ?, division_id = ?, updated_at = NOW() WHERE id = ?')->execute([
+    db()->prepare('UPDATE users SET email_id = ?, officer_name = ?, office_role = ?, office_type = ?, zone_id = ?, circle_id = ?, division_id = ?, subdivision_id = ?, updated_at = NOW() WHERE id = ?')->execute([
         $email,
         $name === '' ? null : $name,
         $officeRole,
@@ -592,6 +778,7 @@ if ($action === 'update_user') {
         $zoneId > 0 ? $zoneId : null,
         $circleId > 0 ? $circleId : null,
         $divisionId > 0 ? $divisionId : null,
+        $subdivisionId > 0 ? $subdivisionId : null,
         $userId,
     ]);
     flash('success', 'User updated.');
@@ -599,7 +786,7 @@ if ($action === 'update_user') {
 }
 
 if ($action === 'save_interface') {
-    if (!is_superadmin()) {
+    if (!can_manage_superadmin_scope()) {
         http_response_code(403);
         exit('Not allowed.');
     }
@@ -620,6 +807,25 @@ if ($action === 'save_interface') {
     redirect('index.php?page=interface');
 }
 
+if ($action === 'bulk_update_office_user_management_permissions') {
+    if (!can_manage_superadmin_scope()) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
+    $pairs = [];
+    foreach (($_POST['offices'] ?? []) as $raw) {
+        [$officeType, $officeId] = array_pad(explode(':', (string)$raw), 2, 0);
+        $pairs[] = ['office_type' => (int)$officeType, 'office_id' => (int)$officeId];
+    }
+    try {
+        $updated = bulk_set_office_user_management_permissions($pairs, input_int('allowed_status', 1) === 1 ? 1 : 0);
+        flash('success', $updated . ' office permission(s) updated.');
+    } catch (Throwable $e) {
+        flash('error', $e->getMessage());
+    }
+    redirect('index.php?page=user_permissions');
+}
+
 if ($page === 'logout') {
     logout_user();
     redirect('index.php?page=login');
@@ -638,8 +844,41 @@ if ($page === 'office_order_file') {
     stream_office_order_file((int)request_str('id', '0'));
 }
 
+if ($page === 'asset_file') {
+    stream_asset_file((int)request_str('id', '0'), current_user());
+}
+
 if ($page === 'office_orders') {
     require __DIR__ . '/app/views/office_orders.php';
+    exit;
+}
+
+if ($page === 'csv_template') {
+    if (!is_superadmin()) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
+    $type = request_str('type');
+    $map = [
+        'zones' => 'zone_template.csv',
+        'circles' => 'circle_template.csv',
+        'divisions' => 'division_template.csv',
+        'subdivisions' => 'subdivision_template.csv',
+        'users' => 'users_template.csv',
+    ];
+    if (!isset($map[$type])) {
+        http_response_code(404);
+        exit('Template not found.');
+    }
+    $path = __DIR__ . '/csv/' . $map[$type];
+    if (!is_file($path)) {
+        http_response_code(404);
+        exit('Template not found.');
+    }
+    header('Content-Type: text/csv; charset=UTF-8');
+    header('Content-Disposition: attachment; filename="' . basename($path) . '"');
+    header('Content-Length: ' . (string)filesize($path));
+    readfile($path);
     exit;
 }
 
@@ -667,6 +906,15 @@ if ($page === 'declarations') {
         exit('Not allowed.');
     }
     require __DIR__ . '/app/views/declarations.php';
+    exit;
+}
+
+if ($page === 'user_permissions') {
+    if (!is_superadmin()) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
+    require __DIR__ . '/app/views/user_permissions.php';
     exit;
 }
 

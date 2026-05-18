@@ -71,6 +71,44 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
+    const renumberManagedUserRows = (container) => {
+        const body = container?.querySelector('[data-managed-user-body]');
+        if (!body) {
+            return;
+        }
+        body.querySelectorAll('tr').forEach((row, index) => {
+            const slCell = row.querySelector('[data-managed-user-sl]');
+            if (slCell) {
+                slCell.textContent = String(index + 1);
+            }
+        });
+    };
+
+    document.querySelectorAll('[data-add-managed-user-row]').forEach((button) => {
+        button.addEventListener('click', () => {
+            const targetId = button.getAttribute('data-add-managed-user-row');
+            const container = document.getElementById(targetId) || button.closest('.modal-card') || button.closest('.card');
+            if (!container) {
+                return;
+            }
+            const template = container.querySelector('template[data-managed-user-template]');
+            const body = container.querySelector('[data-managed-user-body]');
+            if (!template || !body) {
+                return;
+            }
+            const formId = `managed-user-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+            const html = template.innerHTML.replaceAll('__FORM_ID__', formId);
+            const wrapper = document.createElement('tbody');
+            wrapper.innerHTML = html.trim();
+            const row = wrapper.firstElementChild;
+            if (!row) {
+                return;
+            }
+            body.appendChild(row);
+            renumberManagedUserRows(container);
+        });
+    });
+
     document.querySelectorAll('.select-all').forEach((checkbox) => {
         checkbox.addEventListener('change', () => {
             const table = checkbox.closest('table');
@@ -133,6 +171,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const zoneSelect = assetFilters.querySelector('select[name="zone_id"]');
                 const circleSelect = assetFilters.querySelector('select[name="circle_id"]');
                 const divisionSelect = assetFilters.querySelector('select[name="division_id"]');
+                const subdivisionSelect = assetFilters.querySelector('select[name="subdivision_id"]');
                 if (select === circleSelect && circleSelect.value !== '0') {
                     const selected = circleSelect.options[circleSelect.selectedIndex];
                     if (zoneSelect) {
@@ -148,6 +187,18 @@ document.addEventListener('DOMContentLoaded', () => {
                         circleSelect.value = selected.getAttribute('data-circle') || '0';
                     }
                 }
+                if (select === subdivisionSelect && subdivisionSelect.value !== '0') {
+                    const selected = subdivisionSelect.options[subdivisionSelect.selectedIndex];
+                    if (zoneSelect) {
+                        zoneSelect.value = selected.getAttribute('data-zone') || '0';
+                    }
+                    if (circleSelect) {
+                        circleSelect.value = selected.getAttribute('data-circle') || '0';
+                    }
+                    if (divisionSelect) {
+                        divisionSelect.value = selected.getAttribute('data-division') || '0';
+                    }
+                }
                 assetFilters.submit();
             });
         });
@@ -156,6 +207,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const downloadZone = document.getElementById('download-zone-select');
     const downloadCircle = document.getElementById('download-circle-select');
     const downloadDivision = document.getElementById('download-division-select');
+    const downloadSubdivision = document.getElementById('download-subdivision-select');
     const downloadScopeInput = document.getElementById('download-office-scope');
     const downloadScopeToggle = document.getElementById('download-scope-toggle');
     const downloadResetFilters = document.getElementById('download-reset-filters');
@@ -163,7 +215,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (downloadZone && downloadCircle && downloadDivision && downloadScopeInput) {
         const syncDownloadScope = () => {
             const scope = downloadScopeInput.value || 'zone';
-            const levels = { zone: 1, circle: 2, division: 3 };
+            const levels = { zone: 1, circle: 2, division: 3, subdivision: 4 };
             const maxLevel = levels[scope] || 1;
 
             if (downloadScopeToggle) {
@@ -181,8 +233,16 @@ document.addEventListener('DOMContentLoaded', () => {
             if (scope === 'zone') {
                 downloadCircle.value = '0';
                 downloadDivision.value = '0';
+                if (downloadSubdivision) {
+                    downloadSubdivision.value = '0';
+                }
             } else if (scope === 'circle') {
                 downloadDivision.value = '0';
+                if (downloadSubdivision) {
+                    downloadSubdivision.value = '0';
+                }
+            } else if (scope === 'division' && downloadSubdivision) {
+                downloadSubdivision.value = '0';
             }
         };
 
@@ -215,6 +275,23 @@ document.addEventListener('DOMContentLoaded', () => {
             if (downloadDivision.selectedOptions[0]?.hidden) {
                 downloadDivision.value = '0';
             }
+
+            if (downloadSubdivision) {
+                const divisionId = downloadDivision.value;
+                downloadSubdivision.querySelectorAll('option').forEach((option) => {
+                    if (option.value === '0') {
+                        option.hidden = false;
+                        return;
+                    }
+                    const zoneMatch = zoneId === '0' || option.getAttribute('data-zone') === zoneId;
+                    const circleMatch = circleId === '0' || option.getAttribute('data-circle') === circleId;
+                    const divisionMatch = divisionId === '0' || option.getAttribute('data-division') === divisionId;
+                    option.hidden = !(zoneMatch && circleMatch && divisionMatch);
+                });
+                if (downloadSubdivision.selectedOptions[0]?.hidden) {
+                    downloadSubdivision.value = '0';
+                }
+            }
         };
 
         if (downloadScopeToggle) {
@@ -233,6 +310,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 downloadZone.value = '0';
                 downloadCircle.value = '0';
                 downloadDivision.value = '0';
+                if (downloadSubdivision) {
+                    downloadSubdivision.value = '0';
+                }
                 if (downloadCategory) {
                     downloadCategory.value = '0';
                 }
@@ -253,6 +333,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         downloadZone.addEventListener('change', filterByOffice);
         downloadCircle.addEventListener('change', filterByOffice);
+        downloadDivision.addEventListener('change', filterByOffice);
         syncDownloadScope();
         filterByOffice();
     }
@@ -318,6 +399,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const meta = JSON.parse(importReviewMeta.textContent || '{}');
         const categories = meta.categories || [];
         const subcategories = meta.subcategories || [];
+        const hasSubcategory = subcategories.length > 0;
         const fields = meta.fields || [];
         const categoryMap = new Map(categories.map((item) => [String(item.name || '').trim().toLowerCase(), item]));
         const subcategoriesByCategory = new Map();
@@ -386,19 +468,21 @@ document.addEventListener('DOMContentLoaded', () => {
                 setCellState(categoryInput, true);
             }
 
-            let subcategoryValid = false;
-            if (category) {
-                const allowed = subcategoriesByCategory.get(String(category.id)) || [];
-                const match = allowed.find((item) => String(item.name || '').trim().toLowerCase() === subcategoryValue.toLowerCase());
-                if (match) {
-                    subcategoryInput.value = match.name;
-                    subcategoryValid = true;
+            let subcategoryValid = !hasSubcategory;
+            if (hasSubcategory) {
+                if (category) {
+                    const allowed = subcategoriesByCategory.get(String(category.id)) || [];
+                    const match = allowed.find((item) => String(item.name || '').trim().toLowerCase() === subcategoryValue.toLowerCase());
+                    if (match) {
+                        subcategoryInput.value = match.name;
+                        subcategoryValid = true;
+                    }
                 }
+                if (!subcategoryValid) {
+                    errors.push('Valid sub-category is required.');
+                }
+                setCellState(subcategoryInput, subcategoryValid);
             }
-            if (!subcategoryValid) {
-                errors.push('Valid sub-category is required.');
-            }
-            setCellState(subcategoryInput, subcategoryValid);
 
             fields.forEach((field) => {
                 const input = row.querySelector(`[data-field-key="${field.field_key}"]`);
@@ -552,15 +636,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 categoryCell.appendChild(categorySelect);
                 tr.appendChild(categoryCell);
 
-                const subcategoryCell = document.createElement('td');
-                subcategoryCell.className = 'cell-valid';
-                const subcategorySelect = document.createElement('select');
-                subcategorySelect.className = 'review-input';
-                subcategorySelect.name = `rows[${rowIndex}][subcategory]`;
-                subcategorySelect.setAttribute('data-review-role', 'subcategory');
-                subcategorySelect.innerHTML = '<option value="">Select</option>';
-                subcategoryCell.appendChild(subcategorySelect);
-                tr.appendChild(subcategoryCell);
+                if (hasSubcategory) {
+                    const subcategoryCell = document.createElement('td');
+                    subcategoryCell.className = 'cell-valid';
+                    const subcategorySelect = document.createElement('select');
+                    subcategorySelect.className = 'review-input';
+                    subcategorySelect.name = `rows[${rowIndex}][subcategory]`;
+                    subcategorySelect.setAttribute('data-review-role', 'subcategory');
+                    subcategorySelect.innerHTML = '<option value="">Select</option>';
+                    subcategoryCell.appendChild(subcategorySelect);
+                    tr.appendChild(subcategoryCell);
+                }
 
                 fields.forEach((field) => {
                     tr.appendChild(createFieldCell(rowIndex, field));
@@ -590,6 +676,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const createCircleSelect = document.getElementById('office-create-circle-select');
     const createZoneDisplay = document.getElementById('office-create-zone-display');
     const createZoneId = document.getElementById('office-create-zone-id');
+    const createDivisionSelect = document.getElementById('office-create-division-select');
+    const createDivisionCircleDisplay = document.getElementById('office-create-division-circle-display');
+    const createDivisionZoneDisplay = document.getElementById('office-create-division-zone-display');
 
     const syncCreateDivisionZone = () => {
         if (!createCircleSelect || !createZoneDisplay || !createZoneId) {
@@ -620,6 +709,18 @@ document.addEventListener('DOMContentLoaded', () => {
         createCircleSelect.addEventListener('change', syncCreateDivisionZone);
         syncCreateDivisionZone();
     }
+    const syncCreateSubdivisionHierarchy = () => {
+        if (!createDivisionSelect || !createDivisionCircleDisplay || !createDivisionZoneDisplay) {
+            return;
+        }
+        const selected = createDivisionSelect.options[createDivisionSelect.selectedIndex];
+        createDivisionCircleDisplay.value = selected ? (selected.getAttribute('data-circle-name') || '') : '';
+        createDivisionZoneDisplay.value = selected ? (selected.getAttribute('data-zone-name') || '') : '';
+    };
+    if (createDivisionSelect) {
+        createDivisionSelect.addEventListener('change', syncCreateSubdivisionHierarchy);
+        syncCreateSubdivisionHierarchy();
+    }
     if (officeCreateForm) {
         const setHiddenValue = (name, value) => {
             let input = officeCreateForm.querySelector(`input[type="hidden"][name="${name}"]`);
@@ -640,18 +741,28 @@ document.addEventListener('DOMContentLoaded', () => {
                 setHiddenValue('email_id', officeCreateForm.querySelector('[name="email_id_zone"]')?.value || '');
                 setHiddenValue('zone_id', '');
                 setHiddenValue('circle_id', '');
+                setHiddenValue('division_id', '');
             } else if (kind === 'circle') {
                 setHiddenValue('office_name', officeCreateForm.querySelector('[name="office_name_circle"]')?.value || '');
                 setHiddenValue('office_address', officeCreateForm.querySelector('[name="office_address_circle"]')?.value || '');
                 setHiddenValue('email_id', officeCreateForm.querySelector('[name="email_id_circle"]')?.value || '');
                 setHiddenValue('zone_id', officeCreateForm.querySelector('[name="zone_id_circle"]')?.value || '');
                 setHiddenValue('circle_id', '');
-            } else {
+                setHiddenValue('division_id', '');
+            } else if (kind === 'division') {
                 setHiddenValue('office_name', officeCreateForm.querySelector('[name="office_name_division"]')?.value || '');
                 setHiddenValue('office_address', officeCreateForm.querySelector('[name="office_address_division"]')?.value || '');
                 setHiddenValue('email_id', officeCreateForm.querySelector('[name="email_id_division"]')?.value || '');
                 setHiddenValue('zone_id', officeCreateForm.querySelector('[name="zone_id_division"]')?.value || '');
                 setHiddenValue('circle_id', officeCreateForm.querySelector('[name="circle_id_division"]')?.value || '');
+                setHiddenValue('division_id', '');
+            } else {
+                setHiddenValue('office_name', officeCreateForm.querySelector('[name="office_name_subdivision"]')?.value || '');
+                setHiddenValue('office_address', officeCreateForm.querySelector('[name="office_address_subdivision"]')?.value || '');
+                setHiddenValue('email_id', officeCreateForm.querySelector('[name="email_id_subdivision"]')?.value || '');
+                setHiddenValue('zone_id', '');
+                setHiddenValue('circle_id', '');
+                setHiddenValue('division_id', officeCreateForm.querySelector('[name="division_id_subdivision"]')?.value || '');
             }
         });
     }
@@ -671,6 +782,22 @@ document.addEventListener('DOMContentLoaded', () => {
         };
         select.addEventListener('change', syncZoneDisplay);
         syncZoneDisplay();
+    });
+
+    document.querySelectorAll('.office-division-select').forEach((select) => {
+        const syncHierarchyDisplay = () => {
+            const circleTarget = document.getElementById(select.getAttribute('data-target-circle') || '');
+            const zoneTarget = document.getElementById(select.getAttribute('data-target-zone') || '');
+            const selected = select.options[select.selectedIndex];
+            if (circleTarget) {
+                circleTarget.value = selected ? (selected.getAttribute('data-circle-name') || '') : '';
+            }
+            if (zoneTarget) {
+                zoneTarget.value = selected ? (selected.getAttribute('data-zone-name') || '') : '';
+            }
+        };
+        select.addEventListener('change', syncHierarchyDisplay);
+        syncHierarchyDisplay();
     });
 
     document.querySelectorAll('.office-inline-form').forEach((form) => {

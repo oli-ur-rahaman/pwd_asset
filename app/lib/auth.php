@@ -42,6 +42,15 @@ function is_superadmin(): bool
     return $user && (int)$user['office_role'] === 3;
 }
 
+function can_manage_superadmin_scope(?array $user = null): bool
+{
+    $user = $user ?: current_user();
+    if (!$user) {
+        return false;
+    }
+    return (int)($user['office_role'] ?? 0) === 3 && (int)($user['office_access_level'] ?? 0) !== 3;
+}
+
 function is_admin(): bool
 {
     $user = current_user();
@@ -70,6 +79,27 @@ function is_chief_user(): bool
 {
     $user = current_user();
     return $user && (int)$user['office_type'] === 1;
+}
+
+function is_view_only_user(?array $user = null): bool
+{
+    $user = $user ?: current_user();
+    if (!$user || (int)($user['office_role'] ?? 0) >= 2) {
+        return false;
+    }
+    return (int)($user['office_access_level'] ?? 2) === 3;
+}
+
+function can_modify_office_assets(?array $user = null): bool
+{
+    $user = $user ?: current_user();
+    if (!$user) {
+        return false;
+    }
+    if ((int)($user['office_role'] ?? 0) >= 2) {
+        return true;
+    }
+    return !is_view_only_user($user);
 }
 
 function can_view_logs(): bool

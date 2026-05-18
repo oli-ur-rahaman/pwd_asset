@@ -47,7 +47,7 @@ $declarationTables = get_declaration_status_tables($normalizedFilters);
     </form>
 </section>
 
-<?php foreach ([2 => 'Zone Offices', 3 => 'Circle Offices', 4 => 'Division Offices'] as $type => $title): ?>
+<?php foreach ([2 => 'Zone Offices', 3 => 'Circle Offices', 4 => 'Division Offices', 5 => 'Sub-division Offices'] as $type => $title): ?>
     <section class="card">
         <h3><?= e($title); ?></h3>
         <form method="post" action="index.php">

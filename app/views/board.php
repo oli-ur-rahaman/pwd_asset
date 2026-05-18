@@ -6,7 +6,8 @@ $info = get_info_row();
 $fieldMap = asset_field_map();
 $fields = get_asset_fields();
 $categories = get_asset_categories();
-$subcategories = get_asset_subcategories(null, true);
+$subcategoryEnabled = asset_subcategory_enabled();
+$subcategories = $subcategoryEnabled ? get_asset_subcategories(null, true) : [];
 $subcategoryByCategory = [];
 foreach ($subcategories as $subcategory) {
     $subcategoryByCategory[(int)$subcategory['category_id']][] = $subcategory;
@@ -19,7 +20,11 @@ if (is_superadmin()) {
     $selectedZone = (int)request_str('zone_id', '0');
     $selectedCircle = (int)request_str('circle_id', '0');
     $selectedDivision = (int)request_str('division_id', '0');
-    if ($selectedDivision > 0) {
+    $selectedSubdivision = (int)request_str('subdivision_id', '0');
+    if ($selectedSubdivision > 0) {
+        $selectedOfficeType = 5;
+        $selectedOfficeId = $selectedSubdivision;
+    } elseif ($selectedDivision > 0) {
         $selectedOfficeType = 4;
         $selectedOfficeId = $selectedDivision;
     } elseif ($selectedCircle > 0) {
@@ -34,7 +39,9 @@ if (is_superadmin()) {
         $filters['office_id'] = $selectedOfficeId;
     }
     $filters['category_id'] = (int)request_str('category_id', '0');
-    $filters['subcategory_id'] = (int)request_str('subcategory_id', '0');
+    if ($subcategoryEnabled) {
+        $filters['subcategory_id'] = (int)request_str('subcategory_id', '0');
+    }
     $filters['condition_value'] = request_str('condition_value', '');
     $filters['declared_status'] = request_str('declared_status', '');
 }
@@ -53,11 +60,13 @@ if (!is_superadmin()) {
 $editAssetId = (int)request_str('edit_asset', '0');
 $editingAsset = $editAssetId > 0 ? get_asset($editAssetId, true) : null;
 $editValues = $editingAsset['values'] ?? [];
+$editFiles = $editingAsset['files'] ?? [];
 $review = $_SESSION['asset_import_review'] ?? null;
 
 $zones = db()->query('SELECT id, office_name FROM zones ORDER BY office_name')->fetchAll();
 $circles = db()->query('SELECT id, office_name, zone_id FROM circles ORDER BY office_name')->fetchAll();
 $divisions = db()->query('SELECT id, office_name, zone_id, circle_id FROM divisions ORDER BY office_name')->fetchAll();
+$subdivisions = db()->query('SELECT id, office_name, zone_id, circle_id, division_id FROM subdivisions ORDER BY office_name')->fetchAll();
 $uiFieldLabels = [];
 foreach ($fields as $field) {
     $rawLabel = trim((string)($field['label'] ?? ''));
@@ -88,9 +97,11 @@ $downloadFilters = [
     'office_type' => $selectedOfficeType,
     'office_id' => $selectedOfficeId,
     'category_id' => (int)($filters['category_id'] ?? 0),
-    'subcategory_id' => (int)($filters['subcategory_id'] ?? 0),
     'condition_value' => (string)($filters['condition_value'] ?? ''),
 ];
+if ($subcategoryEnabled) {
+    $downloadFilters['subcategory_id'] = (int)($filters['subcategory_id'] ?? 0);
+}
 $conditionOptions = isset($fieldMap['condition_value']) ? get_asset_field_options((int)$fieldMap['condition_value']['id']) : [];
 ?>
 <section class="card hero-card">
@@ -149,6 +160,14 @@ $conditionOptions = isset($fieldMap['condition_value']) ? get_asset_field_option
                 <?php endforeach; ?>
             </select>
         </label>
+        <label>Sub-division
+            <select name="subdivision_id">
+                <option value="0">All</option>
+                <?php foreach ($subdivisions as $subdivision): ?>
+                    <option value="<?= e((string)$subdivision['id']); ?>" data-zone="<?= e((string)$subdivision['zone_id']); ?>" data-circle="<?= e((string)$subdivision['circle_id']); ?>" data-division="<?= e((string)$subdivision['division_id']); ?>" <?= $selectedSubdivision === (int)$subdivision['id'] ? 'selected' : ''; ?>><?= e($subdivision['office_name']); ?></option>
+                <?php endforeach; ?>
+            </select>
+        </label>
         <label>Category
             <select name="category_id">
                 <option value="0">All</option>
@@ -157,14 +176,16 @@ $conditionOptions = isset($fieldMap['condition_value']) ? get_asset_field_option
                 <?php endforeach; ?>
             </select>
         </label>
-        <label>Sub-category
-            <select name="subcategory_id">
-                <option value="0">All</option>
-                <?php foreach ($subcategories as $subcategory): ?>
-                    <option value="<?= e((string)$subcategory['id']); ?>" data-category="<?= e((string)$subcategory['category_id']); ?>" <?= (int)($filters['subcategory_id'] ?? 0) === (int)$subcategory['id'] ? 'selected' : ''; ?>><?= e($subcategory['name']); ?></option>
-                <?php endforeach; ?>
-            </select>
-        </label>
+        <?php if ($subcategoryEnabled): ?>
+            <label>Sub-category
+                <select name="subcategory_id">
+                    <option value="0">All</option>
+                    <?php foreach ($subcategories as $subcategory): ?>
+                        <option value="<?= e((string)$subcategory['id']); ?>" data-category="<?= e((string)$subcategory['category_id']); ?>" <?= (int)($filters['subcategory_id'] ?? 0) === (int)$subcategory['id'] ? 'selected' : ''; ?>><?= e($subcategory['name']); ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </label>
+        <?php endif; ?>
         <label>Condition
             <select name="condition_value">
                 <option value="">All</option>
@@ -229,7 +250,7 @@ $conditionOptions = isset($fieldMap['condition_value']) ? get_asset_field_option
                                 <th>SL No</th>
                                 <th>Asset Number</th>
                                 <?php if (is_superadmin()): ?><th>Office</th><?php endif; ?>
-                                <th>Sub-category</th>
+                                <?php if ($subcategoryEnabled): ?><th>Sub-category</th><?php endif; ?>
                                 <?php foreach ($fields as $field): ?>
                                     <?php if ((int)$field['is_displayed'] === 1 && (int)$field['active_status'] === 1): ?>
                                         <th><?= e((string)($uiFieldLabels[$field['field_key']] ?? $field['label'])); ?></th>
@@ -240,7 +261,7 @@ $conditionOptions = isset($fieldMap['condition_value']) ? get_asset_field_option
                         </thead>
                         <tbody>
                             <?php if (!$assets): ?>
-                                <tr><td colspan="<?= is_superadmin() ? 6 + count($fields) : 5 + count($fields); ?>" class="muted">No assets found.</td></tr>
+                                <tr><td colspan="<?= is_superadmin() ? (5 + ($subcategoryEnabled ? 1 : 0) + count($fields)) : (4 + ($subcategoryEnabled ? 1 : 0) + count($fields)); ?>" class="muted">No assets found.</td></tr>
                             <?php endif; ?>
                             <?php foreach ($assets as $index => $asset): ?>
                                 <tr>
@@ -250,10 +271,28 @@ $conditionOptions = isset($fieldMap['condition_value']) ? get_asset_field_option
                                     <td><?= e((string)($index + 1)); ?></td>
                                     <td><?= e($asset['asset_number']); ?></td>
                                     <?php if (is_superadmin()): ?><td><?= e($asset['office_type_label'] . ' - ' . $asset['office_name']); ?></td><?php endif; ?>
-                                    <td><?= e($asset['subcategory_name']); ?></td>
+                                    <?php if ($subcategoryEnabled): ?><td><?= e((string)($asset['subcategory_name'] ?? '')); ?></td><?php endif; ?>
                                     <?php foreach ($fields as $field): ?>
                                         <?php if ((int)$field['is_displayed'] === 1 && (int)$field['active_status'] === 1): ?>
-                                            <td><?= e((string)($asset['values'][$field['field_key']] ?? '')); ?></td>
+                                            <td>
+                                                <?php if ($field['data_type'] === 'file'): ?>
+                                                    <?php $assetFiles = $asset['files'][$field['field_key']] ?? []; ?>
+                                                    <?php if (!$assetFiles): ?>
+                                                        <span class="muted">No file</span>
+                                                    <?php else: ?>
+                                                        <div class="file-cell-meta"><?= count($assetFiles); ?> file(s)</div>
+                                                        <div class="file-link-list">
+                                                            <?php foreach ($assetFiles as $fileRow): ?>
+                                                                <a href="index.php?page=asset_file&id=<?= e((string)$fileRow['id']); ?>" class="file-chip" target="_blank" rel="noopener">
+                                                                    <span class="file-chip-name"><?= e((string)$fileRow['original_name']); ?></span>
+                                                                </a>
+                                                            <?php endforeach; ?>
+                                                        </div>
+                                                    <?php endif; ?>
+                                                <?php else: ?>
+                                                    <?= e((string)($asset['values'][$field['field_key']] ?? '')); ?>
+                                                <?php endif; ?>
+                                            </td>
                                         <?php endif; ?>
                                     <?php endforeach; ?>
                                     <td>
@@ -282,7 +321,7 @@ $conditionOptions = isset($fieldMap['condition_value']) ? get_asset_field_option
 <div class="modal-backdrop<?= $editingAsset ? ' open' : ''; ?>" id="asset-modal" aria-hidden="<?= $editingAsset ? 'false' : 'true'; ?>">
     <div class="modal-card asset-entry-modal" role="dialog" aria-modal="true" aria-labelledby="asset-modal-title">
         <h3 id="asset-modal-title"><?= $editingAsset ? 'Edit Asset' : 'Add Asset'; ?></h3>
-        <form method="post" action="index.php" class="grid">
+        <form method="post" action="index.php" class="grid" enctype="multipart/form-data">
             <?= csrf_input(); ?>
             <input type="hidden" name="action" value="asset_save">
             <input type="hidden" name="asset_id" value="<?= e((string)($editingAsset['id'] ?? '0')); ?>">
@@ -294,19 +333,46 @@ $conditionOptions = isset($fieldMap['condition_value']) ? get_asset_field_option
                     <?php endforeach; ?>
                 </select>
             </label>
-            <label>Sub-category *
-                <select name="subcategory_id" id="asset-subcategory-select" required>
-                    <option value="">Select</option>
-                    <?php foreach ($subcategories as $subcategory): ?>
-                        <option value="<?= e((string)$subcategory['id']); ?>" data-category="<?= e((string)$subcategory['category_id']); ?>" <?= (int)($editingAsset['subcategory_id'] ?? 0) === (int)$subcategory['id'] ? 'selected' : ''; ?>><?= e($subcategory['name']); ?></option>
-                    <?php endforeach; ?>
-                </select>
-            </label>
+            <?php if ($subcategoryEnabled): ?>
+                <label>Sub-category *
+                    <select name="subcategory_id" id="asset-subcategory-select" required>
+                        <option value="">Select</option>
+                        <?php foreach ($subcategories as $subcategory): ?>
+                            <option value="<?= e((string)$subcategory['id']); ?>" data-category="<?= e((string)$subcategory['category_id']); ?>" <?= (int)($editingAsset['subcategory_id'] ?? 0) === (int)$subcategory['id'] ? 'selected' : ''; ?>><?= e($subcategory['name']); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </label>
+            <?php endif; ?>
             <?php foreach ($fields as $field): ?>
                 <?php if ((int)$field['active_status'] !== 1) { continue; } ?>
                 <label><?= e((string)($uiFieldLabels[$field['field_key']] ?? $field['label'])); ?><?= (int)$field['is_required'] === 1 ? ' *' : ''; ?>
                     <?php $value = (string)($editValues[$field['field_key']] ?? ''); ?>
-                    <?php if ($field['data_type'] === 'date'): ?>
+                    <?php if ($field['data_type'] === 'file'): ?>
+                        <?php
+                            $fileRule = get_asset_field_file_rule((int)$field['id']);
+                            $fieldFiles = $editFiles[$field['field_key']] ?? [];
+                            $accept = implode(',', array_map(static fn(string $ext): string => '.' . $ext, asset_parse_extensions_string((string)$fileRule['allowed_extensions'])));
+                        ?>
+                        <?php if ($fieldFiles): ?>
+                            <div class="file-link-list">
+                                <?php foreach ($fieldFiles as $fileRow): ?>
+                                    <label class="file-delete-chip">
+                                        <a href="index.php?page=asset_file&id=<?= e((string)$fileRow['id']); ?>" class="file-chip" target="_blank" rel="noopener">
+                                            <span class="file-chip-name"><?= e((string)$fileRow['original_name']); ?></span>
+                                        </a>
+                                        <span class="inline-check"><input type="checkbox" name="delete_field_files[<?= e($field['field_key']); ?>][]" value="<?= e((string)$fileRow['id']); ?>"> Remove</span>
+                                    </label>
+                                <?php endforeach; ?>
+                            </div>
+                        <?php endif; ?>
+                        <input type="file" name="field_files[<?= e($field['field_key']); ?>][]" <?= (int)$fileRule['is_multiple'] === 1 ? 'multiple' : ''; ?> accept="<?= e($accept); ?>">
+                        <span class="hint">
+                            Allowed: <?= e((string)$fileRule['allowed_extensions']); ?>.
+                            Max files: <?= e((string)$fileRule['max_files']); ?>.
+                            <?php if ((int)$fileRule['max_file_size_bytes'] > 0): ?> Per file: <?= e(asset_megabytes_from_bytes((int)$fileRule['max_file_size_bytes'])); ?> MB.<?php endif; ?>
+                            <?php if ((int)$fileRule['max_total_size_bytes'] > 0): ?> Total: <?= e(asset_megabytes_from_bytes((int)$fileRule['max_total_size_bytes'])); ?> MB.<?php endif; ?>
+                        </span>
+                    <?php elseif ($field['data_type'] === 'date'): ?>
                         <input type="date" name="fields[<?= e($field['field_key']); ?>]" value="<?= e($value); ?>" <?= (int)$field['is_required'] === 1 ? 'required' : ''; ?>>
                     <?php elseif ($field['data_type'] === 'number'): ?>
                         <input type="number" step="0.01" name="fields[<?= e($field['field_key']); ?>]" value="<?= e($value); ?>" <?= (int)$field['is_required'] === 1 ? 'required' : ''; ?>>
@@ -365,11 +431,11 @@ $conditionOptions = isset($fieldMap['condition_value']) ? get_asset_field_option
                 'id' => (int)$category['id'],
                 'name' => (string)$category['name'],
             ], get_asset_categories()),
-            'subcategories' => array_map(static fn(array $subcategory): array => [
+            'subcategories' => $subcategoryEnabled ? array_map(static fn(array $subcategory): array => [
                 'id' => (int)$subcategory['id'],
                 'category_id' => (int)$subcategory['category_id'],
                 'name' => (string)$subcategory['name'],
-            ], get_asset_subcategories(null, true)),
+            ], get_asset_subcategories(null, true)) : [],
             'fields' => $importFieldDefs,
         ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?></script>
         <form method="post" action="index.php" class="grid">
@@ -386,7 +452,7 @@ $conditionOptions = isset($fieldMap['condition_value']) ? get_asset_field_option
                         <tr>
                             <th>Row</th>
                             <th>Category</th>
-                            <th>Sub-category</th>
+                            <?php if ($subcategoryEnabled): ?><th>Sub-category</th><?php endif; ?>
                             <?php foreach ($fields as $field): ?>
                                 <?php if ((int)$field['is_import_enabled'] === 1 && (int)$field['active_status'] === 1): ?>
                                     <th><?= e((string)($uiFieldLabels[$field['field_key']] ?? $field['label'])); ?></th>
@@ -411,14 +477,16 @@ $conditionOptions = isset($fieldMap['condition_value']) ? get_asset_field_option
                                         <?php endforeach; ?>
                                     </select>
                                 </td>
-                                <td class="<?= !empty($row['errors']['subcategory_id']) ? 'cell-error' : 'cell-valid'; ?>">
-                                    <select class="review-input" data-review-role="subcategory" name="rows[<?= $rowIndex; ?>][subcategory]">
-                                        <option value="">Select</option>
-                                        <?php foreach ($subcategories as $subcategory): ?>
-                                            <option value="<?= e($subcategory['name']); ?>" data-category-name="<?= e((string)($categoryNameById[(int)$subcategory['category_id']] ?? '')); ?>" data-category-id="<?= e((string)$subcategory['category_id']); ?>" <?= strcasecmp((string)$row['subcategory'], (string)$subcategory['name']) === 0 ? 'selected' : ''; ?>><?= e($subcategory['name']); ?></option>
-                                        <?php endforeach; ?>
-                                    </select>
-                                </td>
+                                <?php if ($subcategoryEnabled): ?>
+                                    <td class="<?= !empty($row['errors']['subcategory_id']) ? 'cell-error' : 'cell-valid'; ?>">
+                                        <select class="review-input" data-review-role="subcategory" name="rows[<?= $rowIndex; ?>][subcategory]">
+                                            <option value="">Select</option>
+                                            <?php foreach ($subcategories as $subcategory): ?>
+                                                <option value="<?= e($subcategory['name']); ?>" data-category-name="<?= e((string)($categoryNameById[(int)$subcategory['category_id']] ?? '')); ?>" data-category-id="<?= e((string)$subcategory['category_id']); ?>" <?= strcasecmp((string)$row['subcategory'], (string)$subcategory['name']) === 0 ? 'selected' : ''; ?>><?= e($subcategory['name']); ?></option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </td>
+                                <?php endif; ?>
                                 <?php foreach ($fields as $field): ?>
                                     <?php if ((int)$field['is_import_enabled'] === 1 && (int)$field['active_status'] === 1): ?>
                                         <?php $fieldError = $row['errors'][$field['field_key']] ?? null; ?>
@@ -499,6 +567,8 @@ $conditionOptions = isset($fieldMap['condition_value']) ? get_asset_field_option
                 $downloadScope = 'circle';
             } elseif ($downloadFilters['office_type'] === 4) {
                 $downloadScope = 'division';
+            } elseif ($downloadFilters['office_type'] === 5) {
+                $downloadScope = 'subdivision';
             }
         ?>
         <form method="post" action="index.php" class="grid" id="superadmin-download-form">
@@ -510,6 +580,7 @@ $conditionOptions = isset($fieldMap['condition_value']) ? get_asset_field_option
                     <button type="button" class="segment<?= $downloadScope === 'zone' ? ' is-active' : ''; ?>" data-download-scope="zone">Zone</button>
                     <button type="button" class="segment<?= $downloadScope === 'circle' ? ' is-active' : ''; ?>" data-download-scope="circle">Circle</button>
                     <button type="button" class="segment<?= $downloadScope === 'division' ? ' is-active' : ''; ?>" data-download-scope="division">Division</button>
+                    <button type="button" class="segment<?= $downloadScope === 'subdivision' ? ' is-active' : ''; ?>" data-download-scope="subdivision">Sub-division</button>
                 </div>
                 <button type="button" class="icon-only-button" id="download-reset-filters" title="Refresh Filters" aria-label="Refresh Filters">&#x21bb;</button>
             </div>
@@ -538,6 +609,14 @@ $conditionOptions = isset($fieldMap['condition_value']) ? get_asset_field_option
                         <?php endforeach; ?>
                     </select>
                 </label>
+                <label data-download-level="subdivision">Sub-division
+                    <select name="subdivision_id" id="download-subdivision-select">
+                        <option value="0">All</option>
+                        <?php foreach ($subdivisions as $subdivision): ?>
+                            <option value="<?= e((string)$subdivision['id']); ?>" data-zone="<?= e((string)$subdivision['zone_id']); ?>" data-circle="<?= e((string)$subdivision['circle_id']); ?>" data-division="<?= e((string)$subdivision['division_id']); ?>" <?= ($selectedSubdivision ?? 0) === (int)$subdivision['id'] ? 'selected' : ''; ?>><?= e($subdivision['office_name']); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </label>
             </div>
             <div class="download-modal-row">
                 <label>Category
@@ -548,14 +627,16 @@ $conditionOptions = isset($fieldMap['condition_value']) ? get_asset_field_option
                         <?php endforeach; ?>
                     </select>
                 </label>
-                <label>Sub-category
-                    <select name="subcategory_id" id="download-subcategory-select">
-                        <option value="0">All</option>
-                        <?php foreach ($subcategories as $subcategory): ?>
-                            <option value="<?= e((string)$subcategory['id']); ?>" data-category="<?= e((string)$subcategory['category_id']); ?>" <?= $downloadFilters['subcategory_id'] === (int)$subcategory['id'] ? 'selected' : ''; ?>><?= e($subcategory['name']); ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                </label>
+                <?php if ($subcategoryEnabled): ?>
+                    <label>Sub-category
+                        <select name="subcategory_id" id="download-subcategory-select">
+                            <option value="0">All</option>
+                            <?php foreach ($subcategories as $subcategory): ?>
+                                <option value="<?= e((string)$subcategory['id']); ?>" data-category="<?= e((string)$subcategory['category_id']); ?>" <?= ($downloadFilters['subcategory_id'] ?? 0) === (int)$subcategory['id'] ? 'selected' : ''; ?>><?= e($subcategory['name']); ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </label>
+                <?php endif; ?>
             </div>
             <div class="download-modal-row download-modal-row-single">
                 <label>Condition

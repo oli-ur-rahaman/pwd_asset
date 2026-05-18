@@ -1,0 +1,2 @@
+email_id,officer_name,password,office_type,office_role,zone_id,circle_id,division_id,subdivision_id
+sample.office@pwd.gov.bd,Sample Officer,changeme,5,1,1,1,1,1

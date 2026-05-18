@@ -45,6 +45,7 @@ function ensure_asset_schema(): void
             is_required TINYINT NOT NULL DEFAULT 0,
             is_displayed TINYINT NOT NULL DEFAULT 1,
             is_import_enabled TINYINT NOT NULL DEFAULT 1,
+            is_unique TINYINT NOT NULL DEFAULT 0,
             active_status TINYINT NOT NULL DEFAULT 1,
             sort_order INT NOT NULL DEFAULT 0,
             deleted_at DATETIME DEFAULT NULL,
@@ -73,7 +74,7 @@ function ensure_asset_schema(): void
             id INT AUTO_INCREMENT PRIMARY KEY,
             asset_number VARCHAR(50) NOT NULL,
             category_id INT NOT NULL,
-            subcategory_id INT NOT NULL,
+            subcategory_id INT DEFAULT NULL,
             office_type TINYINT NOT NULL,
             office_id INT NOT NULL,
             active_status TINYINT NOT NULL DEFAULT 1,
@@ -87,6 +88,24 @@ function ensure_asset_schema(): void
             KEY idx_assets_subcategory (subcategory_id),
             KEY idx_assets_office (office_type, office_id),
             KEY idx_assets_active (active_status, deleted_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    );
+
+    db()->exec(
+        "CREATE TABLE IF NOT EXISTS subdivisions (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            office_name VARCHAR(255) NOT NULL,
+            office_address TEXT DEFAULT NULL,
+            office_type TINYINT NOT NULL DEFAULT 5,
+            zone_id INT NOT NULL,
+            circle_id INT NOT NULL,
+            division_id INT NOT NULL,
+            active_status TINYINT NOT NULL DEFAULT 1,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT NULL,
+            KEY idx_subdivisions_zone (zone_id),
+            KEY idx_subdivisions_circle (circle_id),
+            KEY idx_subdivisions_division (division_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
     );
 
@@ -105,6 +124,35 @@ function ensure_asset_schema(): void
             UNIQUE KEY uniq_asset_values (asset_id, field_id),
             KEY idx_asset_values_asset (asset_id),
             KEY idx_asset_values_field (field_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    );
+
+    db()->exec(
+        "CREATE TABLE IF NOT EXISTS asset_field_file_rules (
+            field_id INT NOT NULL PRIMARY KEY,
+            is_multiple TINYINT NOT NULL DEFAULT 0,
+            max_files INT NOT NULL DEFAULT 1,
+            max_file_size_bytes BIGINT NOT NULL DEFAULT 0,
+            max_total_size_bytes BIGINT NOT NULL DEFAULT 0,
+            allowed_extensions TEXT DEFAULT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT NULL
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    );
+
+    db()->exec(
+        "CREATE TABLE IF NOT EXISTS asset_file_values (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            asset_id INT NOT NULL,
+            field_id INT NOT NULL,
+            original_name VARCHAR(255) NOT NULL,
+            stored_name VARCHAR(255) NOT NULL,
+            file_ext VARCHAR(20) NOT NULL,
+            mime_type VARCHAR(100) NOT NULL,
+            file_size BIGINT NOT NULL DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            KEY idx_asset_file_values_asset (asset_id),
+            KEY idx_asset_file_values_field (field_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
     );
 
@@ -164,12 +212,23 @@ function ensure_asset_schema(): void
     );
 
     asset_ensure_column('zones', 'active_status', 'TINYINT NOT NULL DEFAULT 1');
+    asset_ensure_column('zones', 'allow_office_user_management', 'TINYINT NOT NULL DEFAULT 1');
     asset_ensure_column('circles', 'active_status', 'TINYINT NOT NULL DEFAULT 1');
+    asset_ensure_column('circles', 'allow_office_user_management', 'TINYINT NOT NULL DEFAULT 1');
     asset_ensure_column('divisions', 'active_status', 'TINYINT NOT NULL DEFAULT 1');
+    asset_ensure_column('divisions', 'allow_office_user_management', 'TINYINT NOT NULL DEFAULT 1');
+    asset_ensure_column('subdivisions', 'allow_office_user_management', 'TINYINT NOT NULL DEFAULT 1');
+    asset_ensure_column('users', 'subdivision_id', 'INT DEFAULT NULL');
+    asset_ensure_column('users', 'is_primary_office_user', 'TINYINT NOT NULL DEFAULT 0');
+    asset_ensure_column('users', 'office_access_level', 'TINYINT NOT NULL DEFAULT 2');
     asset_ensure_column('office_asset_declarations', 'declared_officer_name', 'VARCHAR(255) DEFAULT NULL');
     asset_ensure_column('info', 'welcome_message', 'LONGTEXT DEFAULT NULL');
+    asset_ensure_column('info', 'asset_subcategory_enabled', 'TINYINT NOT NULL DEFAULT 1');
+    asset_ensure_column('asset_fields', 'is_unique', 'TINYINT NOT NULL DEFAULT 0');
+    asset_relax_subcategory_requirement();
 
     asset_seed_default_fields();
+    asset_backfill_office_user_access_levels();
 }
 
 function asset_ensure_column(string $table, string $column, string $definition): void
@@ -180,6 +239,39 @@ function asset_ensure_column(string $table, string $column, string $definition):
         return;
     }
     db()->exec("ALTER TABLE {$table} ADD COLUMN {$column} {$definition}");
+}
+
+function asset_relax_subcategory_requirement(): void
+{
+    $stmt = db()->prepare('SELECT IS_NULLABLE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ? LIMIT 1');
+    $stmt->execute(['assets', 'subcategory_id']);
+    $isNullable = strtoupper((string)$stmt->fetchColumn());
+    if ($isNullable !== 'YES') {
+        db()->exec('ALTER TABLE assets MODIFY COLUMN subcategory_id INT DEFAULT NULL');
+    }
+}
+
+function asset_backfill_office_user_access_levels(): void
+{
+    db()->exec('UPDATE users SET office_access_level = 0 WHERE office_role IN (2,3)');
+    foreach ([2 => 'zone_id', 3 => 'circle_id', 4 => 'division_id', 5 => 'subdivision_id'] as $officeType => $column) {
+        $stmt = db()->prepare("SELECT id, {$column} AS office_id FROM users WHERE office_role = 1 AND office_type = ? AND {$column} IS NOT NULL AND {$column} > 0 ORDER BY id ASC");
+        $stmt->execute([$officeType]);
+        $seen = [];
+        foreach ($stmt->fetchAll() as $row) {
+            $officeId = (int)$row['office_id'];
+            if ($officeId <= 0) {
+                continue;
+            }
+            $isPrimary = !isset($seen[$officeId]);
+            $seen[$officeId] = true;
+            db()->prepare('UPDATE users SET is_primary_office_user = ?, office_access_level = ?, updated_at = NOW() WHERE id = ?')->execute([
+                $isPrimary ? 1 : 0,
+                $isPrimary ? 1 : 2,
+                (int)$row['id'],
+            ]);
+        }
+    }
 }
 
 function asset_seed_default_fields(): void
@@ -251,12 +343,119 @@ function asset_seed_default_fields(): void
 
 function asset_supported_data_types(): array
 {
-    return ['text', 'number', 'date', 'dropdown', 'yes_no'];
+    return ['text', 'number', 'date', 'dropdown', 'yes_no', 'file'];
 }
 
 function asset_locked_field_keys(): array
 {
     return [];
+}
+
+function asset_file_storage_dir(): string
+{
+    return dirname(__DIR__, 2) . '/storage/asset_files';
+}
+
+function ensure_asset_file_storage_dir(): string
+{
+    $dir = asset_file_storage_dir();
+    if (!is_dir($dir) && !mkdir($dir, 0777, true) && !is_dir($dir)) {
+        throw new RuntimeException('Unable to create asset file storage directory.');
+    }
+    return $dir;
+}
+
+function asset_default_file_rule(): array
+{
+    return [
+        'is_multiple' => 0,
+        'max_files' => 1,
+        'max_file_size_bytes' => 0,
+        'max_total_size_bytes' => 0,
+        'allowed_extensions' => 'pdf,jpg,jpeg,png,doc,docx,xls,xlsx,txt',
+    ];
+}
+
+function asset_parse_extensions_string(string $value): array
+{
+    $parts = preg_split('/[\s,]+/', strtolower(trim($value)));
+    $parts = array_values(array_unique(array_filter(array_map(static function (string $item): string {
+        return ltrim(trim($item), '.');
+    }, $parts ?: []))));
+    return $parts;
+}
+
+function asset_extensions_string(array $extensions): string
+{
+    return implode(',', asset_parse_extensions_string(implode(',', $extensions)));
+}
+
+function asset_bytes_from_megabytes(mixed $value): int
+{
+    $number = (float)$value;
+    if ($number <= 0) {
+        return 0;
+    }
+    return (int)round($number * 1024 * 1024);
+}
+
+function asset_megabytes_from_bytes(int $bytes): string
+{
+    if ($bytes <= 0) {
+        return '';
+    }
+    $mb = $bytes / 1024 / 1024;
+    return rtrim(rtrim(number_format($mb, 2, '.', ''), '0'), '.');
+}
+
+function asset_allowed_file_mime_types(): array
+{
+    return [
+        'pdf' => 'application/pdf',
+        'txt' => 'text/plain',
+        'doc' => 'application/msword',
+        'docx' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'xls' => 'application/vnd.ms-excel',
+        'xlsx' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'jpg' => 'image/jpeg',
+        'jpeg' => 'image/jpeg',
+        'png' => 'image/png',
+        'gif' => 'image/gif',
+        'webp' => 'image/webp',
+        'bmp' => 'image/bmp',
+    ];
+}
+
+function asset_uploaded_files_for_field(array $fileBag, string $fieldKey): array
+{
+    if (!isset($fileBag['name'][$fieldKey])) {
+        return [];
+    }
+    $names = $fileBag['name'][$fieldKey];
+    $types = $fileBag['type'][$fieldKey] ?? [];
+    $tmpNames = $fileBag['tmp_name'][$fieldKey] ?? [];
+    $errors = $fileBag['error'][$fieldKey] ?? [];
+    $sizes = $fileBag['size'][$fieldKey] ?? [];
+
+    if (!is_array($names)) {
+        $names = [$names];
+        $types = [$types];
+        $tmpNames = [$tmpNames];
+        $errors = [$errors];
+        $sizes = [$sizes];
+    }
+
+    $files = [];
+    foreach ($names as $index => $name) {
+        $files[] = [
+            'name' => $name,
+            'type' => $types[$index] ?? '',
+            'tmp_name' => $tmpNames[$index] ?? '',
+            'error' => $errors[$index] ?? UPLOAD_ERR_NO_FILE,
+            'size' => (int)($sizes[$index] ?? 0),
+        ];
+    }
+    return $files;
 }
 
 function asset_core_columns(): array
@@ -266,6 +465,37 @@ function asset_core_columns(): array
         ['key' => 'asset_number', 'label' => 'Asset Number / সম্পদ নং'],
         ['key' => 'subcategory_name', 'label' => 'Sub-category / উপ-শ্রেণি'],
     ];
+}
+
+function asset_subcategory_enabled(): bool
+{
+    $info = get_info_row();
+    $value = $info['asset_subcategory_enabled'] ?? null;
+    if ($value === null || $value === '') {
+        return true;
+    }
+    return (int)$value === 1;
+}
+
+function set_asset_subcategory_enabled(int $status): void
+{
+    $existing = get_info_row();
+    save_info_row(
+        $existing['video_tutorial_url'] ?? null,
+        $existing['login_message'] ?? null,
+        [
+            'site_name' => $existing['site_name'] ?? null,
+            'welcome_message' => $existing['welcome_message'] ?? null,
+            'asset_subcategory_enabled' => $status === 1 ? 1 : 0,
+            'i_opr_repair' => $existing['i_opr_repair'] ?? null,
+            'i_opr_other' => $existing['i_opr_other'] ?? null,
+            'i_dev_pw' => $existing['i_dev_pw'] ?? null,
+            'i_opr_min' => $existing['i_opr_min'] ?? null,
+            'i_dev_min' => $existing['i_dev_min'] ?? null,
+            'i_opr' => $existing['i_opr'] ?? null,
+            'i_dev' => $existing['i_dev'] ?? null,
+        ]
+    );
 }
 
 function current_office_context(?array $user = null): ?array
@@ -284,6 +514,9 @@ function current_office_context(?array $user = null): ?array
     if ($officeType === 4 && !empty($user['division_id'])) {
         return ['office_type' => 4, 'office_id' => (int)$user['division_id']];
     }
+    if ($officeType === 5 && !empty($user['subdivision_id'])) {
+        return ['office_type' => 5, 'office_id' => (int)$user['subdivision_id']];
+    }
     return null;
 }
 
@@ -293,6 +526,7 @@ function asset_office_type_label(int $officeType): string
         2 => 'Zone',
         3 => 'Circle',
         4 => 'Division',
+        5 => 'Sub-division',
         default => 'Office',
     };
 }
@@ -306,6 +540,7 @@ function office_name_from_type_id(int $officeType, int $officeId): string
         2 => ['table' => 'zones', 'column' => 'office_name'],
         3 => ['table' => 'circles', 'column' => 'office_name'],
         4 => ['table' => 'divisions', 'column' => 'office_name'],
+        5 => ['table' => 'subdivisions', 'column' => 'office_name'],
     ];
     if (!isset($map[$officeType])) {
         return '-';
@@ -685,9 +920,59 @@ function get_asset_field_options(int $fieldId, bool $includeInactive = false): a
     return $stmt->fetchAll();
 }
 
+function get_asset_field_file_rule(int $fieldId): array
+{
+    $defaults = asset_default_file_rule();
+    $stmt = db()->prepare('SELECT * FROM asset_field_file_rules WHERE field_id = ? LIMIT 1');
+    $stmt->execute([$fieldId]);
+    $row = $stmt->fetch();
+    if (!$row) {
+        return $defaults;
+    }
+    return [
+        'is_multiple' => (int)($row['is_multiple'] ?? 0),
+        'max_files' => max(1, (int)($row['max_files'] ?? 1)),
+        'max_file_size_bytes' => max(0, (int)($row['max_file_size_bytes'] ?? 0)),
+        'max_total_size_bytes' => max(0, (int)($row['max_total_size_bytes'] ?? 0)),
+        'allowed_extensions' => asset_extensions_string(asset_parse_extensions_string((string)($row['allowed_extensions'] ?? ''))),
+    ];
+}
+
+function save_asset_field_file_rule(int $fieldId, array $rule): void
+{
+    $existing = db()->prepare('SELECT field_id FROM asset_field_file_rules WHERE field_id = ? LIMIT 1');
+    $existing->execute([$fieldId]);
+    if ($existing->fetchColumn()) {
+        $stmt = db()->prepare('UPDATE asset_field_file_rules SET is_multiple = ?, max_files = ?, max_file_size_bytes = ?, max_total_size_bytes = ?, allowed_extensions = ?, updated_at = NOW() WHERE field_id = ?');
+        $stmt->execute([
+            $rule['is_multiple'],
+            $rule['max_files'],
+            $rule['max_file_size_bytes'],
+            $rule['max_total_size_bytes'],
+            $rule['allowed_extensions'],
+            $fieldId,
+        ]);
+        return;
+    }
+    $stmt = db()->prepare('INSERT INTO asset_field_file_rules (field_id, is_multiple, max_files, max_file_size_bytes, max_total_size_bytes, allowed_extensions, created_at) VALUES (?, ?, ?, ?, ?, ?, NOW())');
+    $stmt->execute([
+        $fieldId,
+        $rule['is_multiple'],
+        $rule['max_files'],
+        $rule['max_file_size_bytes'],
+        $rule['max_total_size_bytes'],
+        $rule['allowed_extensions'],
+    ]);
+}
+
+function delete_asset_field_file_rule(int $fieldId): void
+{
+    db()->prepare('DELETE FROM asset_field_file_rules WHERE field_id = ?')->execute([$fieldId]);
+}
+
 function create_asset_field(array $payload): void
 {
-    $stmt = db()->prepare('INSERT INTO asset_fields (field_key, label, data_type, is_required, is_displayed, is_import_enabled, active_status, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?, 1, ?, NOW())');
+    $stmt = db()->prepare('INSERT INTO asset_fields (field_key, label, data_type, is_required, is_displayed, is_import_enabled, is_unique, active_status, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, NOW())');
     $stmt->execute([
         $payload['field_key'],
         $payload['label'],
@@ -695,25 +980,35 @@ function create_asset_field(array $payload): void
         $payload['is_required'],
         $payload['is_displayed'],
         $payload['is_import_enabled'],
+        $payload['is_unique'],
         $payload['sort_order'],
     ]);
     $fieldId = (int)db()->lastInsertId();
     replace_asset_field_options($fieldId, $payload['options'] ?? []);
+    if ($payload['data_type'] === 'file') {
+        save_asset_field_file_rule($fieldId, $payload['file_rule'] ?? asset_default_file_rule());
+    }
 }
 
 function update_asset_field(int $id, array $payload): void
 {
-    $stmt = db()->prepare('UPDATE asset_fields SET label = ?, data_type = ?, is_required = ?, is_displayed = ?, is_import_enabled = ?, sort_order = ?, updated_at = NOW() WHERE id = ?');
+    $stmt = db()->prepare('UPDATE asset_fields SET label = ?, data_type = ?, is_required = ?, is_displayed = ?, is_import_enabled = ?, is_unique = ?, sort_order = ?, updated_at = NOW() WHERE id = ?');
     $stmt->execute([
         $payload['label'],
         $payload['data_type'],
         $payload['is_required'],
         $payload['is_displayed'],
         $payload['is_import_enabled'],
+        $payload['is_unique'],
         $payload['sort_order'],
         $id,
     ]);
     replace_asset_field_options($id, $payload['options'] ?? []);
+    if ($payload['data_type'] === 'file') {
+        save_asset_field_file_rule($id, $payload['file_rule'] ?? asset_default_file_rule());
+    } else {
+        delete_asset_field_file_rule($id);
+    }
 }
 
 function replace_asset_field_options(int $fieldId, array $options): void
@@ -751,7 +1046,13 @@ function delete_asset_field(int $id): bool
     if ((int)$stmt->fetchColumn() > 0) {
         return false;
     }
+    $stmt = db()->prepare('SELECT COUNT(*) FROM asset_file_values WHERE field_id = ?');
+    $stmt->execute([$id]);
+    if ((int)$stmt->fetchColumn() > 0) {
+        return false;
+    }
     db()->prepare('DELETE FROM asset_field_options WHERE field_id = ?')->execute([$id]);
+    delete_asset_field_file_rule($id);
     db()->prepare('DELETE FROM asset_fields WHERE id = ?')->execute([$id]);
     return true;
 }
@@ -840,6 +1141,28 @@ function validate_asset_field_definition(array $input, ?int $fieldId = null): ar
         }
     }
 
+    $fileRule = asset_default_file_rule();
+    if ($dataType === 'file') {
+        $isMultiple = (string)($input['file_is_multiple'] ?? '0') === '1' ? 1 : 0;
+        $maxFiles = max(1, (int)($input['file_max_files'] ?? ($isMultiple ? 5 : 1)));
+        if ($isMultiple === 0) {
+            $maxFiles = 1;
+        }
+        $maxFileSizeBytes = asset_bytes_from_megabytes($input['file_max_size_mb'] ?? 0);
+        $maxTotalSizeBytes = asset_bytes_from_megabytes($input['file_total_size_mb'] ?? 0);
+        $allowedExtensions = asset_extensions_string(asset_parse_extensions_string((string)($input['file_allowed_extensions'] ?? '')));
+        if ($allowedExtensions === '') {
+            $errors[] = 'File fields need at least one allowed file extension.';
+        }
+        $fileRule = [
+            'is_multiple' => $isMultiple,
+            'max_files' => $maxFiles,
+            'max_file_size_bytes' => $maxFileSizeBytes,
+            'max_total_size_bytes' => $maxTotalSizeBytes,
+            'allowed_extensions' => $allowedExtensions,
+        ];
+    }
+
     return [
         'errors' => $errors,
         'payload' => [
@@ -848,32 +1171,46 @@ function validate_asset_field_definition(array $input, ?int $fieldId = null): ar
             'data_type' => $dataType,
             'is_required' => !empty($input['is_required']) ? 1 : 0,
             'is_displayed' => !empty($input['is_displayed']) ? 1 : 0,
-            'is_import_enabled' => !empty($input['is_import_enabled']) ? 1 : 0,
+            'is_import_enabled' => $dataType === 'file' ? 0 : (!empty($input['is_import_enabled']) ? 1 : 0),
+            'is_unique' => $dataType === 'file' ? 0 : (!empty($input['is_unique']) ? 1 : 0),
             'sort_order' => $sortOrder,
             'options' => $options,
+            'file_rule' => $fileRule,
         ],
     ];
 }
 
-function validate_asset_payload(array $input, ?int $assetId = null): array
+function validate_asset_payload(array $input, ?int $assetId = null, array $fileBag = []): array
 {
     $errors = [];
     $categoryId = (int)($input['category_id'] ?? 0);
-    $subcategoryId = (int)($input['subcategory_id'] ?? 0);
+    $subcategoryEnabled = asset_subcategory_enabled();
+    $subcategoryId = $subcategoryEnabled ? (int)($input['subcategory_id'] ?? 0) : 0;
     $category = $categoryId > 0 ? get_asset_category($categoryId) : null;
-    $subcategory = $subcategoryId > 0 ? get_asset_subcategory($subcategoryId) : null;
+    $subcategory = $subcategoryEnabled && $subcategoryId > 0 ? get_asset_subcategory($subcategoryId) : null;
     if (!$category || (!is_superadmin() && (int)$category['active_status'] !== 1)) {
         $errors['category_id'] = 'Valid category is required.';
     }
-    if (!$subcategory || (int)($subcategory['category_id'] ?? 0) !== $categoryId || (!is_superadmin() && (int)$subcategory['active_status'] !== 1)) {
+    if ($subcategoryEnabled && (!$subcategory || (int)($subcategory['category_id'] ?? 0) !== $categoryId || (!is_superadmin() && (int)$subcategory['active_status'] !== 1))) {
         $errors['subcategory_id'] = 'Valid sub-category is required.';
     }
 
     $fieldMap = asset_field_map();
     $values = [];
+    $fileOperations = [];
     foreach ($fieldMap as $fieldKey => $field) {
+        if ($field['data_type'] === 'file') {
+            $fileOperations[$fieldKey] = validate_asset_file_field_value($field, $assetId, $input, $fileBag, $errors);
+            continue;
+        }
         $raw = $input['fields'][$fieldKey] ?? null;
         $values[$fieldKey] = normalize_asset_field_value($field, $raw, $fieldMap, $errors);
+    }
+    foreach ($fieldMap as $fieldKey => $field) {
+        if ((int)($field['is_unique'] ?? 0) !== 1 || isset($errors[$fieldKey]) || $field['data_type'] === 'file') {
+            continue;
+        }
+        validate_asset_unique_value($field, $values[$fieldKey] ?? [], $assetId, $errors);
     }
 
     return [
@@ -882,7 +1219,75 @@ function validate_asset_payload(array $input, ?int $assetId = null): array
             'category_id' => $categoryId,
             'subcategory_id' => $subcategoryId,
             'field_values' => $values,
+            'file_operations' => $fileOperations,
         ],
+    ];
+}
+
+function validate_asset_file_field_value(array $field, ?int $assetId, array $input, array $fileBag, array &$errors): array
+{
+    $rule = get_asset_field_file_rule((int)$field['id']);
+    $existingFiles = $assetId ? get_asset_field_files($assetId, (int)$field['id']) : [];
+    $deleteIdsRaw = $input['delete_field_files'][$field['field_key']] ?? [];
+    $deleteIdsRaw = is_array($deleteIdsRaw) ? $deleteIdsRaw : [];
+    $deleteIds = array_values(array_filter(array_map('intval', $deleteIdsRaw), static fn(int $id): bool => $id > 0));
+    $deleteLookup = array_flip($deleteIds);
+    $remainingExisting = array_values(array_filter($existingFiles, static fn(array $file): bool => !isset($deleteLookup[(int)$file['id']])));
+
+    $uploads = array_values(array_filter(
+        asset_uploaded_files_for_field($fileBag['field_files'] ?? [], (string)$field['field_key']),
+        static fn(array $file): bool => ($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE || !empty($file['tmp_name'])
+    ));
+
+    $allowedExtensions = asset_parse_extensions_string((string)$rule['allowed_extensions']);
+    $mimeMap = asset_allowed_file_mime_types();
+    $validUploads = [];
+    $newSizeTotal = 0;
+    foreach ($uploads as $upload) {
+        $label = (string)($field['label'] ?? $field['field_key']);
+        $errorCode = (int)($upload['error'] ?? UPLOAD_ERR_NO_FILE);
+        if ($errorCode !== UPLOAD_ERR_OK) {
+            $errors[$field['field_key']] = "{$label} file upload failed.";
+            continue;
+        }
+        $originalName = (string)($upload['name'] ?? '');
+        $extension = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
+        if ($extension === '' || !in_array($extension, $allowedExtensions, true)) {
+            $errors[$field['field_key']] = "{$label} contains an unsupported file type.";
+            continue;
+        }
+        $size = (int)($upload['size'] ?? 0);
+        if ((int)$rule['max_file_size_bytes'] > 0 && $size > (int)$rule['max_file_size_bytes']) {
+            $errors[$field['field_key']] = "{$label} contains a file larger than the per-file limit.";
+            continue;
+        }
+        $validUploads[] = [
+            'name' => $originalName,
+            'tmp_name' => (string)($upload['tmp_name'] ?? ''),
+            'size' => $size,
+            'extension' => $extension,
+            'mime_type' => $mimeMap[$extension] ?? 'application/octet-stream',
+        ];
+        $newSizeTotal += $size;
+    }
+
+    $finalCount = count($remainingExisting) + count($validUploads);
+    $existingSize = array_sum(array_map(static fn(array $file): int => (int)($file['file_size'] ?? 0), $remainingExisting));
+    $finalSize = $existingSize + $newSizeTotal;
+    $label = (string)($field['label'] ?? $field['field_key']);
+    if ((int)$field['is_required'] === 1 && $finalCount === 0) {
+        $errors[$field['field_key']] = "{$label} is required.";
+    } elseif ((int)$rule['is_multiple'] === 0 && $finalCount > 1) {
+        $errors[$field['field_key']] = "{$label} allows only one file.";
+    } elseif ((int)$rule['max_files'] > 0 && $finalCount > (int)$rule['max_files']) {
+        $errors[$field['field_key']] = "{$label} exceeds the maximum number of files.";
+    } elseif ((int)$rule['max_total_size_bytes'] > 0 && $finalSize > (int)$rule['max_total_size_bytes']) {
+        $errors[$field['field_key']] = "{$label} exceeds the total upload size limit.";
+    }
+
+    return [
+        'delete_ids' => $deleteIds,
+        'uploads' => $validUploads,
     ];
 }
 
@@ -969,23 +1374,65 @@ function normalize_asset_field_value(array $field, mixed $raw, array $fieldMap, 
     return $normalized;
 }
 
+function validate_asset_unique_value(array $field, array $normalized, ?int $assetId, array &$errors): void
+{
+    $fieldId = (int)($field['id'] ?? 0);
+    if ($fieldId <= 0) {
+        return;
+    }
+
+    $column = match ((string)$field['data_type']) {
+        'number' => 'value_number',
+        'date' => 'value_date',
+        'yes_no' => 'value_bool',
+        'dropdown' => 'value_option',
+        default => 'value_text',
+    };
+    $value = $normalized[$column] ?? null;
+    if ($value === null || $value === '') {
+        return;
+    }
+
+    $sql = "SELECT a.id
+        FROM asset_values v
+        JOIN assets a ON a.id = v.asset_id
+        WHERE v.field_id = ?
+          AND a.deleted_at IS NULL
+          AND a.active_status = 1
+          AND v.{$column} = ?";
+    $params = [$fieldId, $value];
+    if (($assetId ?? 0) > 0) {
+        $sql .= ' AND a.id <> ?';
+        $params[] = $assetId;
+    }
+    $sql .= ' LIMIT 1';
+    $stmt = db()->prepare($sql);
+    $stmt->execute($params);
+    if ($stmt->fetchColumn()) {
+        $errors[$field['field_key']] = ($field['label'] ?? $field['field_key']) . ' already exists.';
+    }
+}
+
 function create_asset(array $validated, array $user): int
 {
+    $fileCleanup = ['new_paths' => [], 'delete_paths' => []];
     db()->beginTransaction();
     try {
-        $assetId = persist_asset_record($validated, $user);
+        $assetId = persist_asset_record($validated, $user, $fileCleanup);
         db()->commit();
+        finalize_asset_file_changes($fileCleanup, true);
         add_log((int)$user['id'], 'assets', $assetId, 'Asset created.');
         return $assetId;
     } catch (Throwable $e) {
         if (db()->inTransaction()) {
             db()->rollBack();
         }
+        finalize_asset_file_changes($fileCleanup, false);
         throw $e;
     }
 }
 
-function persist_asset_record(array $validated, array $user): int
+function persist_asset_record(array $validated, array $user, array &$fileCleanup = []): int
 {
     $ctx = current_office_context($user);
     if (!$ctx) {
@@ -995,7 +1442,7 @@ function persist_asset_record(array $validated, array $user): int
     $stmt->execute([
         'PENDING',
         $validated['category_id'],
-        $validated['subcategory_id'],
+        $validated['subcategory_id'] > 0 ? $validated['subcategory_id'] : null,
         $ctx['office_type'],
         $ctx['office_id'],
         (int)$user['id'],
@@ -1004,6 +1451,7 @@ function persist_asset_record(array $validated, array $user): int
     $assetNumber = sprintf('AST-%s-%06d', date('Y'), $assetId);
     db()->prepare('UPDATE assets SET asset_number = ? WHERE id = ?')->execute([$assetNumber, $assetId]);
     save_asset_values($assetId, $validated['field_values']);
+    sync_asset_file_values($assetId, $validated['file_operations'] ?? [], $fileCleanup);
     return $assetId;
 }
 
@@ -1013,20 +1461,24 @@ function update_asset(int $assetId, array $validated, array $user): void
     if (!$asset) {
         throw new RuntimeException('Asset not found.');
     }
+    $fileCleanup = ['new_paths' => [], 'delete_paths' => []];
     db()->beginTransaction();
     try {
         $stmt = db()->prepare('UPDATE assets SET category_id = ?, subcategory_id = ?, updated_by = ?, updated_at = NOW() WHERE id = ?');
         $stmt->execute([
             $validated['category_id'],
-            $validated['subcategory_id'],
+            $validated['subcategory_id'] > 0 ? $validated['subcategory_id'] : null,
             (int)$user['id'],
             $assetId,
         ]);
         save_asset_values($assetId, $validated['field_values']);
+        sync_asset_file_values($assetId, $validated['file_operations'] ?? [], $fileCleanup);
         db()->commit();
+        finalize_asset_file_changes($fileCleanup, true);
         add_log((int)$user['id'], 'assets', $assetId, 'Asset updated.');
     } catch (Throwable $e) {
         db()->rollBack();
+        finalize_asset_file_changes($fileCleanup, false);
         throw $e;
     }
 }
@@ -1068,7 +1520,7 @@ function save_asset_values(int $assetId, array $fieldValues): void
 
 function get_asset(int $assetId, bool $includeDeleted = false): ?array
 {
-    $sql = 'SELECT a.*, c.name AS category_name, s.name AS subcategory_name FROM assets a JOIN asset_categories c ON c.id = a.category_id JOIN asset_subcategories s ON s.id = a.subcategory_id WHERE a.id = ?';
+    $sql = 'SELECT a.*, c.name AS category_name, s.name AS subcategory_name FROM assets a JOIN asset_categories c ON c.id = a.category_id LEFT JOIN asset_subcategories s ON s.id = a.subcategory_id WHERE a.id = ?';
     if (!$includeDeleted) {
         $sql .= ' AND a.deleted_at IS NULL AND a.active_status = 1';
     }
@@ -1079,6 +1531,7 @@ function get_asset(int $assetId, bool $includeDeleted = false): ?array
         return null;
     }
     $asset['values'] = get_asset_values($assetId);
+    $asset['files'] = get_asset_files($assetId);
     return $asset;
 }
 
@@ -1139,7 +1592,7 @@ function soft_delete_assets(array $assetIds, array $user): int
 function get_assets(array $filters = [], ?array $user = null, bool $includeDeleted = false): array
 {
     $user = $user ?: current_user();
-    $sql = 'SELECT a.*, c.name AS category_name, s.name AS subcategory_name FROM assets a JOIN asset_categories c ON c.id = a.category_id JOIN asset_subcategories s ON s.id = a.subcategory_id WHERE 1=1';
+    $sql = 'SELECT a.*, c.name AS category_name, s.name AS subcategory_name FROM assets a JOIN asset_categories c ON c.id = a.category_id LEFT JOIN asset_subcategories s ON s.id = a.subcategory_id WHERE 1=1';
     $params = [];
     if (!$includeDeleted) {
         $sql .= ' AND a.deleted_at IS NULL AND a.active_status = 1';
@@ -1170,7 +1623,7 @@ function get_assets(array $filters = [], ?array $user = null, bool $includeDelet
         $sql .= ' AND a.category_id = ?';
         $params[] = $categoryId;
     }
-    $subcategoryId = (int)($filters['subcategory_id'] ?? 0);
+    $subcategoryId = asset_subcategory_enabled() ? (int)($filters['subcategory_id'] ?? 0) : 0;
     if ($subcategoryId > 0) {
         $sql .= ' AND a.subcategory_id = ?';
         $params[] = $subcategoryId;
@@ -1200,8 +1653,10 @@ function get_assets(array $filters = [], ?array $user = null, bool $includeDelet
 
     $assetIds = array_map(fn($row) => (int)$row['id'], $rows);
     $valuesByAsset = get_asset_values_for_assets($assetIds);
+    $filesByAsset = get_asset_files_for_assets($assetIds);
     foreach ($rows as &$row) {
         $row['values'] = $valuesByAsset[(int)$row['id']] ?? [];
+        $row['files'] = $filesByAsset[(int)$row['id']] ?? [];
         $row['office_name'] = office_name_from_type_id((int)$row['office_type'], (int)$row['office_id']);
         $row['office_type_label'] = asset_office_type_label((int)$row['office_type']);
     }
@@ -1223,6 +1678,99 @@ function get_asset_values_for_assets(array $assetIds): array
         $map[$assetId][$row['field_key']] = asset_display_value($row);
     }
     return $map;
+}
+
+function get_asset_field_files(int $assetId, int $fieldId): array
+{
+    $stmt = db()->prepare('SELECT * FROM asset_file_values WHERE asset_id = ? AND field_id = ? ORDER BY id ASC');
+    $stmt->execute([$assetId, $fieldId]);
+    return $stmt->fetchAll();
+}
+
+function get_asset_files(int $assetId): array
+{
+    $stmt = db()->prepare('SELECT f.*, af.field_key FROM asset_file_values f JOIN asset_fields af ON af.id = f.field_id WHERE f.asset_id = ? ORDER BY af.sort_order ASC, f.id ASC');
+    $stmt->execute([$assetId]);
+    $map = [];
+    foreach ($stmt->fetchAll() as $row) {
+        $map[(string)$row['field_key']][] = $row;
+    }
+    return $map;
+}
+
+function get_asset_files_for_assets(array $assetIds): array
+{
+    if (!$assetIds) {
+        return [];
+    }
+    $placeholders = implode(',', array_fill(0, count($assetIds), '?'));
+    $stmt = db()->prepare("SELECT f.*, af.field_key FROM asset_file_values f JOIN asset_fields af ON af.id = f.field_id WHERE f.asset_id IN ({$placeholders}) ORDER BY af.sort_order ASC, f.id ASC");
+    $stmt->execute($assetIds);
+    $map = [];
+    foreach ($stmt->fetchAll() as $row) {
+        $map[(int)$row['asset_id']][(string)$row['field_key']][] = $row;
+    }
+    return $map;
+}
+
+function sync_asset_file_values(int $assetId, array $fileOperations, array &$cleanup = []): void
+{
+    $cleanup['new_paths'] ??= [];
+    $cleanup['delete_paths'] ??= [];
+    if (!$fileOperations) {
+        return;
+    }
+    $dir = ensure_asset_file_storage_dir();
+    $fieldMap = asset_field_map(true);
+    foreach ($fileOperations as $fieldKey => $operation) {
+        $field = $fieldMap[$fieldKey] ?? null;
+        if (!$field || $field['data_type'] !== 'file') {
+            continue;
+        }
+
+        $deleteIds = array_values(array_filter(array_map('intval', $operation['delete_ids'] ?? []), static fn(int $id): bool => $id > 0));
+        if ($deleteIds) {
+            $placeholders = implode(',', array_fill(0, count($deleteIds), '?'));
+            $params = array_merge([$assetId, (int)$field['id']], $deleteIds);
+            $stmt = db()->prepare("SELECT * FROM asset_file_values WHERE asset_id = ? AND field_id = ? AND id IN ({$placeholders})");
+            $stmt->execute($params);
+            $rows = $stmt->fetchAll();
+            foreach ($rows as $row) {
+                $cleanup['delete_paths'][] = $dir . '/' . $row['stored_name'];
+            }
+            $deleteStmt = db()->prepare("DELETE FROM asset_file_values WHERE asset_id = ? AND field_id = ? AND id IN ({$placeholders})");
+            $deleteStmt->execute($params);
+        }
+
+        foreach (($operation['uploads'] ?? []) as $upload) {
+            $storedName = sprintf('asset_%d_field_%d_%s.%s', $assetId, (int)$field['id'], bin2hex(random_bytes(8)), $upload['extension']);
+            $targetPath = $dir . '/' . $storedName;
+            if (!move_uploaded_file((string)$upload['tmp_name'], $targetPath)) {
+                throw new RuntimeException('Failed to store uploaded file: ' . (string)$upload['name']);
+            }
+            $cleanup['new_paths'][] = $targetPath;
+            $stmt = db()->prepare('INSERT INTO asset_file_values (asset_id, field_id, original_name, stored_name, file_ext, mime_type, file_size, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())');
+            $stmt->execute([
+                $assetId,
+                (int)$field['id'],
+                $upload['name'],
+                $storedName,
+                $upload['extension'],
+                $upload['mime_type'],
+                (int)$upload['size'],
+            ]);
+        }
+    }
+}
+
+function finalize_asset_file_changes(array $cleanup, bool $committed): void
+{
+    $paths = $committed ? ($cleanup['delete_paths'] ?? []) : ($cleanup['new_paths'] ?? []);
+    foreach ($paths as $path) {
+        if (is_string($path) && is_file($path)) {
+            @unlink($path);
+        }
+    }
 }
 
 function get_assets_grouped_by_category(array $filters = [], ?array $user = null): array
@@ -1257,7 +1805,9 @@ function asset_export_headers(bool $includeOfficeName = false): array
         $headers['office_name'] = 'Office Name';
     }
     $headers['category'] = 'Category';
-    $headers['subcategory'] = 'Sub-category';
+    if (asset_subcategory_enabled()) {
+        $headers['subcategory'] = 'Sub-category';
+    }
 
     foreach (asset_export_active_fields() as $field) {
         $rawLabel = trim((string)($field['label'] ?? ''));
@@ -1278,8 +1828,10 @@ function build_asset_export_rows(array $filters = [], ?array $user = null, bool 
         $row = [
             'serial' => $index + 1,
             'category' => (string)($asset['category_name'] ?? ''),
-            'subcategory' => (string)($asset['subcategory_name'] ?? ''),
         ];
+        if (asset_subcategory_enabled()) {
+            $row['subcategory'] = (string)($asset['subcategory_name'] ?? '');
+        }
         if ($includeOfficeName) {
             $row['office_name'] = trim((string)(($asset['office_type_label'] ?? '') . ' - ' . ($asset['office_name'] ?? '')), ' -');
         }
@@ -1298,6 +1850,49 @@ function export_asset_data_excel(array $filters = [], ?array $user = null, bool 
     $rows = build_asset_export_rows($filters, $user, $includeOfficeName);
     $suffix = $includeOfficeName ? 'superadmin' : 'office';
     export_excel($rows, $headers, 'asset_data_' . $suffix . '.xlsx', 'Asset Data');
+}
+
+function get_asset_file_record(int $fileId): ?array
+{
+    $stmt = db()->prepare('
+        SELECT f.*, af.field_key, af.label AS field_label, a.office_type, a.office_id, a.deleted_at, a.active_status
+        FROM asset_file_values f
+        JOIN asset_fields af ON af.id = f.field_id
+        JOIN assets a ON a.id = f.asset_id
+        WHERE f.id = ?
+        LIMIT 1
+    ');
+    $stmt->execute([$fileId]);
+    $row = $stmt->fetch();
+    return $row ?: null;
+}
+
+function stream_asset_file(int $fileId, ?array $user = null): void
+{
+    $file = get_asset_file_record($fileId);
+    if (!$file) {
+        http_response_code(404);
+        exit('File not found.');
+    }
+
+    $asset = get_asset((int)$file['asset_id'], true);
+    if (!$asset || !user_can_manage_asset($user ?: current_user(), $asset)) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
+
+    $path = asset_file_storage_dir() . '/' . $file['stored_name'];
+    if (!is_file($path)) {
+        http_response_code(404);
+        exit('Stored file not found.');
+    }
+
+    header('Content-Type: ' . (string)$file['mime_type']);
+    header('Content-Length: ' . (string)filesize($path));
+    header('Content-Disposition: inline; filename="' . rawurlencode((string)$file['original_name']) . '"');
+    header('X-Content-Type-Options: nosniff');
+    readfile($path);
+    exit;
 }
 
 function get_asset_declaration(int $officeType, int $officeId): ?array
@@ -1408,6 +2003,7 @@ function get_declaration_status_tables(array $filters = []): array
         2 => get_declarations_for_office_type(2, $filters),
         3 => get_declarations_for_office_type(3, $filters),
         4 => get_declarations_for_office_type(4, $filters),
+        5 => get_declarations_for_office_type(5, $filters),
     ];
 }
 
@@ -1417,6 +2013,7 @@ function get_declarations_for_office_type(int $officeType, array $filters = []):
         2 => 'zones',
         3 => 'circles',
         4 => 'divisions',
+        5 => 'subdivisions',
     ];
     if (!isset($tableMap[$officeType])) {
         return [];
@@ -1472,6 +2069,8 @@ function office_kind_to_type(string $kind): int
         'zone' => 2,
         'circle' => 3,
         'division' => 4,
+        'subdivision' => 5,
+        'sub-division' => 5,
         default => 0,
     };
 }
@@ -1482,6 +2081,7 @@ function office_type_to_kind(int $officeType): string
         2 => 'zone',
         3 => 'circle',
         4 => 'division',
+        5 => 'subdivision',
         default => '',
     };
 }
@@ -1492,8 +2092,130 @@ function office_table_for_kind(string $kind): ?string
         'zone' => 'zones',
         'circle' => 'circles',
         'division' => 'divisions',
+        'subdivision', 'sub-division' => 'subdivisions',
         default => null,
     };
+}
+
+function office_management_flag_column(): string
+{
+    return 'allow_office_user_management';
+}
+
+function office_user_access_options(): array
+{
+    return [
+        1 => 'Office Head',
+        2 => 'Full Access',
+        3 => 'View Only',
+    ];
+}
+
+function office_user_access_label(int $level): string
+{
+    return office_user_access_options()[$level] ?? 'Unknown';
+}
+
+function office_allows_user_management(int $officeType, int $officeId): bool
+{
+    $kind = office_type_to_kind($officeType);
+    $table = $kind !== '' ? office_table_for_kind($kind) : null;
+    if (!$table || $officeId <= 0) {
+        return false;
+    }
+    $stmt = db()->prepare("SELECT " . office_management_flag_column() . " FROM {$table} WHERE id = ? LIMIT 1");
+    $stmt->execute([$officeId]);
+    $value = $stmt->fetchColumn();
+    return $value === false ? false : (int)$value === 1;
+}
+
+function set_office_user_management_flag(string $kind, int $officeId, int $allowed): void
+{
+    $table = office_table_for_kind($kind);
+    if (!$table || $officeId <= 0) {
+        throw new RuntimeException('Invalid office.');
+    }
+    db()->prepare("UPDATE {$table} SET " . office_management_flag_column() . " = ?, updated_at = NOW() WHERE id = ?")->execute([$allowed === 1 ? 1 : 0, $officeId]);
+}
+
+function user_can_manage_office_users(?array $user = null, ?int $officeType = null, ?int $officeId = null): bool
+{
+    $user = $user ?: current_user();
+    if (!$user) {
+        return false;
+    }
+    if (is_superadmin()) {
+        return true;
+    }
+    $ctx = current_office_context($user);
+    if (!$ctx) {
+        return false;
+    }
+    $targetOfficeType = $officeType ?? (int)$ctx['office_type'];
+    $targetOfficeId = $officeId ?? (int)$ctx['office_id'];
+    if ((int)$ctx['office_type'] !== $targetOfficeType || (int)$ctx['office_id'] !== $targetOfficeId) {
+        return false;
+    }
+    return (int)($user['is_primary_office_user'] ?? 0) === 1
+        && (int)($user['office_access_level'] ?? 2) === 1
+        && office_allows_user_management($targetOfficeType, $targetOfficeId);
+}
+
+function office_user_column_for_type(int $officeType): ?string
+{
+    return match ($officeType) {
+        2 => 'zone_id',
+        3 => 'circle_id',
+        4 => 'division_id',
+        5 => 'subdivision_id',
+        default => null,
+    };
+}
+
+function get_office_users(int $officeType, int $officeId): array
+{
+    $column = office_user_column_for_type($officeType);
+    if (!$column || $officeId <= 0) {
+        return [];
+    }
+    $stmt = db()->prepare("SELECT * FROM users WHERE office_type = ? AND {$column} = ? ORDER BY is_primary_office_user DESC, id ASC");
+    $stmt->execute([$officeType, $officeId]);
+    return $stmt->fetchAll();
+}
+
+function office_user_scope_payload(int $officeType, int $officeId): array
+{
+    if ($officeType === 2) {
+        return ['zone_id' => $officeId, 'circle_id' => null, 'division_id' => null, 'subdivision_id' => null];
+    }
+    if ($officeType === 3) {
+        $circle = find_circle_with_zone($officeId);
+        return [
+            'zone_id' => $circle ? (int)$circle['zone_id'] : null,
+            'circle_id' => $officeId,
+            'division_id' => null,
+            'subdivision_id' => null,
+        ];
+    }
+    if ($officeType === 4) {
+        $division = find_division_with_hierarchy($officeId);
+        return [
+            'zone_id' => $division ? (int)$division['zone_id'] : null,
+            'circle_id' => $division ? (int)$division['circle_id'] : null,
+            'division_id' => $officeId,
+            'subdivision_id' => null,
+        ];
+    }
+    if ($officeType === 5) {
+        $subdivision = find_subdivision_with_hierarchy($officeId);
+        return [
+            'zone_id' => $subdivision ? (int)$subdivision['zone_id'] : null,
+            'circle_id' => $subdivision ? (int)$subdivision['circle_id'] : null,
+            'division_id' => $subdivision ? (int)$subdivision['division_id'] : null,
+            'subdivision_id' => $officeId,
+        ];
+    }
+    return ['zone_id' => null, 'circle_id' => null, 'division_id' => null, 'subdivision_id' => null];
 }
 
 function office_default_password(string $email): string
@@ -1513,24 +2235,42 @@ function find_circle_with_zone(int $circleId): ?array
     return $row ?: null;
 }
 
+function find_division_with_hierarchy(int $divisionId): ?array
+{
+    $stmt = db()->prepare('SELECT d.*, c.office_name AS circle_name, z.office_name AS zone_name FROM divisions d LEFT JOIN circles c ON c.id = d.circle_id LEFT JOIN zones z ON z.id = d.zone_id WHERE d.id = ? LIMIT 1');
+    $stmt->execute([$divisionId]);
+    $row = $stmt->fetch();
+    return $row ?: null;
+}
+
+function find_subdivision_with_hierarchy(int $subdivisionId): ?array
+{
+    $stmt = db()->prepare('SELECT s.*, d.office_name AS division_name, c.office_name AS circle_name, z.office_name AS zone_name FROM subdivisions s LEFT JOIN divisions d ON d.id = s.division_id LEFT JOIN circles c ON c.id = s.circle_id LEFT JOIN zones z ON z.id = s.zone_id WHERE s.id = ? LIMIT 1');
+    $stmt->execute([$subdivisionId]);
+    $row = $stmt->fetch();
+    return $row ?: null;
+}
+
 function find_primary_office_user(int $officeType, int $officeId): ?array
 {
     if ($officeType <= 0 || $officeId <= 0) {
         return null;
     }
     if ($officeType === 2) {
-        $stmt = db()->prepare('SELECT * FROM users WHERE office_type = 2 AND zone_id = ? ORDER BY office_role ASC, id ASC LIMIT 1');
+        $stmt = db()->prepare('SELECT * FROM users WHERE office_type = 2 AND zone_id = ? ORDER BY is_primary_office_user DESC, id ASC LIMIT 1');
     } elseif ($officeType === 3) {
-        $stmt = db()->prepare('SELECT * FROM users WHERE office_type = 3 AND circle_id = ? ORDER BY office_role ASC, id ASC LIMIT 1');
+        $stmt = db()->prepare('SELECT * FROM users WHERE office_type = 3 AND circle_id = ? ORDER BY is_primary_office_user DESC, id ASC LIMIT 1');
+    } elseif ($officeType === 4) {
+        $stmt = db()->prepare('SELECT * FROM users WHERE office_type = 4 AND division_id = ? ORDER BY is_primary_office_user DESC, id ASC LIMIT 1');
     } else {
-        $stmt = db()->prepare('SELECT * FROM users WHERE office_type = 4 AND division_id = ? ORDER BY office_role ASC, id ASC LIMIT 1');
+        $stmt = db()->prepare('SELECT * FROM users WHERE office_type = 5 AND subdivision_id = ? ORDER BY is_primary_office_user DESC, id ASC LIMIT 1');
     }
     $stmt->execute([$officeId]);
     $row = $stmt->fetch();
     return $row ?: null;
 }
 
-function office_user_payload(string $kind, int $officeId, int $zoneId, ?int $circleId, ?int $divisionId): array
+function office_user_payload(string $kind, int $officeId, int $zoneId, ?int $circleId, ?int $divisionId, ?int $subdivisionId): array
 {
     $officeType = office_kind_to_type($kind);
     return [
@@ -1539,13 +2279,14 @@ function office_user_payload(string $kind, int $officeId, int $zoneId, ?int $cir
         'zone_id' => $zoneId > 0 ? $zoneId : null,
         'circle_id' => $circleId && $circleId > 0 ? $circleId : null,
         'division_id' => $divisionId && $divisionId > 0 ? $divisionId : null,
+        'subdivision_id' => $subdivisionId && $subdivisionId > 0 ? $subdivisionId : null,
         'office_id' => $officeId,
     ];
 }
 
 function insert_office_user(string $email, array $payload, int $activeStatus = 1): int
 {
-    $stmt = db()->prepare('INSERT INTO users (email_id, officer_name, password, office_type, office_role, zone_id, circle_id, division_id, active_status, created_at) VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, NOW())');
+    $stmt = db()->prepare('INSERT INTO users (email_id, officer_name, password, office_type, office_role, zone_id, circle_id, division_id, subdivision_id, is_primary_office_user, office_access_level, active_status, created_at) VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, 1, 1, ?, NOW())');
     $stmt->execute([
         $email,
         password_hash(office_default_password($email), PASSWORD_DEFAULT),
@@ -1554,14 +2295,15 @@ function insert_office_user(string $email, array $payload, int $activeStatus = 1
         $payload['zone_id'],
         $payload['circle_id'],
         $payload['division_id'],
+        $payload['subdivision_id'],
         $activeStatus,
     ]);
     return (int)db()->lastInsertId();
 }
 
-function save_office_user(string $kind, int $officeId, string $email, int $zoneId, ?int $circleId, ?int $divisionId, int $activeStatus): void
+function save_office_user(string $kind, int $officeId, string $email, int $zoneId, ?int $circleId, ?int $divisionId, ?int $subdivisionId, int $activeStatus): void
 {
-    $payload = office_user_payload($kind, $officeId, $zoneId, $circleId, $divisionId);
+    $payload = office_user_payload($kind, $officeId, $zoneId, $circleId, $divisionId, $subdivisionId);
     $officeType = $payload['office_type'];
     $existing = find_primary_office_user($officeType, $officeId);
     $emailCheck = db()->prepare('SELECT id FROM users WHERE email_id = ? LIMIT 1');
@@ -1576,19 +2318,314 @@ function save_office_user(string $kind, int $officeId, string $email, int $zoneI
         return;
     }
 
-    db()->prepare('UPDATE users SET email_id = ?, office_type = ?, office_role = ?, zone_id = ?, circle_id = ?, division_id = ?, active_status = ?, updated_at = NOW() WHERE id = ?')->execute([
+    db()->prepare('UPDATE users SET email_id = ?, office_type = ?, office_role = ?, zone_id = ?, circle_id = ?, division_id = ?, subdivision_id = ?, is_primary_office_user = 1, office_access_level = 1, active_status = ?, updated_at = NOW() WHERE id = ?')->execute([
         $email,
         $payload['office_type'],
         $payload['office_role'],
         $payload['zone_id'],
         $payload['circle_id'],
         $payload['division_id'],
+        $payload['subdivision_id'],
         $activeStatus,
         (int)$existing['id'],
     ]);
 }
 
-function create_office_with_user(string $kind, string $name, string $address, string $email, ?int $zoneId = null, ?int $circleId = null): void
+function create_or_update_additional_office_user(int $officeType, int $officeId, string $email, string $officerName, int $accessLevel, ?int $userId = null): void
+{
+    if (!in_array($accessLevel, [2, 3], true)) {
+        throw new RuntimeException('Invalid access level.');
+    }
+    $email = trim($email);
+    $officerName = trim($officerName);
+    if ($email === '') {
+        throw new RuntimeException('Email ID is required.');
+    }
+
+    $column = office_user_column_for_type($officeType);
+    if (!$column || $officeId <= 0) {
+        throw new RuntimeException('Invalid office scope.');
+    }
+
+    $scope = office_user_scope_payload($officeType, $officeId);
+    $emailCheck = db()->prepare('SELECT id FROM users WHERE email_id = ? LIMIT 1');
+    $emailCheck->execute([$email]);
+    $emailOwnerId = (int)($emailCheck->fetchColumn() ?: 0);
+    if ($emailOwnerId > 0 && ($userId === null || $emailOwnerId !== $userId)) {
+        throw new RuntimeException('Email is already used by another user.');
+    }
+
+    db()->beginTransaction();
+    try {
+        if ($userId && $userId > 0) {
+            $stmt = db()->prepare("SELECT * FROM users WHERE id = ? AND office_type = ? AND {$column} = ? LIMIT 1");
+            $stmt->execute([$userId, $officeType, $officeId]);
+            $existing = $stmt->fetch();
+            if (!$existing) {
+                throw new RuntimeException('Office user not found.');
+            }
+            if ((int)($existing['is_primary_office_user'] ?? 0) === 1) {
+                throw new RuntimeException('Primary office head cannot be edited from this form.');
+            }
+            db()->prepare('UPDATE users SET email_id = ?, officer_name = ?, office_access_level = ?, updated_at = NOW() WHERE id = ?')->execute([
+                $email,
+                $officerName === '' ? null : $officerName,
+                $accessLevel,
+                $userId,
+            ]);
+        } else {
+            $stmt = db()->prepare('INSERT INTO users (email_id, officer_name, password, office_type, office_role, zone_id, circle_id, division_id, subdivision_id, is_primary_office_user, office_access_level, active_status, created_at) VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, 0, ?, 1, NOW())');
+            $stmt->execute([
+                $email,
+                $officerName === '' ? null : $officerName,
+                password_hash('1234', PASSWORD_DEFAULT),
+                $officeType,
+                $scope['zone_id'],
+                $scope['circle_id'],
+                $scope['division_id'],
+                $scope['subdivision_id'],
+                $accessLevel,
+            ]);
+        }
+        db()->commit();
+    } catch (Throwable $e) {
+        if (db()->inTransaction()) {
+            db()->rollBack();
+        }
+        throw $e;
+    }
+}
+
+function get_manageable_office_targets(?array $user = null): array
+{
+    $user = $user ?: current_user();
+    if (!$user) {
+        return [];
+    }
+
+    if (!is_superadmin()) {
+        $ctx = current_office_context($user);
+        if (!$ctx) {
+            return [];
+        }
+        return [[
+            'office_type' => (int)$ctx['office_type'],
+            'office_id' => (int)$ctx['office_id'],
+            'office_name' => office_name_from_type_id((int)$ctx['office_type'], (int)$ctx['office_id']),
+            'office_type_label' => asset_office_type_label((int)$ctx['office_type']),
+            'allow_user_management' => office_allows_user_management((int)$ctx['office_type'], (int)$ctx['office_id']) ? 1 : 0,
+        ]];
+    }
+
+    $targets = [];
+    foreach ([
+        2 => ['table' => 'zones', 'name' => 'office_name'],
+        3 => ['table' => 'circles', 'name' => 'office_name'],
+        4 => ['table' => 'divisions', 'name' => 'office_name'],
+        5 => ['table' => 'subdivisions', 'name' => 'office_name'],
+    ] as $officeType => $meta) {
+        $stmt = db()->query("SELECT id, {$meta['name']} AS office_name, " . office_management_flag_column() . " AS allow_user_management FROM {$meta['table']} ORDER BY office_name");
+        foreach ($stmt->fetchAll() as $row) {
+            $targets[] = [
+                'office_type' => $officeType,
+                'office_id' => (int)$row['id'],
+                'office_name' => (string)$row['office_name'],
+                'office_type_label' => asset_office_type_label($officeType),
+                'allow_user_management' => (int)($row['allow_user_management'] ?? 1),
+            ];
+        }
+    }
+
+    return $targets;
+}
+
+function get_superadmin_additional_users(): array
+{
+    $stmt = db()->query('SELECT * FROM users WHERE office_role = 3 AND office_access_level = 3 AND is_primary_office_user = 0 ORDER BY id ASC');
+    return $stmt->fetchAll();
+}
+
+function create_or_update_superadmin_additional_user(string $email, string $officerName, ?int $userId = null): void
+{
+    $email = trim($email);
+    $officerName = trim($officerName);
+    if ($email === '') {
+        throw new RuntimeException('Email ID is required.');
+    }
+
+    $emailCheck = db()->prepare('SELECT id FROM users WHERE email_id = ? LIMIT 1');
+    $emailCheck->execute([$email]);
+    $emailOwnerId = (int)($emailCheck->fetchColumn() ?: 0);
+    if ($emailOwnerId > 0 && ($userId === null || $emailOwnerId !== $userId)) {
+        throw new RuntimeException('Email is already used by another user.');
+    }
+
+    db()->beginTransaction();
+    try {
+        if ($userId && $userId > 0) {
+            $stmt = db()->prepare('SELECT * FROM users WHERE id = ? AND office_role = 3 AND office_access_level = 3 AND is_primary_office_user = 0 LIMIT 1');
+            $stmt->execute([$userId]);
+            $existing = $stmt->fetch();
+            if (!$existing) {
+                throw new RuntimeException('Superadmin additional user not found.');
+            }
+            db()->prepare('UPDATE users SET email_id = ?, officer_name = ?, updated_at = NOW() WHERE id = ?')->execute([
+                $email,
+                $officerName === '' ? null : $officerName,
+                $userId,
+            ]);
+        } else {
+            $stmt = db()->prepare('INSERT INTO users (email_id, officer_name, password, office_type, office_role, is_primary_office_user, office_access_level, active_status, created_at) VALUES (?, ?, ?, 1, 3, 0, 3, 1, NOW())');
+            $stmt->execute([
+                $email,
+                $officerName === '' ? null : $officerName,
+                password_hash('1234', PASSWORD_DEFAULT),
+            ]);
+        }
+        db()->commit();
+    } catch (Throwable $e) {
+        if (db()->inTransaction()) {
+            db()->rollBack();
+        }
+        throw $e;
+    }
+}
+
+function reset_superadmin_additional_user_password(int $userId): void
+{
+    $stmt = db()->prepare('SELECT id FROM users WHERE id = ? AND office_role = 3 AND office_access_level = 3 AND is_primary_office_user = 0 LIMIT 1');
+    $stmt->execute([$userId]);
+    if (!$stmt->fetchColumn()) {
+        throw new RuntimeException('Superadmin additional user not found.');
+    }
+    db()->prepare('UPDATE users SET password = ?, updated_at = NOW() WHERE id = ?')->execute([
+        password_hash('1234', PASSWORD_DEFAULT),
+        $userId,
+    ]);
+}
+
+function toggle_superadmin_additional_user_status(int $userId, int $activeStatus): void
+{
+    $stmt = db()->prepare('SELECT id FROM users WHERE id = ? AND office_role = 3 AND office_access_level = 3 AND is_primary_office_user = 0 LIMIT 1');
+    $stmt->execute([$userId]);
+    if (!$stmt->fetchColumn()) {
+        throw new RuntimeException('Superadmin additional user not found.');
+    }
+    db()->prepare('UPDATE users SET active_status = ?, updated_at = NOW() WHERE id = ?')->execute([$activeStatus === 1 ? 1 : 0, $userId]);
+}
+
+function get_office_user_management_tables(): array
+{
+    $overview = get_offices_overview();
+    $tables = [
+        2 => [],
+        3 => [],
+        4 => [],
+        5 => [],
+    ];
+    foreach ($overview['zones'] as $row) {
+        $tables[2][] = [
+            'office_id' => (int)$row['id'],
+            'office_name' => (string)$row['office_name'],
+            'officer_name' => (string)($row['linked_user']['officer_name'] ?? ''),
+            'email_id' => (string)($row['linked_user']['email_id'] ?? ''),
+            'allow_user_management' => (int)($row['allow_office_user_management'] ?? 1),
+        ];
+    }
+    foreach ($overview['circles'] as $row) {
+        $tables[3][] = [
+            'office_id' => (int)$row['id'],
+            'office_name' => (string)$row['office_name'],
+            'officer_name' => (string)($row['linked_user']['officer_name'] ?? ''),
+            'email_id' => (string)($row['linked_user']['email_id'] ?? ''),
+            'allow_user_management' => (int)($row['allow_office_user_management'] ?? 1),
+        ];
+    }
+    foreach ($overview['divisions'] as $row) {
+        $tables[4][] = [
+            'office_id' => (int)$row['id'],
+            'office_name' => (string)$row['office_name'],
+            'officer_name' => (string)($row['linked_user']['officer_name'] ?? ''),
+            'email_id' => (string)($row['linked_user']['email_id'] ?? ''),
+            'allow_user_management' => (int)($row['allow_office_user_management'] ?? 1),
+        ];
+    }
+    foreach ($overview['subdivisions'] as $row) {
+        $tables[5][] = [
+            'office_id' => (int)$row['id'],
+            'office_name' => (string)$row['office_name'],
+            'officer_name' => (string)($row['linked_user']['officer_name'] ?? ''),
+            'email_id' => (string)($row['linked_user']['email_id'] ?? ''),
+            'allow_user_management' => (int)($row['allow_office_user_management'] ?? 1),
+        ];
+    }
+    return $tables;
+}
+
+function bulk_set_office_user_management_permissions(array $pairs, int $allowed): int
+{
+    $updated = 0;
+    db()->beginTransaction();
+    try {
+        foreach ($pairs as $pair) {
+            $officeType = (int)($pair['office_type'] ?? 0);
+            $officeId = (int)($pair['office_id'] ?? 0);
+            if ($officeType <= 0 || $officeId <= 0) {
+                continue;
+            }
+            $kind = office_type_to_kind($officeType);
+            if ($kind === '') {
+                continue;
+            }
+            set_office_user_management_flag($kind, $officeId, $allowed);
+            $updated++;
+        }
+        db()->commit();
+        return $updated;
+    } catch (Throwable $e) {
+        if (db()->inTransaction()) {
+            db()->rollBack();
+        }
+        throw $e;
+    }
+}
+
+function reset_additional_office_user_password(int $officeType, int $officeId, int $userId): void
+{
+    $column = office_user_column_for_type($officeType);
+    if (!$column || $officeId <= 0 || $userId <= 0) {
+        throw new RuntimeException('Invalid office user.');
+    }
+    $stmt = db()->prepare("SELECT id FROM users WHERE id = ? AND office_type = ? AND {$column} = ? LIMIT 1");
+    $stmt->execute([$userId, $officeType, $officeId]);
+    if (!$stmt->fetchColumn()) {
+        throw new RuntimeException('Office user not found.');
+    }
+    db()->prepare('UPDATE users SET password = ?, updated_at = NOW() WHERE id = ?')->execute([
+        password_hash('1234', PASSWORD_DEFAULT),
+        $userId,
+    ]);
+}
+
+function toggle_additional_office_user_status(int $officeType, int $officeId, int $userId, int $activeStatus): void
+{
+    $column = office_user_column_for_type($officeType);
+    if (!$column || $officeId <= 0 || $userId <= 0) {
+        throw new RuntimeException('Invalid office user.');
+    }
+    $stmt = db()->prepare("SELECT * FROM users WHERE id = ? AND office_type = ? AND {$column} = ? LIMIT 1");
+    $stmt->execute([$userId, $officeType, $officeId]);
+    $existing = $stmt->fetch();
+    if (!$existing) {
+        throw new RuntimeException('Office user not found.');
+    }
+    if ((int)($existing['is_primary_office_user'] ?? 0) === 1) {
+        throw new RuntimeException('Primary office head cannot be disabled here.');
+    }
+    db()->prepare('UPDATE users SET active_status = ?, updated_at = NOW() WHERE id = ?')->execute([$activeStatus === 1 ? 1 : 0, $userId]);
+}
+
+function create_office_with_user(string $kind, string $name, string $address, string $email, ?int $zoneId = null, ?int $circleId = null, ?int $divisionId = null): void
 {
     $kind = strtolower(trim($kind));
     $table = office_table_for_kind($kind);
@@ -1605,15 +2642,15 @@ function create_office_with_user(string $kind, string $name, string $address, st
         if ($kind === 'zone') {
             db()->prepare('INSERT INTO zones (office_name, office_address, office_type, active_status, created_at) VALUES (?, ?, 2, 1, NOW())')->execute([$name, $addressValue]);
             $officeId = (int)db()->lastInsertId();
-            save_office_user('zone', $officeId, $email, $officeId, null, null, 1);
+            save_office_user('zone', $officeId, $email, $officeId, null, null, null, 1);
         } elseif ($kind === 'circle') {
             if (($zoneId ?? 0) <= 0) {
                 throw new RuntimeException('Circle requires a zone.');
             }
             db()->prepare('INSERT INTO circles (office_name, office_address, office_type, zone_id, active_status, created_at) VALUES (?, ?, 3, ?, 1, NOW())')->execute([$name, $addressValue, $zoneId]);
             $officeId = (int)db()->lastInsertId();
-            save_office_user('circle', $officeId, $email, $zoneId, $officeId, null, 1);
-        } else {
+            save_office_user('circle', $officeId, $email, $zoneId, $officeId, null, null, 1);
+        } elseif ($kind === 'division') {
             $circle = find_circle_with_zone((int)$circleId);
             if (!$circle) {
                 throw new RuntimeException('Division requires a valid circle.');
@@ -1622,7 +2659,18 @@ function create_office_with_user(string $kind, string $name, string $address, st
             $circleId = (int)$circle['id'];
             db()->prepare('INSERT INTO divisions (office_name, office_address, office_type, zone_id, circle_id, field_office, active_status, created_at) VALUES (?, ?, 4, ?, ?, 1, 1, NOW())')->execute([$name, $addressValue, $zoneId, $circleId]);
             $officeId = (int)db()->lastInsertId();
-            save_office_user('division', $officeId, $email, $zoneId, $circleId, $officeId, 1);
+            save_office_user('division', $officeId, $email, $zoneId, $circleId, $officeId, null, 1);
+        } else {
+            $division = find_division_with_hierarchy((int)$divisionId);
+            if (!$division) {
+                throw new RuntimeException('Sub-division requires a valid division.');
+            }
+            $zoneId = (int)$division['zone_id'];
+            $circleId = (int)$division['circle_id'];
+            $divisionId = (int)$division['id'];
+            db()->prepare('INSERT INTO subdivisions (office_name, office_address, office_type, zone_id, circle_id, division_id, active_status, created_at) VALUES (?, ?, 5, ?, ?, ?, 1, NOW())')->execute([$name, $addressValue, $zoneId, $circleId, $divisionId]);
+            $officeId = (int)db()->lastInsertId();
+            save_office_user('subdivision', $officeId, $email, $zoneId, $circleId, $divisionId, $officeId, 1);
         }
         db()->commit();
     } catch (Throwable $e) {
@@ -1633,7 +2681,7 @@ function create_office_with_user(string $kind, string $name, string $address, st
     }
 }
 
-function update_office_with_user(string $kind, int $officeId, string $name, string $address, string $email, ?int $zoneId = null, ?int $circleId = null): void
+function update_office_with_user(string $kind, int $officeId, string $name, string $address, string $email, ?int $zoneId = null, ?int $circleId = null, ?int $divisionId = null): void
 {
     $kind = strtolower(trim($kind));
     $table = office_table_for_kind($kind);
@@ -1653,7 +2701,7 @@ function update_office_with_user(string $kind, int $officeId, string $name, stri
             $activeStatus = (int)($statusStmt->fetchColumn() ?: 1);
             db()->prepare('UPDATE zones SET office_name = ?, office_address = ?, updated_at = NOW() WHERE id = ?')->execute([$name, $addressValue, $officeId]);
             if ($email !== '') {
-                save_office_user('zone', $officeId, $email, $officeId, null, null, $activeStatus);
+                save_office_user('zone', $officeId, $email, $officeId, null, null, null, $activeStatus);
             }
         } elseif ($kind === 'circle') {
             if (($zoneId ?? 0) <= 0) {
@@ -1664,9 +2712,9 @@ function update_office_with_user(string $kind, int $officeId, string $name, stri
             $activeStatus = (int)($statusStmt->fetchColumn() ?: 1);
             db()->prepare('UPDATE circles SET office_name = ?, office_address = ?, zone_id = ?, updated_at = NOW() WHERE id = ?')->execute([$name, $addressValue, $zoneId, $officeId]);
             if ($email !== '') {
-                save_office_user('circle', $officeId, $email, $zoneId, $officeId, null, $activeStatus);
+                save_office_user('circle', $officeId, $email, $zoneId, $officeId, null, null, $activeStatus);
             }
-        } else {
+        } elseif ($kind === 'division') {
             $circle = find_circle_with_zone((int)$circleId);
             if (!$circle) {
                 throw new RuntimeException('Division requires a valid circle.');
@@ -1678,7 +2726,22 @@ function update_office_with_user(string $kind, int $officeId, string $name, stri
             $activeStatus = (int)($statusStmt->fetchColumn() ?: 1);
             db()->prepare('UPDATE divisions SET office_name = ?, office_address = ?, zone_id = ?, circle_id = ?, updated_at = NOW() WHERE id = ?')->execute([$name, $addressValue, $zoneId, $circleId, $officeId]);
             if ($email !== '') {
-                save_office_user('division', $officeId, $email, $zoneId, $circleId, $officeId, $activeStatus);
+                save_office_user('division', $officeId, $email, $zoneId, $circleId, $officeId, null, $activeStatus);
+            }
+        } else {
+            $division = find_division_with_hierarchy((int)$divisionId);
+            if (!$division) {
+                throw new RuntimeException('Sub-division requires a valid division.');
+            }
+            $zoneId = (int)$division['zone_id'];
+            $circleId = (int)$division['circle_id'];
+            $divisionId = (int)$division['id'];
+            $statusStmt = db()->prepare('SELECT active_status FROM subdivisions WHERE id = ? LIMIT 1');
+            $statusStmt->execute([$officeId]);
+            $activeStatus = (int)($statusStmt->fetchColumn() ?: 1);
+            db()->prepare('UPDATE subdivisions SET office_name = ?, office_address = ?, zone_id = ?, circle_id = ?, division_id = ?, updated_at = NOW() WHERE id = ?')->execute([$name, $addressValue, $zoneId, $circleId, $divisionId, $officeId]);
+            if ($email !== '') {
+                save_office_user('subdivision', $officeId, $email, $zoneId, $circleId, $divisionId, $officeId, $activeStatus);
             }
         }
         db()->commit();
@@ -1706,8 +2769,10 @@ function toggle_office_active_status(string $kind, int $officeId, int $activeSta
             db()->prepare('UPDATE users SET active_status = ?, updated_at = NOW() WHERE office_type = 2 AND zone_id = ?')->execute([$activeStatus, $officeId]);
         } elseif ($officeType === 3) {
             db()->prepare('UPDATE users SET active_status = ?, updated_at = NOW() WHERE office_type = 3 AND circle_id = ?')->execute([$activeStatus, $officeId]);
-        } else {
+        } elseif ($officeType === 4) {
             db()->prepare('UPDATE users SET active_status = ?, updated_at = NOW() WHERE office_type = 4 AND division_id = ?')->execute([$activeStatus, $officeId]);
+        } else {
+            db()->prepare('UPDATE users SET active_status = ?, updated_at = NOW() WHERE office_type = 5 AND subdivision_id = ?')->execute([$activeStatus, $officeId]);
         }
         db()->commit();
     } catch (Throwable $e) {
@@ -1735,12 +2800,19 @@ function get_offices_overview(): array
     $zones = db()->query('SELECT * FROM zones ORDER BY office_name')->fetchAll();
     $circles = db()->query('SELECT c.*, z.office_name AS zone_name FROM circles c LEFT JOIN zones z ON z.id = c.zone_id ORDER BY c.office_name')->fetchAll();
     $divisions = db()->query('SELECT d.*, z.office_name AS zone_name, c.office_name AS circle_name FROM divisions d LEFT JOIN zones z ON z.id = d.zone_id LEFT JOIN circles c ON c.id = d.circle_id ORDER BY d.office_name')->fetchAll();
+    $subdivisions = db()->query('SELECT s.*, z.office_name AS zone_name, c.office_name AS circle_name, d.office_name AS division_name FROM subdivisions s LEFT JOIN zones z ON z.id = s.zone_id LEFT JOIN circles c ON c.id = s.circle_id LEFT JOIN divisions d ON d.id = s.division_id ORDER BY s.office_name')->fetchAll();
 
-    $users = db()->query('SELECT * FROM users WHERE office_type IN (2, 3, 4) ORDER BY office_role ASC, id ASC')->fetchAll();
+    $users = db()->query('SELECT * FROM users WHERE office_type IN (2, 3, 4, 5) ORDER BY office_role ASC, id ASC')->fetchAll();
     $userMap = [];
     foreach ($users as $user) {
         $officeType = (int)$user['office_type'];
-        $officeId = $officeType === 2 ? (int)($user['zone_id'] ?? 0) : ($officeType === 3 ? (int)($user['circle_id'] ?? 0) : (int)($user['division_id'] ?? 0));
+        $officeId = match ($officeType) {
+            2 => (int)($user['zone_id'] ?? 0),
+            3 => (int)($user['circle_id'] ?? 0),
+            4 => (int)($user['division_id'] ?? 0),
+            5 => (int)($user['subdivision_id'] ?? 0),
+            default => 0,
+        };
         if ($officeId <= 0) {
             continue;
         }
@@ -1762,11 +2834,16 @@ function get_offices_overview(): array
         $division['linked_user'] = $userMap['4:' . (int)$division['id']] ?? null;
     }
     unset($division);
+    foreach ($subdivisions as &$subdivision) {
+        $subdivision['linked_user'] = $userMap['5:' . (int)$subdivision['id']] ?? null;
+    }
+    unset($subdivision);
 
     return [
         'zones' => $zones,
         'circles' => $circles,
         'divisions' => $divisions,
+        'subdivisions' => $subdivisions,
     ];
 }
 
@@ -1798,8 +2875,10 @@ function asset_template_core_columns(): array
 {
     $columns = [
         ['key' => 'category', 'label' => 'Category / Category'],
-        ['key' => 'subcategory', 'label' => 'Sub-category / Sub-category'],
     ];
+    if (asset_subcategory_enabled()) {
+        $columns[] = ['key' => 'subcategory', 'label' => 'Sub-category / Sub-category'];
+    }
     foreach (get_asset_fields() as $field) {
         if ((int)$field['is_import_enabled'] !== 1 || (int)$field['active_status'] !== 1) {
             continue;
@@ -1969,7 +3048,7 @@ function save_uploaded_asset_template(array $file): array
 function output_asset_template_download(): void
 {
     $stored = asset_template_uploaded_info();
-    if ($stored) {
+    if ($stored && asset_subcategory_enabled()) {
         header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         header('Content-Disposition: attachment; filename="asset_import_template.xlsx"');
         header('Content-Length: ' . (string)$stored['size']);
@@ -1984,9 +3063,11 @@ function output_asset_template_download(): void
     $rows = [[
         'serial' => '1',
         'category' => '',
-        'subcategory' => '',
         'instruction' => 'Fill data columns only. Keep heading row unchanged.',
     ]];
+    if (asset_subcategory_enabled()) {
+        $rows[0]['subcategory'] = '';
+    }
     export_excel($rows, $headers, 'asset_import_template.xlsx', 'Asset Template');
 }
 
@@ -2002,11 +3083,19 @@ function asset_template_headers(): array
         }
         $headers[$field['field_key']] = $field['label'];
     }
+    if (!asset_subcategory_enabled()) {
+        unset($headers['subcategory']);
+    }
     return $headers;
 }
 
 function build_asset_template_rows(): array
 {
+    if (!asset_subcategory_enabled()) {
+        return [[
+            'category' => '',
+        ]];
+    }
     return [[
         'category' => '',
         'subcategory' => '',
@@ -2067,7 +3156,8 @@ function parse_asset_import_file(string $tmpName, string $originalName, array $u
 function stage_asset_import_row(array $input, int $rowNumber): array
 {
     $categoryName = trim((string)($input['category'] ?? ''));
-    $subcategoryName = trim((string)($input['subcategory'] ?? ''));
+    $subcategoryEnabled = asset_subcategory_enabled();
+    $subcategoryName = $subcategoryEnabled ? trim((string)($input['subcategory'] ?? '')) : '';
 
     $categoryId = 0;
     foreach (get_asset_categories() as $category) {
@@ -2078,7 +3168,7 @@ function stage_asset_import_row(array $input, int $rowNumber): array
     }
 
     $subcategoryId = 0;
-    if ($categoryId > 0) {
+    if ($subcategoryEnabled && $categoryId > 0) {
         foreach (get_asset_subcategories($categoryId) as $subcategory) {
             if (strcasecmp($subcategory['name'], $subcategoryName) === 0) {
                 $subcategoryId = (int)$subcategory['id'];
@@ -2115,11 +3205,14 @@ function stage_asset_import_row(array $input, int $rowNumber): array
 function restage_asset_import_rows(array $submittedRows): array
 {
     $reviewRows = [];
+    $subcategoryEnabled = asset_subcategory_enabled();
     foreach ($submittedRows as $index => $row) {
         $payload = [
             'category' => trim((string)($row['category'] ?? '')),
-            'subcategory' => trim((string)($row['subcategory'] ?? '')),
         ];
+        if ($subcategoryEnabled) {
+            $payload['subcategory'] = trim((string)($row['subcategory'] ?? ''));
+        }
         foreach (get_asset_fields() as $field) {
             if ((int)$field['is_import_enabled'] !== 1) {
                 continue;

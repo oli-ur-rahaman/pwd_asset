@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS zones (
     office_address VARCHAR(255) DEFAULT NULL,
     office_type TINYINT NOT NULL DEFAULT 2,
     active_status TINYINT NOT NULL DEFAULT 1,
+    allow_office_user_management TINYINT NOT NULL DEFAULT 1,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -15,6 +16,7 @@ CREATE TABLE IF NOT EXISTS circles (
     office_type TINYINT NOT NULL DEFAULT 2,
     zone_id INT DEFAULT NULL,
     active_status TINYINT NOT NULL DEFAULT 1,
+    allow_office_user_management TINYINT NOT NULL DEFAULT 1,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT NULL,
     KEY idx_circles_zone (zone_id)
@@ -29,10 +31,28 @@ CREATE TABLE IF NOT EXISTS divisions (
     circle_id INT DEFAULT NULL,
     field_office TINYINT NOT NULL DEFAULT 1,
     active_status TINYINT NOT NULL DEFAULT 1,
+    allow_office_user_management TINYINT NOT NULL DEFAULT 1,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT NULL,
     KEY idx_divisions_zone (zone_id),
     KEY idx_divisions_circle (circle_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS subdivisions (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    office_name VARCHAR(255) NOT NULL,
+    office_address VARCHAR(255) DEFAULT NULL,
+    office_type TINYINT NOT NULL DEFAULT 5,
+    zone_id INT NOT NULL,
+    circle_id INT NOT NULL,
+    division_id INT NOT NULL,
+    active_status TINYINT NOT NULL DEFAULT 1,
+    allow_office_user_management TINYINT NOT NULL DEFAULT 1,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT NULL,
+    KEY idx_subdivisions_zone (zone_id),
+    KEY idx_subdivisions_circle (circle_id),
+    KEY idx_subdivisions_division (division_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS users (
@@ -45,12 +65,16 @@ CREATE TABLE IF NOT EXISTS users (
     zone_id INT DEFAULT NULL,
     circle_id INT DEFAULT NULL,
     division_id INT DEFAULT NULL,
+    subdivision_id INT DEFAULT NULL,
+    is_primary_office_user TINYINT NOT NULL DEFAULT 0,
+    office_access_level TINYINT NOT NULL DEFAULT 2,
     active_status TINYINT NOT NULL DEFAULT 1,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT NULL,
     KEY idx_users_zone (zone_id),
     KEY idx_users_circle (circle_id),
-    KEY idx_users_division (division_id)
+    KEY idx_users_division (division_id),
+    KEY idx_users_subdivision (subdivision_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS fy (
@@ -162,6 +186,7 @@ CREATE TABLE IF NOT EXISTS info (
     video_tutorial_url VARCHAR(255) DEFAULT NULL,
     login_message TEXT DEFAULT NULL,
     welcome_message LONGTEXT DEFAULT NULL,
+    asset_subcategory_enabled TINYINT NOT NULL DEFAULT 1,
     i_opr_repair TEXT DEFAULT NULL,
     i_opr_other TEXT DEFAULT NULL,
     i_dev_pw TEXT DEFAULT NULL,
@@ -257,6 +282,7 @@ CREATE TABLE IF NOT EXISTS asset_fields (
     is_required TINYINT NOT NULL DEFAULT 0,
     is_displayed TINYINT NOT NULL DEFAULT 1,
     is_import_enabled TINYINT NOT NULL DEFAULT 1,
+    is_unique TINYINT NOT NULL DEFAULT 0,
     active_status TINYINT NOT NULL DEFAULT 1,
     sort_order INT NOT NULL DEFAULT 0,
     deleted_at DATETIME DEFAULT NULL,
@@ -281,7 +307,7 @@ CREATE TABLE IF NOT EXISTS assets (
     id INT AUTO_INCREMENT PRIMARY KEY,
     asset_number VARCHAR(50) NOT NULL,
     category_id INT NOT NULL,
-    subcategory_id INT NOT NULL,
+    subcategory_id INT DEFAULT NULL,
     office_type TINYINT NOT NULL,
     office_id INT NOT NULL,
     active_status TINYINT NOT NULL DEFAULT 1,
@@ -311,6 +337,31 @@ CREATE TABLE IF NOT EXISTS asset_values (
     UNIQUE KEY uniq_asset_values (asset_id, field_id),
     KEY idx_asset_values_asset (asset_id),
     KEY idx_asset_values_field (field_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS asset_field_file_rules (
+    field_id INT NOT NULL PRIMARY KEY,
+    is_multiple TINYINT NOT NULL DEFAULT 0,
+    max_files INT NOT NULL DEFAULT 1,
+    max_file_size_bytes BIGINT NOT NULL DEFAULT 0,
+    max_total_size_bytes BIGINT NOT NULL DEFAULT 0,
+    allowed_extensions TEXT DEFAULT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS asset_file_values (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    asset_id INT NOT NULL,
+    field_id INT NOT NULL,
+    original_name VARCHAR(255) NOT NULL,
+    stored_name VARCHAR(255) NOT NULL,
+    file_ext VARCHAR(20) NOT NULL,
+    mime_type VARCHAR(100) NOT NULL,
+    file_size BIGINT NOT NULL DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_asset_file_values_asset (asset_id),
+    KEY idx_asset_file_values_field (field_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS office_asset_declarations (
