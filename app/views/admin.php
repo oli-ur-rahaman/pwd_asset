@@ -6,6 +6,7 @@ $fields = get_asset_fields(true);
 $templateColumns = asset_template_columns();
 $uploadedTemplate = asset_template_uploaded_info();
 $subcategoryEnabled = asset_subcategory_enabled();
+$assetNumberVisibleToUsers = asset_number_visible_to_users();
 ?>
 <section class="card">
     <h2>Excel Template</h2>
@@ -40,6 +41,7 @@ $subcategoryEnabled = asset_subcategory_enabled();
         <div class="toolbar-row">
             <button type="submit">Upload Template</button>
             <a href="asset_template.php" class="button-link">Download Current Template</a>
+            <a href="asset_template.php?mode=auto" class="button-link">Download Auto Template</a>
         </div>
     </form>
 </section>
@@ -51,6 +53,17 @@ $subcategoryEnabled = asset_subcategory_enabled();
         <?= csrf_input(); ?>
         <input type="hidden" name="action" value="save_subcategory_visibility">
         <label><input type="checkbox" name="asset_subcategory_enabled" value="1" <?= $subcategoryEnabled ? 'checked' : ''; ?>> Show Sub-category</label>
+        <button type="submit">Save</button>
+    </form>
+</section>
+
+<section class="card">
+    <h2>Asset Number Visibility</h2>
+    <p class="hint">Control whether office-side users see the Asset Number column in asset tables.</p>
+    <form method="post" action="index.php" class="inline-form">
+        <?= csrf_input(); ?>
+        <input type="hidden" name="action" value="save_asset_number_visibility">
+        <label><input type="checkbox" name="asset_number_visible_to_users" value="1" <?= $assetNumberVisibleToUsers ? 'checked' : ''; ?>> Show Asset Number for office users</label>
         <button type="submit">Save</button>
     </form>
 </section>
@@ -168,7 +181,7 @@ $subcategoryEnabled = asset_subcategory_enabled();
 
 <section class="card">
     <h2>Asset Fields / সম্পদের কলাম</h2>
-    <form method="post" action="index.php" class="grid">
+    <form method="post" action="index.php" class="grid asset-field-form" data-asset-field-form>
         <?= csrf_input(); ?>
         <input type="hidden" name="action" value="create_asset_field">
         <label>Serial
@@ -181,33 +194,45 @@ $subcategoryEnabled = asset_subcategory_enabled();
             <input type="text" name="field_key">
         </label>
         <label>Type
-            <select name="data_type" required>
+            <select name="data_type" required data-field-type-select>
                 <?php foreach (asset_supported_data_types() as $type): ?>
                     <option value="<?= e($type); ?>"><?= e($type); ?></option>
                 <?php endforeach; ?>
             </select>
         </label>
-        <label>Dropdown Options
-            <textarea name="options_text" rows="3" placeholder="One option per line"></textarea>
-        </label>
-        <label>File Mode
-            <select name="file_is_multiple">
-                <option value="0">Single file</option>
-                <option value="1">Multiple files</option>
-            </select>
-        </label>
-        <label>Max Files
-            <input type="number" name="file_max_files" min="1" step="1" value="1">
-        </label>
-        <label>Max File Size (MB)
-            <input type="number" name="file_max_size_mb" min="0" step="0.1" value="0">
-        </label>
-        <label>Total Upload Size (MB)
-            <input type="number" name="file_total_size_mb" min="0" step="0.1" value="0">
-        </label>
-        <label>Allowed Extensions
-            <input type="text" name="file_allowed_extensions" placeholder="pdf,jpg,docx,xlsx">
-        </label>
+        <div class="field-config-group" data-field-config="dropdown">
+            <label>Dropdown Options
+                <textarea name="options_text" rows="3" placeholder="One option per line"></textarea>
+            </label>
+        </div>
+        <div class="field-config-group" data-field-config="file">
+            <label>File Mode
+                <select name="file_is_multiple">
+                    <option value="0">Single file</option>
+                    <option value="1">Multiple files</option>
+                </select>
+            </label>
+        </div>
+        <div class="field-config-group" data-field-config="file">
+            <label>Max Files
+                <input type="number" name="file_max_files" min="1" step="1" value="1">
+            </label>
+        </div>
+        <div class="field-config-group" data-field-config="file">
+            <label>Max File Size (MB)
+                <input type="number" name="file_max_size_mb" min="0" step="0.1" value="0">
+            </label>
+        </div>
+        <div class="field-config-group" data-field-config="file">
+            <label>Total Upload Size (MB)
+                <input type="number" name="file_total_size_mb" min="0" step="0.1" value="0">
+            </label>
+        </div>
+        <div class="field-config-group" data-field-config="file">
+            <label>Allowed Extensions
+                <input type="text" name="file_allowed_extensions" placeholder="pdf,jpg,docx,xlsx">
+            </label>
+        </div>
         <label><input type="checkbox" name="is_required" value="1"> Mandatory</label>
         <label><input type="checkbox" name="is_displayed" value="1" checked> Show in tables</label>
         <label><input type="checkbox" name="is_import_enabled" value="1" checked> Allow in import</label>
@@ -235,15 +260,17 @@ $subcategoryEnabled = asset_subcategory_enabled();
                         <td><input form="<?= e($formId); ?>" class="inline-edit" type="text" name="label" value="<?= e($field['label']); ?>" required></td>
                         <td><input form="<?= e($formId); ?>" class="inline-readonly" type="text" value="<?= e($field['field_key']); ?>" readonly></td>
                         <td>
-                            <select form="<?= e($formId); ?>" class="inline-edit" name="data_type">
+                            <select form="<?= e($formId); ?>" class="inline-edit" name="data_type" data-field-type-select>
                                 <?php foreach (asset_supported_data_types() as $type): ?>
                                     <option value="<?= e($type); ?>" <?= $field['data_type'] === $type ? 'selected' : ''; ?>><?= e($type); ?></option>
                                 <?php endforeach; ?>
                             </select>
                         </td>
                         <td>
-                            <textarea form="<?= e($formId); ?>" class="inline-edit field-options-box" name="options_text" rows="3" placeholder="One option per line"><?= e(implode("\n", $optionLines)); ?></textarea>
-                            <div class="grid compact-grid">
+                            <div class="field-config-group" data-field-config="dropdown">
+                                <textarea form="<?= e($formId); ?>" class="inline-edit field-options-box" name="options_text" rows="3" placeholder="One option per line"><?= e(implode("\n", $optionLines)); ?></textarea>
+                            </div>
+                            <div class="grid compact-grid field-config-group" data-field-config="file">
                                 <label>File Mode
                                     <select form="<?= e($formId); ?>" class="inline-edit" name="file_is_multiple">
                                         <option value="0" <?= (int)$fileRule['is_multiple'] === 0 ? 'selected' : ''; ?>>Single file</option>

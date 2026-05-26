@@ -1,13 +1,14 @@
 <?php
 require __DIR__ . '/header.php';
 $orders = get_office_orders();
+$canManage = can_manage_superadmin_scope();
 ?>
 <section class="card">
     <h2>Office Orders</h2>
     <p class="hint">Official orders, letters, and notices shared by the superadmin.</p>
 </section>
 
-<?php if (is_superadmin()): ?>
+<?php if (is_superadmin() && $canManage): ?>
 <section class="card">
     <h3>Upload Office Order</h3>
     <form method="post" action="index.php" enctype="multipart/form-data" class="grid">
@@ -21,6 +22,10 @@ $orders = get_office_orders();
         </label>
         <button type="submit">Upload Files</button>
     </form>
+</section>
+<?php elseif (is_superadmin()): ?>
+<section class="card">
+    <p class="hint">You have view-only superadmin access. Upload is disabled.</p>
 </section>
 <?php endif; ?>
 

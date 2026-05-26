@@ -187,6 +187,7 @@ CREATE TABLE IF NOT EXISTS info (
     login_message TEXT DEFAULT NULL,
     welcome_message LONGTEXT DEFAULT NULL,
     asset_subcategory_enabled TINYINT NOT NULL DEFAULT 1,
+    asset_number_visible_to_users TINYINT NOT NULL DEFAULT 1,
     i_opr_repair TEXT DEFAULT NULL,
     i_opr_other TEXT DEFAULT NULL,
     i_dev_pw TEXT DEFAULT NULL,
@@ -390,6 +391,31 @@ CREATE TABLE IF NOT EXISTS asset_import_batches (
     status VARCHAR(20) NOT NULL DEFAULT 'pending',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS asset_activity_logs (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    asset_id INT NOT NULL,
+    user_id INT NOT NULL,
+    action_type VARCHAR(50) NOT NULL,
+    summary VARCHAR(255) NOT NULL,
+    details LONGTEXT DEFAULT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_asset_activity_logs_asset (asset_id),
+    KEY idx_asset_activity_logs_user (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS asset_table_column_preferences (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    category_id INT NOT NULL,
+    column_key VARCHAR(100) NOT NULL,
+    is_visible TINYINT NOT NULL DEFAULT 1,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_asset_table_column_pref (user_id, category_id, column_key),
+    KEY idx_asset_table_column_pref_user (user_id),
+    KEY idx_asset_table_column_pref_category (category_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS office_orders (

@@ -3,11 +3,22 @@ require __DIR__ . '/header.php';
 
 $user = current_user();
 $info = get_info_row();
+$canModifyAssets = can_modify_office_assets($user);
+$canManageSuperadmin = can_manage_superadmin_scope($user);
+$currentOfficeViewScope = request_str('office_view_scope', 'my_office');
+$hasUnderMeScope = office_user_has_under_me_scope($user);
+if (!$hasUnderMeScope) {
+    $currentOfficeViewScope = 'my_office';
+}
+$isUnderMeView = !is_superadmin() && $currentOfficeViewScope === 'office_under_me';
+$showAssetNumber = is_superadmin() || asset_number_visible_to_users();
+$showActionColumn = !is_superadmin() && $canModifyAssets && !$isUnderMeView;
 $fieldMap = asset_field_map();
 $fields = get_asset_fields();
 $categories = get_asset_categories();
 $subcategoryEnabled = asset_subcategory_enabled();
 $subcategories = $subcategoryEnabled ? get_asset_subcategories(null, true) : [];
+$importReviewSubcategories = $subcategoryEnabled ? get_asset_subcategories() : [];
 $subcategoryByCategory = [];
 foreach ($subcategories as $subcategory) {
     $subcategoryByCategory[(int)$subcategory['category_id']][] = $subcategory;
@@ -46,6 +57,11 @@ if (is_superadmin()) {
     $filters['declared_status'] = request_str('declared_status', '');
 }
 
+$filters['office_view_scope'] = $currentOfficeViewScope;
+$sortColumn = request_str('sort_col', '');
+$sortDirection = strtolower(request_str('sort_dir', 'asc')) === 'desc' ? 'desc' : 'asc';
+$filters['sort_col'] = $sortColumn;
+$filters['sort_dir'] = $sortDirection;
 $groupedAssets = get_assets_grouped_by_category($filters, $user);
 $declaration = null;
 $officeSummary = null;
@@ -73,11 +89,14 @@ foreach ($fields as $field) {
     $parts = preg_split('/\s*\/\s*/u', $rawLabel);
     $uiFieldLabels[$field['field_key']] = trim((string)($parts[0] ?? $rawLabel));
 }
+$availableTableColumns = asset_table_available_columns($fields, $uiFieldLabels, $currentOfficeViewScope);
+$columnPreferenceMap = get_asset_table_column_preferences((int)$user['id']);
 $categoryNameById = [];
 foreach ($categories as $category) {
     $categoryNameById[(int)$category['id']] = (string)$category['name'];
 }
 $importFieldDefs = [];
+$uniqueValueMap = asset_unique_existing_values_map();
 foreach ($fields as $field) {
     if ((int)$field['is_import_enabled'] !== 1 || (int)$field['active_status'] !== 1) {
         continue;
@@ -87,10 +106,12 @@ foreach ($fields as $field) {
         'label' => (string)($uiFieldLabels[$field['field_key']] ?? $field['label']),
         'data_type' => (string)$field['data_type'],
         'required' => (int)$field['is_required'] === 1,
+        'is_unique' => (int)($field['is_unique'] ?? 0) === 1,
         'options' => array_map(
             static fn(array $option): string => (string)$option['option_value'],
             get_asset_field_options((int)$field['id'])
         ),
+        'existing_values' => $uniqueValueMap[(string)$field['field_key']] ?? [],
     ];
 }
 $downloadFilters = [
@@ -98,11 +119,43 @@ $downloadFilters = [
     'office_id' => $selectedOfficeId,
     'category_id' => (int)($filters['category_id'] ?? 0),
     'condition_value' => (string)($filters['condition_value'] ?? ''),
+    'office_view_scope' => $currentOfficeViewScope,
 ];
 if ($subcategoryEnabled) {
     $downloadFilters['subcategory_id'] = (int)($filters['subcategory_id'] ?? 0);
 }
 $conditionOptions = isset($fieldMap['condition_value']) ? get_asset_field_options((int)$fieldMap['condition_value']['id']) : [];
+$defaultCategoryId = !$editingAsset && count($categories) === 1 ? (int)$categories[0]['id'] : 0;
+$historyAssetId = (int)request_str('asset_history', '0');
+$historyAsset = $historyAssetId > 0 ? get_asset($historyAssetId, true) : null;
+$historyLogs = [];
+if ($historyAsset && user_can_view_asset($user, $historyAsset, $currentOfficeViewScope)) {
+    $historyLogs = get_asset_activity_logs($historyAssetId);
+} else {
+    $historyAsset = null;
+}
+$fileIconMeta = static function (string $originalName): array {
+    $ext = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
+    $chipClass = 'is-file';
+    $iconText = $ext !== '' ? strtoupper($ext) : 'FILE';
+    if (in_array($ext, ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'], true)) {
+        $chipClass = 'is-image';
+        $iconText = 'IMG';
+    } elseif ($ext === 'pdf') {
+        $chipClass = 'is-pdf';
+        $iconText = 'PDF';
+    } elseif (in_array($ext, ['doc', 'docx'], true)) {
+        $chipClass = 'is-doc';
+        $iconText = 'DOC';
+    } elseif (in_array($ext, ['xls', 'xlsx'], true)) {
+        $chipClass = 'is-sheet';
+        $iconText = 'XLS';
+    } elseif ($ext === 'txt') {
+        $chipClass = 'is-text';
+        $iconText = 'TXT';
+    }
+    return ['class' => $chipClass, 'icon' => $iconText];
+};
 ?>
 <section class="card hero-card">
     <div class="hero-row">
@@ -118,11 +171,15 @@ $conditionOptions = isset($fieldMap['condition_value']) ? get_asset_field_option
                         <div class="hero-summary-item"><strong>Last Update</strong><br><span class="muted"><?= e($officeSummary['last_update_label']); ?></span></div>
                     </div>
                 <?php endif; ?>
-                <form method="post" action="index.php" class="inline-form">
-                    <?= csrf_input(); ?>
-                    <input type="hidden" name="action" value="asset_declare">
-                    <button type="submit" class="hero-declare-button" <?= !empty($declaration['declared_status']) ? 'disabled' : ''; ?>>Declare as Completed</button>
-                </form>
+                <?php if ($canModifyAssets): ?>
+                    <form method="post" action="index.php" class="inline-form">
+                        <?= csrf_input(); ?>
+                        <input type="hidden" name="action" value="asset_declare">
+                        <button type="submit" class="hero-declare-button" <?= !empty($declaration['declared_status']) ? 'disabled' : ''; ?>>Declare as Completed</button>
+                    </form>
+                <?php else: ?>
+                    <span class="muted">View-only access</span>
+                <?php endif; ?>
             </div>
         <?php endif; ?>
     </div>
@@ -130,6 +187,17 @@ $conditionOptions = isset($fieldMap['condition_value']) ? get_asset_field_option
         <p class="hint">Declared at: <?= e((string)$declaration['declared_at']); ?></p>
     <?php endif; ?>
 </section>
+
+<?php if (!is_superadmin()): ?>
+<section class="card">
+    <div class="toolbar-row scope-switch-row">
+        <a href="index.php?page=board&office_view_scope=my_office" class="button-link<?= !$isUnderMeView ? ' is-active' : ''; ?>">My Office</a>
+        <?php if ($hasUnderMeScope): ?>
+            <a href="index.php?page=board&office_view_scope=office_under_me" class="button-link<?= $isUnderMeView ? ' is-active' : ''; ?>">Office Under Me</a>
+        <?php endif; ?>
+    </div>
+</section>
+<?php endif; ?>
 
 <?php if (is_superadmin()): ?>
 <section class="card">
@@ -209,12 +277,17 @@ $conditionOptions = isset($fieldMap['condition_value']) ? get_asset_field_option
 <?php if (!is_superadmin()): ?>
 <section class="card">
     <div class="toolbar-row">
-        <button type="button" data-modal="asset-modal">+Add Asset</button>
-        <button type="button" data-modal="import-modal">Bulk Entry</button>
-        <a href="asset_template.php" class="button-link">Excel Template</a>
+        <?php if ($canModifyAssets && !$isUnderMeView): ?>
+            <button type="button" data-modal="asset-modal">+Add Asset</button>
+            <button type="button" data-modal="import-modal">Bulk Entry</button>
+        <?php endif; ?>
+        <?php if (!$isUnderMeView): ?>
+            <a href="asset_template.php" class="button-link">Excel Template</a>
+        <?php endif; ?>
         <form method="post" action="index.php" class="inline-form">
             <?= csrf_input(); ?>
             <input type="hidden" name="action" value="asset_download_data">
+            <input type="hidden" name="office_view_scope" value="<?= e($currentOfficeViewScope); ?>">
             <button type="submit" class="btn-secondary">Download Data</button>
         </form>
     </div>
@@ -223,71 +296,139 @@ $conditionOptions = isset($fieldMap['condition_value']) ? get_asset_field_option
 <section class="card">
     <div class="toolbar-row">
         <a href="asset_template.php" class="button-link">Excel Template</a>
-        <button type="button" data-modal="superadmin-download-modal" class="btn-secondary">Download Data</button>
+        <?php if ($canManageSuperadmin): ?>
+            <button type="button" data-modal="superadmin-download-modal" class="btn-secondary">Download Data</button>
+        <?php endif; ?>
     </div>
 </section>
 <?php endif; ?>
 
+<?php if (!is_superadmin() && $canModifyAssets && !$isUnderMeView): ?>
 <form method="post" action="index.php" class="asset-delete-form">
     <?= csrf_input(); ?>
     <input type="hidden" name="action" value="asset_bulk_delete">
+<?php endif; ?>
     <section class="board-grid asset-category-grid">
         <?php foreach ($groupedAssets as $group): ?>
             <?php
                 $category = $group['category'];
                 $assets = $group['assets'];
+                $prefCategoryId = asset_table_preference_category_id((int)$category['id'], $currentOfficeViewScope);
+                $visibleColumnKeys = resolve_asset_table_visible_column_keys($prefCategoryId, $availableTableColumns, $columnPreferenceMap);
+                $visibleFieldCount = 0;
+                foreach ($fields as $field) {
+                    if ((int)$field['is_displayed'] === 1 && (int)$field['active_status'] === 1 && !empty($visibleColumnKeys[$field['field_key']])) {
+                        $visibleFieldCount++;
+                    }
+                }
             ?>
             <section class="card operational-budget-card">
                 <div class="card-head">
                     <h2><?= e($category['name']); ?></h2>
-                    <div class="muted"><?= count($assets); ?> asset(s)</div>
+                    <div class="card-head-actions">
+                        <div class="muted"><?= count($assets); ?> asset(s)</div>
+                        <button type="button" class="btn-small" data-modal="columns-modal-<?= (int)$category['id']; ?>">Columns</button>
+                    </div>
                 </div>
                 <div class="table-wrap">
                     <table>
                         <thead>
                             <tr>
-                                <?php if (!is_superadmin()): ?><th><input type="checkbox" class="select-all"></th><?php endif; ?>
-                                <th>SL No</th>
-                                <th>Asset Number</th>
-                                <?php if (is_superadmin()): ?><th>Office</th><?php endif; ?>
-                                <?php if ($subcategoryEnabled): ?><th>Sub-category</th><?php endif; ?>
+                                <?php if (!is_superadmin() && $canModifyAssets && !$isUnderMeView): ?><th><input type="checkbox" class="select-all"></th><?php endif; ?>
+                                <?php
+                                    $sortParams = $_GET;
+                                    $sortParams['page'] = 'board';
+                                    $sortParams['office_view_scope'] = $currentOfficeViewScope;
+                                    $headerSortUrl = static function (string $columnKey) use ($sortParams, $sortColumn, $sortDirection): string {
+                                        $params = $sortParams;
+                                        $params['sort_col'] = $columnKey;
+                                        $params['sort_dir'] = ($sortColumn === $columnKey && $sortDirection === 'asc') ? 'desc' : 'asc';
+                                        return 'index.php?' . http_build_query($params);
+                                    };
+                                ?>
+                                <th><a href="<?= e($headerSortUrl('__sl')); ?>" class="sortable-head">SL No</a></th>
+                                <?php if ($showAssetNumber && !empty($visibleColumnKeys['asset_number'])): ?><th><a href="<?= e($headerSortUrl('asset_number')); ?>" class="sortable-head">Asset Number</a></th><?php endif; ?>
+                                <?php if ((is_superadmin() || $isUnderMeView) && !empty($visibleColumnKeys['office_name'])): ?><th><a href="<?= e($headerSortUrl('office_name')); ?>" class="sortable-head">Office</a></th><?php endif; ?>
+                                <?php if ($subcategoryEnabled && !empty($visibleColumnKeys['subcategory_name'])): ?><th><a href="<?= e($headerSortUrl('subcategory_name')); ?>" class="sortable-head">Sub-category</a></th><?php endif; ?>
+                                <?php if (!empty($visibleColumnKeys['data_provider'])): ?><th><a href="<?= e($headerSortUrl('data_provider')); ?>" class="sortable-head">Data Provider</a></th><?php endif; ?>
                                 <?php foreach ($fields as $field): ?>
-                                    <?php if ((int)$field['is_displayed'] === 1 && (int)$field['active_status'] === 1): ?>
-                                        <th><?= e((string)($uiFieldLabels[$field['field_key']] ?? $field['label'])); ?></th>
+                                    <?php if ((int)$field['is_displayed'] === 1 && (int)$field['active_status'] === 1 && !empty($visibleColumnKeys[$field['field_key']])): ?>
+                                        <th><a href="<?= e($headerSortUrl((string)$field['field_key'])); ?>" class="sortable-head"><?= e((string)($uiFieldLabels[$field['field_key']] ?? $field['label'])); ?></a></th>
                                     <?php endif; ?>
                                 <?php endforeach; ?>
-                                <th>Action</th>
+                                <?php if ($showActionColumn): ?><th>Action</th><?php endif; ?>
                             </tr>
                         </thead>
                         <tbody>
                             <?php if (!$assets): ?>
-                                <tr><td colspan="<?= is_superadmin() ? (5 + ($subcategoryEnabled ? 1 : 0) + count($fields)) : (4 + ($subcategoryEnabled ? 1 : 0) + count($fields)); ?>" class="muted">No assets found.</td></tr>
+                                <?php
+                                    $columnCount = 1
+                                        + ((!is_superadmin() && $canModifyAssets && !$isUnderMeView) ? 1 : 0)
+                                        + (($showAssetNumber && !empty($visibleColumnKeys['asset_number'])) ? 1 : 0)
+                                        + (((is_superadmin() || $isUnderMeView) && !empty($visibleColumnKeys['office_name'])) ? 1 : 0)
+                                        + (($subcategoryEnabled && !empty($visibleColumnKeys['subcategory_name'])) ? 1 : 0)
+                                        + (!empty($visibleColumnKeys['data_provider']) ? 1 : 0)
+                                        + $visibleFieldCount
+                                        + ($showActionColumn ? 1 : 0);
+                                ?>
+                                <tr><td colspan="<?= e((string)$columnCount); ?>" class="muted">No assets found.</td></tr>
                             <?php endif; ?>
                             <?php foreach ($assets as $index => $asset): ?>
                                 <tr>
-                                    <?php if (!is_superadmin()): ?>
+                                    <?php if (!is_superadmin() && $canModifyAssets && !$isUnderMeView): ?>
                                         <td><input type="checkbox" name="asset_ids[]" value="<?= e((string)$asset['id']); ?>"></td>
                                     <?php endif; ?>
                                     <td><?= e((string)($index + 1)); ?></td>
-                                    <td><?= e($asset['asset_number']); ?></td>
-                                    <?php if (is_superadmin()): ?><td><?= e($asset['office_type_label'] . ' - ' . $asset['office_name']); ?></td><?php endif; ?>
-                                    <?php if ($subcategoryEnabled): ?><td><?= e((string)($asset['subcategory_name'] ?? '')); ?></td><?php endif; ?>
+                                    <?php if ($showAssetNumber && !empty($visibleColumnKeys['asset_number'])): ?><td><?= e($asset['asset_number']); ?></td><?php endif; ?>
+                                    <?php if ((is_superadmin() || $isUnderMeView) && !empty($visibleColumnKeys['office_name'])): ?><td><?= e($asset['office_type_label'] . ' - ' . $asset['office_name']); ?></td><?php endif; ?>
+                                    <?php if ($subcategoryEnabled && !empty($visibleColumnKeys['subcategory_name'])): ?><td><?= e((string)($asset['subcategory_name'] ?? '')); ?></td><?php endif; ?>
+                                    <?php if (!empty($visibleColumnKeys['data_provider'])): ?>
+                                        <td><?= e(strtok((string)($asset['created_by_email'] ?? ''), '@') ?: ''); ?></td>
+                                    <?php endif; ?>
                                     <?php foreach ($fields as $field): ?>
-                                        <?php if ((int)$field['is_displayed'] === 1 && (int)$field['active_status'] === 1): ?>
+                                        <?php if ((int)$field['is_displayed'] === 1 && (int)$field['active_status'] === 1 && !empty($visibleColumnKeys[$field['field_key']])): ?>
                                             <td>
                                                 <?php if ($field['data_type'] === 'file'): ?>
                                                     <?php $assetFiles = $asset['files'][$field['field_key']] ?? []; ?>
-                                                    <?php if (!$assetFiles): ?>
-                                                        <span class="muted">No file</span>
-                                                    <?php else: ?>
-                                                        <div class="file-cell-meta"><?= count($assetFiles); ?> file(s)</div>
+                                                    <?php
+                                                        $fileRule = get_asset_field_file_rule((int)$field['id']);
+                                                        $accept = implode(',', array_map(static fn(string $ext): string => '.' . $ext, asset_parse_extensions_string((string)$fileRule['allowed_extensions'])));
+                                                        $formId = 'asset-inline-file-' . (int)$asset['id'] . '-' . preg_replace('/[^a-zA-Z0-9_-]+/', '-', (string)$field['field_key']);
+                                                    ?>
+                                                    <?php if ($assetFiles): ?>
                                                         <div class="file-link-list">
                                                             <?php foreach ($assetFiles as $fileRow): ?>
-                                                                <a href="index.php?page=asset_file&id=<?= e((string)$fileRow['id']); ?>" class="file-chip" target="_blank" rel="noopener">
-                                                                    <span class="file-chip-name"><?= e((string)$fileRow['original_name']); ?></span>
+                                                                <?php $meta = $fileIconMeta((string)$fileRow['original_name']); ?>
+                                                                <a href="index.php?page=asset_file&id=<?= e((string)$fileRow['id']); ?>" class="file-chip file-chip-icon-only <?= e($meta['class']); ?>" target="_blank" rel="noopener" title="<?= e((string)$fileRow['original_name']); ?>">
+                                                                    <span class="file-chip-icon"><?= e($meta['icon']); ?></span>
                                                                 </a>
                                                             <?php endforeach; ?>
                                                         </div>
+                                                    <?php elseif (!$canModifyAssets || is_superadmin() || $isUnderMeView): ?>
+                                                        <span class="muted">No file</span>
+                                                    <?php endif; ?>
+                                                    <?php if ($canModifyAssets && !is_superadmin() && !$isUnderMeView): ?>
+                                                        <form method="post" action="index.php" enctype="multipart/form-data" class="inline-file-upload-form" id="<?= $formId; ?>">
+                                                            <?= csrf_input(); ?>
+                                                            <input type="hidden" name="action" value="asset_upload_field_files">
+                                                            <input type="hidden" name="asset_id" value="<?= e((string)$asset['id']); ?>">
+                                                            <input type="hidden" name="field_key" value="<?= e($field['field_key']); ?>">
+                                                            <input
+                                                                type="file"
+                                                                name="field_files[<?= e($field['field_key']); ?>][]"
+                                                                class="inline-file-input"
+                                                                id="<?= $formId; ?>-input"
+                                                                <?= (int)$fileRule['is_multiple'] === 1 ? 'multiple' : ''; ?>
+                                                                accept="<?= e($accept); ?>"
+                                                                data-inline-file-input
+                                                                data-label="<?= e((string)($uiFieldLabels[$field['field_key']] ?? $field['label'])); ?>"
+                                                                data-allowed-extensions="<?= e((string)$fileRule['allowed_extensions']); ?>"
+                                                                data-max-files="<?= e((string)$fileRule['max_files']); ?>"
+                                                                data-max-file-size="<?= e((string)$fileRule['max_file_size_bytes']); ?>"
+                                                                data-max-total-size="<?= e((string)$fileRule['max_total_size_bytes']); ?>"
+                                                                data-is-multiple="<?= e((string)$fileRule['is_multiple']); ?>">
+                                                            <label for="<?= $formId; ?>-input" class="btn-small inline-file-add-button"><?= $assetFiles ? 'Add More' : 'Add File'; ?></label>
+                                                        </form>
                                                     <?php endif; ?>
                                                 <?php else: ?>
                                                     <?= e((string)($asset['values'][$field['field_key']] ?? '')); ?>
@@ -295,29 +436,57 @@ $conditionOptions = isset($fieldMap['condition_value']) ? get_asset_field_option
                                             </td>
                                         <?php endif; ?>
                                     <?php endforeach; ?>
-                                    <td>
-                                        <?php if (!is_superadmin()): ?>
-                                            <a href="index.php?page=board&edit_asset=<?= e((string)$asset['id']); ?>" class="btn-small">Edit</a>
-                                        <?php else: ?>
-                                            <span class="muted">View</span>
-                                        <?php endif; ?>
-                                    </td>
+                                    <?php if ($showActionColumn): ?>
+                                        <td>
+                                            <div class="action-icon-row">
+                                                <a href="index.php?page=board&asset_history=<?= e((string)$asset['id']); ?>" class="icon-only-button table-action-icon" title="See update history" aria-label="See update history">&#x1F553;</a>
+                                                <a href="index.php?page=board&edit_asset=<?= e((string)$asset['id']); ?>" class="icon-only-button table-action-icon" title="Edit asset" aria-label="Edit asset">&#x270E;</a>
+                                            </div>
+                                        </td>
+                                    <?php endif; ?>
                                 </tr>
                             <?php endforeach; ?>
                         </tbody>
                     </table>
                 </div>
             </section>
+            <div class="modal-backdrop" id="columns-modal-<?= (int)$category['id']; ?>" aria-hidden="true">
+                <div class="modal-card column-visibility-modal" role="dialog" aria-modal="true" aria-labelledby="columns-modal-title-<?= (int)$category['id']; ?>">
+                    <h3 id="columns-modal-title-<?= (int)$category['id']; ?>">Column Visibility: <?= e($category['name']); ?></h3>
+                    <form method="post" action="index.php" class="grid" id="columns-form-<?= (int)$category['id']; ?>">
+                        <?= csrf_input(); ?>
+                        <input type="hidden" name="action" value="save_asset_table_visibility">
+                        <input type="hidden" name="category_id" value="<?= (int)$category['id']; ?>">
+                        <input type="hidden" name="table_scope" value="<?= e($currentOfficeViewScope); ?>">
+                        <div class="column-visibility-grid">
+                            <?php foreach ($availableTableColumns as $column): ?>
+                                <label class="inline-check">
+                                    <input type="checkbox" name="visible_columns[]" value="<?= e((string)$column['key']); ?>" <?= !empty($visibleColumnKeys[$column['key']]) ? 'checked' : ''; ?>>
+                                    <span><?= e((string)$column['label']); ?></span>
+                                </label>
+                            <?php endforeach; ?>
+                        </div>
+                        <div class="modal-actions">
+                            <button type="button" class="btn-small" data-show-all-columns="columns-form-<?= (int)$category['id']; ?>">Show All</button>
+                            <button type="submit">Save</button>
+                            <button type="submit" name="apply_to_all" value="1" class="btn-secondary">Apply Visibility to All Tables</button>
+                            <button type="button" class="modal-close" data-close="columns-modal-<?= (int)$category['id']; ?>">Cancel</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
         <?php endforeach; ?>
     </section>
-    <?php if (!is_superadmin()): ?>
+    <?php if (!is_superadmin() && $canModifyAssets && !$isUnderMeView): ?>
         <div class="bulk-actions">
             <button type="submit" class="btn-danger">Soft Delete Selected</button>
         </div>
     <?php endif; ?>
+<?php if (!is_superadmin() && $canModifyAssets && !$isUnderMeView): ?>
 </form>
+<?php endif; ?>
 
-<?php if (!is_superadmin()): ?>
+<?php if (!is_superadmin() && $canModifyAssets && !$isUnderMeView): ?>
 <div class="modal-backdrop<?= $editingAsset ? ' open' : ''; ?>" id="asset-modal" aria-hidden="<?= $editingAsset ? 'false' : 'true'; ?>">
     <div class="modal-card asset-entry-modal" role="dialog" aria-modal="true" aria-labelledby="asset-modal-title">
         <h3 id="asset-modal-title"><?= $editingAsset ? 'Edit Asset' : 'Add Asset'; ?></h3>
@@ -329,7 +498,7 @@ $conditionOptions = isset($fieldMap['condition_value']) ? get_asset_field_option
                 <select name="category_id" id="asset-category-select" required>
                     <option value="">Select</option>
                     <?php foreach ($categories as $category): ?>
-                        <option value="<?= e((string)$category['id']); ?>" <?= (int)($editingAsset['category_id'] ?? 0) === (int)$category['id'] ? 'selected' : ''; ?>><?= e($category['name']); ?></option>
+                        <option value="<?= e((string)$category['id']); ?>" <?= ((int)($editingAsset['category_id'] ?? $defaultCategoryId) === (int)$category['id']) ? 'selected' : ''; ?>><?= e($category['name']); ?></option>
                     <?php endforeach; ?>
                 </select>
             </label>
@@ -352,15 +521,19 @@ $conditionOptions = isset($fieldMap['condition_value']) ? get_asset_field_option
                             $fileRule = get_asset_field_file_rule((int)$field['id']);
                             $fieldFiles = $editFiles[$field['field_key']] ?? [];
                             $accept = implode(',', array_map(static fn(string $ext): string => '.' . $ext, asset_parse_extensions_string((string)$fileRule['allowed_extensions'])));
+                            $showRemoveCheckbox = (int)$fileRule['is_multiple'] === 1 || (int)$field['is_required'] !== 1;
                         ?>
                         <?php if ($fieldFiles): ?>
                             <div class="file-link-list">
                                 <?php foreach ($fieldFiles as $fileRow): ?>
+                                    <?php $meta = $fileIconMeta((string)$fileRow['original_name']); ?>
                                     <label class="file-delete-chip">
-                                        <a href="index.php?page=asset_file&id=<?= e((string)$fileRow['id']); ?>" class="file-chip" target="_blank" rel="noopener">
-                                            <span class="file-chip-name"><?= e((string)$fileRow['original_name']); ?></span>
+                                        <a href="index.php?page=asset_file&id=<?= e((string)$fileRow['id']); ?>" class="file-chip file-chip-icon-only <?= e($meta['class']); ?>" target="_blank" rel="noopener" title="<?= e((string)$fileRow['original_name']); ?>">
+                                            <span class="file-chip-icon"><?= e($meta['icon']); ?></span>
                                         </a>
-                                        <span class="inline-check"><input type="checkbox" name="delete_field_files[<?= e($field['field_key']); ?>][]" value="<?= e((string)$fileRow['id']); ?>"> Remove</span>
+                                        <?php if ($showRemoveCheckbox): ?>
+                                            <span class="inline-check"><input type="checkbox" name="delete_field_files[<?= e($field['field_key']); ?>][]" value="<?= e((string)$fileRow['id']); ?>"> Remove</span>
+                                        <?php endif; ?>
                                     </label>
                                 <?php endforeach; ?>
                             </div>
@@ -371,6 +544,7 @@ $conditionOptions = isset($fieldMap['condition_value']) ? get_asset_field_option
                             Max files: <?= e((string)$fileRule['max_files']); ?>.
                             <?php if ((int)$fileRule['max_file_size_bytes'] > 0): ?> Per file: <?= e(asset_megabytes_from_bytes((int)$fileRule['max_file_size_bytes'])); ?> MB.<?php endif; ?>
                             <?php if ((int)$fileRule['max_total_size_bytes'] > 0): ?> Total: <?= e(asset_megabytes_from_bytes((int)$fileRule['max_total_size_bytes'])); ?> MB.<?php endif; ?>
+                            <?php if (!$showRemoveCheckbox && $fieldFiles): ?> Uploading a new file will automatically replace the existing file.<?php endif; ?>
                         </span>
                     <?php elseif ($field['data_type'] === 'date'): ?>
                         <input type="date" name="fields[<?= e($field['field_key']); ?>]" value="<?= e($value); ?>" <?= (int)$field['is_required'] === 1 ? 'required' : ''; ?>>
@@ -435,7 +609,7 @@ $conditionOptions = isset($fieldMap['condition_value']) ? get_asset_field_option
                 'id' => (int)$subcategory['id'],
                 'category_id' => (int)$subcategory['category_id'],
                 'name' => (string)$subcategory['name'],
-            ], get_asset_subcategories(null, true)) : [],
+            ], $importReviewSubcategories) : [],
             'fields' => $importFieldDefs,
         ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?></script>
         <form method="post" action="index.php" class="grid">
@@ -481,7 +655,7 @@ $conditionOptions = isset($fieldMap['condition_value']) ? get_asset_field_option
                                     <td class="<?= !empty($row['errors']['subcategory_id']) ? 'cell-error' : 'cell-valid'; ?>">
                                         <select class="review-input" data-review-role="subcategory" name="rows[<?= $rowIndex; ?>][subcategory]">
                                             <option value="">Select</option>
-                                            <?php foreach ($subcategories as $subcategory): ?>
+                                            <?php foreach ($importReviewSubcategories as $subcategory): ?>
                                                 <option value="<?= e($subcategory['name']); ?>" data-category-name="<?= e((string)($categoryNameById[(int)$subcategory['category_id']] ?? '')); ?>" data-category-id="<?= e((string)$subcategory['category_id']); ?>" <?= strcasecmp((string)$row['subcategory'], (string)$subcategory['name']) === 0 ? 'selected' : ''; ?>><?= e($subcategory['name']); ?></option>
                                             <?php endforeach; ?>
                                         </select>
@@ -557,7 +731,7 @@ $conditionOptions = isset($fieldMap['condition_value']) ? get_asset_field_option
 </div>
 <?php endif; ?>
 
-<?php if (is_superadmin()): ?>
+<?php if (is_superadmin() && $canManageSuperadmin): ?>
 <div class="modal-backdrop" id="superadmin-download-modal" aria-hidden="true">
     <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="superadmin-download-title">
         <h3 id="superadmin-download-title">Download Asset Data</h3>
@@ -653,6 +827,52 @@ $conditionOptions = isset($fieldMap['condition_value']) ? get_asset_field_option
                 <button type="button" class="modal-close" data-close="superadmin-download-modal">Cancel</button>
             </div>
         </form>
+    </div>
+</div>
+<?php endif; ?>
+
+<?php if ($historyAsset): ?>
+<div class="modal-backdrop open" id="asset-history-modal" aria-hidden="false">
+    <div class="modal-card modal-wide asset-history-modal" role="dialog" aria-modal="true" aria-labelledby="asset-history-title">
+        <h3 id="asset-history-title">Asset History</h3>
+        <div class="asset-history-meta">
+            <strong><?= e((string)($historyAsset['asset_number'] ?? '')); ?></strong>
+            <span class="muted"><?= e((string)($historyAsset['category_name'] ?? '')); ?></span>
+            <span class="muted">Provider: <?= e((string)($historyAsset['created_by_email'] ?? '')); ?></span>
+        </div>
+        <div class="asset-history-list">
+            <?php if (!$historyLogs): ?>
+                <p class="muted">No history found for this asset.</p>
+            <?php else: ?>
+                <?php foreach ($historyLogs as $log): ?>
+                    <article class="asset-history-entry">
+                        <div class="asset-history-head">
+                            <strong><?= e((string)$log['summary']); ?></strong>
+                            <span class="muted"><?= e((string)$log['email_id']); ?> · <?= e((string)$log['created_at']); ?></span>
+                        </div>
+                        <?php if (!empty($log['detail_items'])): ?>
+                            <div class="asset-history-details">
+                                <?php foreach ($log['detail_items'] as $detail): ?>
+                                    <div class="asset-history-detail-row">
+                                        <span class="asset-history-detail-label"><?= e((string)($detail['field'] ?? 'Field')); ?>:</span>
+                                        <?php if (array_key_exists('from', $detail) || array_key_exists('to', $detail)): ?>
+                                            <span><?= e((string)($detail['from'] ?? '')); ?></span>
+                                            <span class="muted">→</span>
+                                            <span><?= e((string)($detail['to'] ?? '')); ?></span>
+                                        <?php else: ?>
+                                            <span><?= e((string)($detail['value'] ?? '')); ?></span>
+                                        <?php endif; ?>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+                        <?php endif; ?>
+                    </article>
+                <?php endforeach; ?>
+            <?php endif; ?>
+        </div>
+        <div class="modal-actions">
+            <button type="button" class="modal-close" data-close="asset-history-modal">Close</button>
+        </div>
     </div>
 </div>
 <?php endif; ?>

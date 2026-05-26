@@ -1,4 +1,32 @@
 document.addEventListener('DOMContentLoaded', () => {
+    const pageKey = new URLSearchParams(window.location.search).get('page') || 'board';
+    const scrollKey = `pwd-asset-scroll:${window.location.pathname}:${pageKey}`;
+    const restoreScroll = () => {
+        const stored = sessionStorage.getItem(scrollKey);
+        if (!stored) {
+            return;
+        }
+        const target = Number.parseInt(stored, 10);
+        if (Number.isNaN(target) || target < 0) {
+            return;
+        }
+        window.requestAnimationFrame(() => {
+            window.scrollTo(0, target);
+        });
+    };
+    restoreScroll();
+    let scrollSaveTimer = null;
+    const persistScroll = () => {
+        sessionStorage.setItem(scrollKey, String(Math.max(0, Math.round(window.scrollY || window.pageYOffset || 0))));
+    };
+    window.addEventListener('scroll', () => {
+        if (scrollSaveTimer) {
+            window.clearTimeout(scrollSaveTimer);
+        }
+        scrollSaveTimer = window.setTimeout(persistScroll, 80);
+    }, { passive: true });
+    window.addEventListener('beforeunload', persistScroll);
+
     const loginMessage = document.getElementById('login-message');
     const loginPreview = document.getElementById('login-preview');
     if (loginMessage && loginPreview) {
@@ -58,16 +86,22 @@ document.addEventListener('DOMContentLoaded', () => {
             if (modalId === 'asset-modal' && window.location.search.includes('edit_asset=')) {
                 window.location.href = 'index.php?page=board';
             }
+            if (modalId === 'asset-history-modal' && window.location.search.includes('asset_history=')) {
+                window.location.href = 'index.php?page=board';
+            }
         });
     });
 
-    document.querySelectorAll('.modal-backdrop').forEach((modal) => {
-        modal.addEventListener('click', (event) => {
-            if (event.target !== modal) {
+    document.querySelectorAll('[data-show-all-columns]').forEach((button) => {
+        button.addEventListener('click', () => {
+            const formId = button.getAttribute('data-show-all-columns');
+            const form = formId ? document.getElementById(formId) : null;
+            if (!form) {
                 return;
             }
-            modal.classList.remove('open');
-            modal.setAttribute('aria-hidden', 'true');
+            form.querySelectorAll('input[type="checkbox"][name="visible_columns[]"]').forEach((input) => {
+                input.checked = true;
+            });
         });
     });
 
@@ -118,6 +152,80 @@ document.addEventListener('DOMContentLoaded', () => {
             table.querySelectorAll('tbody input[type="checkbox"]').forEach((input) => {
                 input.checked = checkbox.checked;
             });
+        });
+    });
+
+    document.querySelectorAll('[data-inline-file-input]').forEach((input) => {
+        input.addEventListener('change', () => {
+            const files = Array.from(input.files || []);
+            if (!files.length) {
+                return;
+            }
+            const label = input.getAttribute('data-label') || 'File';
+            const allowed = (input.getAttribute('data-allowed-extensions') || '')
+                .split(',')
+                .map((item) => item.trim().toLowerCase())
+                .filter(Boolean);
+            const maxFiles = Number.parseInt(input.getAttribute('data-max-files') || '0', 10);
+            const maxFileSize = Number.parseInt(input.getAttribute('data-max-file-size') || '0', 10);
+            const maxTotalSize = Number.parseInt(input.getAttribute('data-max-total-size') || '0', 10);
+            const isMultiple = input.getAttribute('data-is-multiple') === '1';
+            const errors = [];
+
+            if (!isMultiple && files.length > 1) {
+                errors.push(`${label} allows only one file.`);
+            }
+            if (maxFiles > 0 && files.length > maxFiles) {
+                errors.push(`${label} exceeds the maximum number of files.`);
+            }
+
+            let totalSize = 0;
+            files.forEach((file) => {
+                totalSize += Number(file.size || 0);
+                const ext = (file.name.split('.').pop() || '').trim().toLowerCase();
+                if (!ext || (allowed.length && !allowed.includes(ext))) {
+                    errors.push(`${file.name}: unsupported file type.`);
+                }
+                if (maxFileSize > 0 && Number(file.size || 0) > maxFileSize) {
+                    errors.push(`${file.name}: exceeds the per-file size limit.`);
+                }
+            });
+
+            if (maxTotalSize > 0 && totalSize > maxTotalSize) {
+                errors.push(`${label} exceeds the total upload size limit.`);
+            }
+
+            if (errors.length) {
+                window.alert(errors.join('\n'));
+                input.value = '';
+                return;
+            }
+
+            const form = input.closest('form');
+            if (form) {
+                form.submit();
+            }
+        });
+    });
+
+    const syncFieldTypeSections = (container) => {
+        const typeSelect = container?.querySelector('[data-field-type-select]');
+        if (!typeSelect) {
+            return;
+        }
+        const currentType = typeSelect.value;
+        container.querySelectorAll('[data-field-config]').forEach((section) => {
+            section.classList.toggle('hidden', section.getAttribute('data-field-config') !== currentType);
+        });
+    };
+
+    document.querySelectorAll('[data-asset-field-form], tr').forEach((container) => {
+        if (!container.querySelector('[data-field-type-select]')) {
+            return;
+        }
+        syncFieldTypeSections(container);
+        container.querySelector('[data-field-type-select]').addEventListener('change', () => {
+            syncFieldTypeSections(container);
         });
     });
 
@@ -403,6 +511,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const fields = meta.fields || [];
         const categoryMap = new Map(categories.map((item) => [String(item.name || '').trim().toLowerCase(), item]));
         const subcategoriesByCategory = new Map();
+        const fieldMap = new Map(fields.map((field) => [field.field_key, field]));
 
         const updateReviewSummary = () => {
             if (!importReviewSummary) {
@@ -441,6 +550,42 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const stillAllowed = allowed.some((item) => String(item.name).trim().toLowerCase() === String(previousValue).trim().toLowerCase());
             subcategoryInput.value = stillAllowed ? previousValue : '';
+        };
+
+        const normalizeReviewFieldValue = (field, rawValue) => {
+            const value = String(rawValue || '').trim();
+            if (value === '') {
+                return '';
+            }
+            if (field.data_type === 'number') {
+                const parsed = Number(value);
+                if (Number.isNaN(parsed)) {
+                    return null;
+                }
+                return parsed.toFixed(4).replace(/\.?0+$/, '');
+            }
+            if (field.data_type === 'date') {
+                const parsed = Date.parse(value);
+                if (Number.isNaN(parsed)) {
+                    return null;
+                }
+                return new Date(parsed).toISOString().slice(0, 10);
+            }
+            if (field.data_type === 'yes_no') {
+                const normalized = value.toLowerCase();
+                if (['yes', 'y', 'true', '1'].includes(normalized)) {
+                    return '1';
+                }
+                if (['no', 'n', 'false', '0'].includes(normalized)) {
+                    return '0';
+                }
+                return null;
+            }
+            if (field.data_type === 'dropdown') {
+                const option = (field.options || []).find((item) => String(item).trim().toLowerCase() === value.toLowerCase());
+                return option ? String(option) : null;
+            }
+            return value;
         };
 
         const validateRow = (row) => {
@@ -508,6 +653,22 @@ document.addEventListener('DOMContentLoaded', () => {
                         const options = (field.options || []).map((item) => String(item).trim().toLowerCase());
                         if (!options.includes(value.toLowerCase())) {
                             message = `${field.label} has an invalid option.`;
+                        }
+                    }
+                }
+
+                if (!message) {
+                    if (field.is_unique) {
+                        const normalizedValue = normalizeReviewFieldValue(field, value);
+                        if (normalizedValue !== null && normalizedValue !== '') {
+                            const existingValues = field.existing_values || [];
+                            const duplicateInDb = existingValues.includes(normalizedValue);
+                            const duplicateInRows = Array.from(importReviewBody.querySelectorAll(`[data-field-key="${field.field_key}"]`))
+                                .filter((otherInput) => otherInput !== input)
+                                .some((otherInput) => normalizeReviewFieldValue(field, otherInput.value) === normalizedValue);
+                            if (duplicateInDb || duplicateInRows) {
+                                message = `${field.label} already exists.`;
+                            }
                         }
                     }
                 }

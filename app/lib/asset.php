@@ -189,6 +189,35 @@ function ensure_asset_schema(): void
     );
 
     db()->exec(
+        "CREATE TABLE IF NOT EXISTS asset_activity_logs (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            asset_id INT NOT NULL,
+            user_id INT NOT NULL,
+            action_type VARCHAR(50) NOT NULL,
+            summary VARCHAR(255) NOT NULL,
+            details LONGTEXT DEFAULT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            KEY idx_asset_activity_logs_asset (asset_id),
+            KEY idx_asset_activity_logs_user (user_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    );
+
+    db()->exec(
+        "CREATE TABLE IF NOT EXISTS asset_table_column_preferences (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            category_id INT NOT NULL,
+            column_key VARCHAR(100) NOT NULL,
+            is_visible TINYINT NOT NULL DEFAULT 1,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY uniq_asset_table_column_pref (user_id, category_id, column_key),
+            KEY idx_asset_table_column_pref_user (user_id),
+            KEY idx_asset_table_column_pref_category (category_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    );
+
+    db()->exec(
         "CREATE TABLE IF NOT EXISTS office_orders (
             id INT AUTO_INCREMENT PRIMARY KEY,
             subject VARCHAR(255) NOT NULL,
@@ -224,6 +253,7 @@ function ensure_asset_schema(): void
     asset_ensure_column('office_asset_declarations', 'declared_officer_name', 'VARCHAR(255) DEFAULT NULL');
     asset_ensure_column('info', 'welcome_message', 'LONGTEXT DEFAULT NULL');
     asset_ensure_column('info', 'asset_subcategory_enabled', 'TINYINT NOT NULL DEFAULT 1');
+    asset_ensure_column('info', 'asset_number_visible_to_users', 'TINYINT NOT NULL DEFAULT 1');
     asset_ensure_column('asset_fields', 'is_unique', 'TINYINT NOT NULL DEFAULT 0');
     asset_relax_subcategory_requirement();
 
@@ -253,23 +283,60 @@ function asset_relax_subcategory_requirement(): void
 
 function asset_backfill_office_user_access_levels(): void
 {
-    db()->exec('UPDATE users SET office_access_level = 0 WHERE office_role IN (2,3)');
+    db()->exec('UPDATE users SET is_primary_office_user = 0 WHERE office_role IN (2,3) AND is_primary_office_user <> 0');
+    db()->exec('UPDATE users SET office_access_level = 0 WHERE office_role = 2 AND office_access_level <> 0');
+    $superadminRows = db()->query('SELECT id, office_access_level FROM users WHERE office_role = 3 ORDER BY id ASC')->fetchAll();
+    foreach ($superadminRows as $index => $row) {
+        $expectedLevel = $index === 0 ? 0 : 3;
+        if ((int)($row['office_access_level'] ?? -1) === $expectedLevel) {
+            continue;
+        }
+        db()->prepare('UPDATE users SET office_access_level = ?, updated_at = NOW() WHERE id = ?')->execute([
+            $expectedLevel,
+            (int)$row['id'],
+        ]);
+    }
     foreach ([2 => 'zone_id', 3 => 'circle_id', 4 => 'division_id', 5 => 'subdivision_id'] as $officeType => $column) {
-        $stmt = db()->prepare("SELECT id, {$column} AS office_id FROM users WHERE office_role = 1 AND office_type = ? AND {$column} IS NOT NULL AND {$column} > 0 ORDER BY id ASC");
+        $stmt = db()->prepare("SELECT id, {$column} AS office_id, is_primary_office_user, office_access_level FROM users WHERE office_role = 1 AND office_type = ? AND {$column} IS NOT NULL AND {$column} > 0 ORDER BY id ASC");
         $stmt->execute([$officeType]);
-        $seen = [];
+        $grouped = [];
         foreach ($stmt->fetchAll() as $row) {
             $officeId = (int)$row['office_id'];
             if ($officeId <= 0) {
                 continue;
             }
-            $isPrimary = !isset($seen[$officeId]);
-            $seen[$officeId] = true;
-            db()->prepare('UPDATE users SET is_primary_office_user = ?, office_access_level = ?, updated_at = NOW() WHERE id = ?')->execute([
-                $isPrimary ? 1 : 0,
-                $isPrimary ? 1 : 2,
-                (int)$row['id'],
-            ]);
+            $grouped[$officeId][] = $row;
+        }
+
+        foreach ($grouped as $rows) {
+            $primaryId = 0;
+            foreach ($rows as $row) {
+                if ((int)($row['is_primary_office_user'] ?? 0) === 1) {
+                    $primaryId = (int)$row['id'];
+                    break;
+                }
+            }
+            if ($primaryId <= 0) {
+                $primaryId = (int)$rows[0]['id'];
+            }
+
+            foreach ($rows as $row) {
+                $userId = (int)$row['id'];
+                $isPrimary = $userId === $primaryId;
+                $currentLevel = (int)($row['office_access_level'] ?? 0);
+                $nextLevel = $isPrimary ? 1 : ($currentLevel === 3 ? 3 : 2);
+                $currentPrimary = (int)($row['is_primary_office_user'] ?? 0);
+
+                if ($currentPrimary === ($isPrimary ? 1 : 0) && $currentLevel === $nextLevel) {
+                    continue;
+                }
+
+                db()->prepare('UPDATE users SET is_primary_office_user = ?, office_access_level = ?, updated_at = NOW() WHERE id = ?')->execute([
+                    $isPrimary ? 1 : 0,
+                    $nextLevel,
+                    $userId,
+                ]);
+            }
         }
     }
 }
@@ -487,6 +554,7 @@ function set_asset_subcategory_enabled(int $status): void
             'site_name' => $existing['site_name'] ?? null,
             'welcome_message' => $existing['welcome_message'] ?? null,
             'asset_subcategory_enabled' => $status === 1 ? 1 : 0,
+            'asset_number_visible_to_users' => $existing['asset_number_visible_to_users'] ?? 1,
             'i_opr_repair' => $existing['i_opr_repair'] ?? null,
             'i_opr_other' => $existing['i_opr_other'] ?? null,
             'i_dev_pw' => $existing['i_dev_pw'] ?? null,
@@ -496,6 +564,284 @@ function set_asset_subcategory_enabled(int $status): void
             'i_dev' => $existing['i_dev'] ?? null,
         ]
     );
+}
+
+function asset_number_visible_to_users(): bool
+{
+    $info = get_info_row();
+    $value = $info['asset_number_visible_to_users'] ?? null;
+    if ($value === null || $value === '') {
+        return true;
+    }
+    return (int)$value === 1;
+}
+
+function set_asset_number_visible_to_users(int $status): void
+{
+    $existing = get_info_row();
+    save_info_row(
+        $existing['video_tutorial_url'] ?? null,
+        $existing['login_message'] ?? null,
+        [
+            'site_name' => $existing['site_name'] ?? null,
+            'welcome_message' => $existing['welcome_message'] ?? null,
+            'asset_subcategory_enabled' => $existing['asset_subcategory_enabled'] ?? 1,
+            'asset_number_visible_to_users' => $status === 1 ? 1 : 0,
+            'i_opr_repair' => $existing['i_opr_repair'] ?? null,
+            'i_opr_other' => $existing['i_opr_other'] ?? null,
+            'i_dev_pw' => $existing['i_dev_pw'] ?? null,
+            'i_opr_min' => $existing['i_opr_min'] ?? null,
+            'i_dev_min' => $existing['i_dev_min'] ?? null,
+            'i_opr' => $existing['i_opr'] ?? null,
+            'i_dev' => $existing['i_dev'] ?? null,
+        ]
+    );
+}
+
+function asset_table_preference_category_id(int $categoryId, string $tableScope = 'my_office'): int
+{
+    return $tableScope === 'office_under_me' ? $categoryId + 1000000 : $categoryId;
+}
+
+function asset_table_available_columns(array $fields, array $uiFieldLabels, string $tableScope = 'my_office'): array
+{
+    $columns = [];
+    if (is_superadmin() || asset_number_visible_to_users()) {
+        $columns[] = ['key' => 'asset_number', 'label' => 'Asset Number', 'type' => 'fixed'];
+    }
+    if (is_superadmin() || $tableScope === 'office_under_me') {
+        $columns[] = ['key' => 'office_name', 'label' => 'Office', 'type' => 'fixed'];
+    }
+    if (asset_subcategory_enabled()) {
+        $columns[] = ['key' => 'subcategory_name', 'label' => 'Sub-category', 'type' => 'fixed'];
+    }
+    $columns[] = ['key' => 'data_provider', 'label' => 'Data Provider', 'type' => 'fixed'];
+    foreach ($fields as $field) {
+        if ((int)$field['is_displayed'] !== 1 || (int)$field['active_status'] !== 1) {
+            continue;
+        }
+        $columns[] = [
+            'key' => (string)$field['field_key'],
+            'label' => (string)($uiFieldLabels[$field['field_key']] ?? $field['label']),
+            'type' => 'field',
+        ];
+    }
+    return $columns;
+}
+
+function get_asset_table_column_preferences(int $userId): array
+{
+    $stmt = db()->prepare('SELECT category_id, column_key, is_visible FROM asset_table_column_preferences WHERE user_id = ?');
+    $stmt->execute([$userId]);
+    $map = [];
+    foreach ($stmt->fetchAll() as $row) {
+        $map[(int)$row['category_id']][(string)$row['column_key']] = (int)$row['is_visible'] === 1;
+    }
+    return $map;
+}
+
+function resolve_asset_table_visible_column_keys(int $categoryId, array $availableColumns, array $preferenceMap): array
+{
+    $visible = [];
+    $saved = $preferenceMap[$categoryId] ?? [];
+    foreach ($availableColumns as $column) {
+        $columnKey = (string)$column['key'];
+        $visible[$columnKey] = array_key_exists($columnKey, $saved) ? (bool)$saved[$columnKey] : true;
+    }
+    return $visible;
+}
+
+function save_asset_table_column_preferences(int $userId, int $categoryId, array $availableColumns, array $visibleKeys, bool $applyToAll = false, string $tableScope = 'my_office'): void
+{
+    if ($userId <= 0 || $categoryId <= 0) {
+        throw new RuntimeException('Invalid visibility target.');
+    }
+    $availableKeys = array_map(static fn(array $column): string => (string)$column['key'], $availableColumns);
+    $normalizedVisible = array_fill_keys($availableKeys, false);
+    foreach ($visibleKeys as $key) {
+        $key = (string)$key;
+        if (isset($normalizedVisible[$key])) {
+            $normalizedVisible[$key] = true;
+        }
+    }
+    $targetCategoryIds = [$categoryId];
+    if ($applyToAll) {
+        $targetCategoryIds = array_map(static fn(array $category): int => (int)$category['id'], get_asset_categories());
+    }
+    $stmt = db()->prepare(
+        'INSERT INTO asset_table_column_preferences (user_id, category_id, column_key, is_visible, created_at, updated_at)
+         VALUES (?, ?, ?, ?, NOW(), NOW())
+         ON DUPLICATE KEY UPDATE is_visible = VALUES(is_visible), updated_at = NOW()'
+    );
+    foreach ($targetCategoryIds as $targetCategoryId) {
+        $prefCategoryId = asset_table_preference_category_id($targetCategoryId, $tableScope);
+        foreach ($normalizedVisible as $columnKey => $isVisible) {
+            $stmt->execute([$userId, $prefCategoryId, $columnKey, $isVisible ? 1 : 0]);
+        }
+    }
+}
+
+function add_asset_activity_log(int $assetId, int $userId, string $actionType, string $summary, array $details = []): void
+{
+    $stmt = db()->prepare(
+        'INSERT INTO asset_activity_logs (asset_id, user_id, action_type, summary, details, created_at)
+         VALUES (?, ?, ?, ?, ?, NOW())'
+    );
+    $stmt->execute([
+        $assetId,
+        $userId,
+        $actionType,
+        $summary,
+        $details ? json_encode($details, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : null,
+    ]);
+}
+
+function get_asset_activity_logs(int $assetId): array
+{
+    $stmt = db()->prepare(
+        'SELECT l.*, u.email_id
+         FROM asset_activity_logs l
+         JOIN users u ON u.id = l.user_id
+         WHERE l.asset_id = ?
+         ORDER BY l.id DESC'
+    );
+    $stmt->execute([$assetId]);
+    $rows = $stmt->fetchAll();
+    foreach ($rows as &$row) {
+        $detailItems = [];
+        if (!empty($row['details'])) {
+            $detailItems = json_decode((string)$row['details'], true);
+            if (!is_array($detailItems)) {
+                $detailItems = [];
+            }
+        }
+        $row['detail_items'] = $detailItems;
+    }
+    unset($row);
+    return $rows;
+}
+
+function asset_format_normalized_value_for_log(array $field, ?array $normalized): string
+{
+    if ($normalized === null) {
+        return '';
+    }
+    return match ((string)$field['data_type']) {
+        'number' => $normalized['value_number'] !== null ? rtrim(rtrim((string)$normalized['value_number'], '0'), '.') : '',
+        'date' => (string)($normalized['value_date'] ?? ''),
+        'yes_no' => $normalized['value_bool'] === null ? '' : ((int)$normalized['value_bool'] === 1 ? 'Yes' : 'No'),
+        'dropdown' => (string)($normalized['value_option'] ?? ''),
+        default => (string)($normalized['value_text'] ?? ''),
+    };
+}
+
+function asset_category_name_by_id(int $categoryId): string
+{
+    if ($categoryId <= 0) {
+        return '';
+    }
+    $stmt = db()->prepare('SELECT name FROM asset_categories WHERE id = ? LIMIT 1');
+    $stmt->execute([$categoryId]);
+    return (string)($stmt->fetchColumn() ?: '');
+}
+
+function asset_subcategory_name_by_id(int $subcategoryId): string
+{
+    if ($subcategoryId <= 0) {
+        return '';
+    }
+    $stmt = db()->prepare('SELECT name FROM asset_subcategories WHERE id = ? LIMIT 1');
+    $stmt->execute([$subcategoryId]);
+    return (string)($stmt->fetchColumn() ?: '');
+}
+
+function build_asset_create_log_details(array $validated, array $fieldMap): array
+{
+    $details = [
+        ['field' => 'Category', 'value' => asset_category_name_by_id((int)$validated['category_id'])],
+    ];
+    if (asset_subcategory_enabled()) {
+        $details[] = ['field' => 'Sub-category', 'value' => asset_subcategory_name_by_id((int)$validated['subcategory_id'])];
+    }
+    foreach ($validated['field_values'] as $fieldKey => $normalized) {
+        $field = $fieldMap[$fieldKey] ?? null;
+        if (!$field || (string)$field['data_type'] === 'file') {
+            continue;
+        }
+        $value = asset_format_normalized_value_for_log($field, $normalized);
+        if ($value === '') {
+            continue;
+        }
+        $details[] = ['field' => (string)$field['label'], 'value' => $value];
+    }
+    foreach (($validated['file_operations'] ?? []) as $fieldKey => $operation) {
+        $field = $fieldMap[$fieldKey] ?? null;
+        if (!$field) {
+            continue;
+        }
+        $uploads = array_values(array_filter(array_map(static fn(array $upload): string => (string)($upload['name'] ?? ''), $operation['uploads'] ?? [])));
+        if ($uploads) {
+            $details[] = ['field' => (string)$field['label'], 'value' => 'Uploaded: ' . implode(', ', $uploads)];
+        }
+    }
+    return $details;
+}
+
+function build_asset_update_log_details(array $beforeAsset, array $validated, array $fieldMap): array
+{
+    $details = [];
+    $oldCategory = asset_category_name_by_id((int)($beforeAsset['category_id'] ?? 0));
+    $newCategory = asset_category_name_by_id((int)$validated['category_id']);
+    if ($oldCategory !== $newCategory) {
+        $details[] = ['field' => 'Category', 'from' => $oldCategory, 'to' => $newCategory];
+    }
+    if (asset_subcategory_enabled()) {
+        $oldSub = asset_subcategory_name_by_id((int)($beforeAsset['subcategory_id'] ?? 0));
+        $newSub = asset_subcategory_name_by_id((int)$validated['subcategory_id']);
+        if ($oldSub !== $newSub) {
+            $details[] = ['field' => 'Sub-category', 'from' => $oldSub, 'to' => $newSub];
+        }
+    }
+    foreach ($fieldMap as $fieldKey => $field) {
+        if ((string)$field['data_type'] === 'file') {
+            continue;
+        }
+        $oldValue = trim((string)($beforeAsset['values'][$fieldKey] ?? ''));
+        $newValue = asset_format_normalized_value_for_log($field, $validated['field_values'][$fieldKey] ?? null);
+        if ($oldValue !== $newValue) {
+            $details[] = ['field' => (string)$field['label'], 'from' => $oldValue, 'to' => $newValue];
+        }
+    }
+    foreach (($validated['file_operations'] ?? []) as $fieldKey => $operation) {
+        $field = $fieldMap[$fieldKey] ?? null;
+        if (!$field) {
+            continue;
+        }
+        $existingFiles = $beforeAsset['files'][$fieldKey] ?? [];
+        $existingById = [];
+        foreach ($existingFiles as $fileRow) {
+            $existingById[(int)$fileRow['id']] = (string)$fileRow['original_name'];
+        }
+        $removed = [];
+        foreach (($operation['delete_ids'] ?? []) as $deleteId) {
+            $deleteId = (int)$deleteId;
+            if ($deleteId > 0 && isset($existingById[$deleteId])) {
+                $removed[] = $existingById[$deleteId];
+            }
+        }
+        $uploaded = array_values(array_filter(array_map(static fn(array $upload): string => (string)($upload['name'] ?? ''), $operation['uploads'] ?? [])));
+        if ($removed || $uploaded) {
+            $parts = [];
+            if ($uploaded) {
+                $parts[] = 'Added: ' . implode(', ', $uploaded);
+            }
+            if ($removed) {
+                $parts[] = 'Removed: ' . implode(', ', $removed);
+            }
+            $details[] = ['field' => (string)$field['label'], 'value' => implode(' | ', $parts)];
+        }
+    }
+    return $details;
 }
 
 function current_office_context(?array $user = null): ?array
@@ -518,6 +864,58 @@ function current_office_context(?array $user = null): ?array
         return ['office_type' => 5, 'office_id' => (int)$user['subdivision_id']];
     }
     return null;
+}
+
+function office_user_has_under_me_scope(?array $user = null): bool
+{
+    $user = $user ?: current_user();
+    if (!$user || is_superadmin()) {
+        return false;
+    }
+    return in_array((int)($user['office_type'] ?? 0), [2, 3, 4], true);
+}
+
+function user_can_view_subordinate_asset(array $user, array $asset): bool
+{
+    $officeType = (int)($user['office_type'] ?? 0);
+    $assetOfficeType = (int)($asset['office_type'] ?? 0);
+    $assetOfficeId = (int)($asset['office_id'] ?? 0);
+    if ($assetOfficeId <= 0) {
+        return false;
+    }
+    return match ($officeType) {
+        2 => match ($assetOfficeType) {
+            3 => (($circle = find_circle_with_zone($assetOfficeId)) && (int)$circle['zone_id'] === (int)($user['zone_id'] ?? 0)),
+            4 => (($division = find_division_with_hierarchy($assetOfficeId)) && (int)$division['zone_id'] === (int)($user['zone_id'] ?? 0)),
+            5 => (($subdivision = find_subdivision_with_hierarchy($assetOfficeId)) && (int)$subdivision['zone_id'] === (int)($user['zone_id'] ?? 0)),
+            default => false,
+        },
+        3 => match ($assetOfficeType) {
+            4 => (($division = find_division_with_hierarchy($assetOfficeId)) && (int)$division['circle_id'] === (int)($user['circle_id'] ?? 0)),
+            5 => (($subdivision = find_subdivision_with_hierarchy($assetOfficeId)) && (int)$subdivision['circle_id'] === (int)($user['circle_id'] ?? 0)),
+            default => false,
+        },
+        4 => $assetOfficeType === 5 && (($subdivision = find_subdivision_with_hierarchy($assetOfficeId)) && (int)$subdivision['division_id'] === (int)($user['division_id'] ?? 0)),
+        default => false,
+    };
+}
+
+function user_can_view_asset(array $user, array $asset, string $viewScope = 'my_office'): bool
+{
+    if (is_superadmin()) {
+        return true;
+    }
+    $ctx = current_office_context($user);
+    if (!$ctx) {
+        return false;
+    }
+    if ((int)$asset['office_type'] === (int)$ctx['office_type'] && (int)$asset['office_id'] === (int)$ctx['office_id']) {
+        return true;
+    }
+    if ($viewScope === 'office_under_me') {
+        return user_can_view_subordinate_asset($user, $asset);
+    }
+    return false;
 }
 
 function asset_office_type_label(int $officeType): string
@@ -1180,7 +1578,7 @@ function validate_asset_field_definition(array $input, ?int $fieldId = null): ar
     ];
 }
 
-function validate_asset_payload(array $input, ?int $assetId = null, array $fileBag = []): array
+function validate_asset_payload(array $input, ?int $assetId = null, array $fileBag = [], bool $skipFileFields = false): array
 {
     $errors = [];
     $categoryId = (int)($input['category_id'] ?? 0);
@@ -1200,6 +1598,9 @@ function validate_asset_payload(array $input, ?int $assetId = null, array $fileB
     $fileOperations = [];
     foreach ($fieldMap as $fieldKey => $field) {
         if ($field['data_type'] === 'file') {
+            if ($skipFileFields) {
+                continue;
+            }
             $fileOperations[$fieldKey] = validate_asset_file_field_value($field, $assetId, $input, $fileBag, $errors);
             continue;
         }
@@ -1238,6 +1639,12 @@ function validate_asset_file_field_value(array $field, ?int $assetId, array $inp
         asset_uploaded_files_for_field($fileBag['field_files'] ?? [], (string)$field['field_key']),
         static fn(array $file): bool => ($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE || !empty($file['tmp_name'])
     ));
+
+    if ((int)$rule['is_multiple'] !== 1 && $uploads) {
+        $deleteIds = array_map(static fn(array $file): int => (int)$file['id'], $existingFiles);
+        $deleteLookup = array_flip($deleteIds);
+        $remainingExisting = [];
+    }
 
     $allowedExtensions = asset_parse_extensions_string((string)$rule['allowed_extensions']);
     $mimeMap = asset_allowed_file_mime_types();
@@ -1413,15 +1820,113 @@ function validate_asset_unique_value(array $field, array $normalized, ?int $asse
     }
 }
 
+function asset_normalize_unique_compare_value(array $field, mixed $raw): ?string
+{
+    $type = (string)($field['data_type'] ?? 'text');
+    $value = is_string($raw) ? trim($raw) : $raw;
+    if ($value === null || $value === '') {
+        return null;
+    }
+
+    return match ($type) {
+        'number' => is_numeric($value) ? rtrim(rtrim(number_format((float)$value, 4, '.', ''), '0'), '.') : null,
+        'date' => (($timestamp = strtotime((string)$value)) !== false) ? date('Y-m-d', $timestamp) : null,
+        'yes_no' => (($bool = asset_normalize_yes_no($value)) !== null) ? (string)$bool : null,
+        'dropdown' => (function () use ($field, $value): ?string {
+            $allowed = [];
+            foreach (get_asset_field_options((int)$field['id']) as $option) {
+                $allowed[strtolower((string)$option['option_value'])] = (string)$option['option_value'];
+                $allowed[strtolower((string)$option['option_label'])] = (string)$option['option_value'];
+            }
+            return $allowed[strtolower(trim((string)$value))] ?? null;
+        })(),
+        default => (string)$value,
+    };
+}
+
+function asset_unique_existing_values_map(): array
+{
+    $map = [];
+    foreach (get_asset_fields() as $field) {
+        if ((int)($field['is_unique'] ?? 0) !== 1 || (int)($field['is_import_enabled'] ?? 0) !== 1 || (string)($field['data_type'] ?? '') === 'file') {
+            continue;
+        }
+        $column = match ((string)$field['data_type']) {
+            'number' => 'value_number',
+            'date' => 'value_date',
+            'yes_no' => 'value_bool',
+            'dropdown' => 'value_option',
+            default => 'value_text',
+        };
+        $stmt = db()->prepare("SELECT v.{$column} AS field_value
+            FROM asset_values v
+            JOIN assets a ON a.id = v.asset_id
+            WHERE v.field_id = ?
+              AND a.deleted_at IS NULL
+              AND a.active_status = 1
+              AND v.{$column} IS NOT NULL");
+        $stmt->execute([(int)$field['id']]);
+        $values = [];
+        foreach ($stmt->fetchAll() as $row) {
+            $normalized = asset_normalize_unique_compare_value($field, $row['field_value'] ?? null);
+            if ($normalized === null || $normalized === '') {
+                continue;
+            }
+            $values[] = $normalized;
+        }
+        $map[(string)$field['field_key']] = array_values(array_unique($values));
+    }
+    return $map;
+}
+
+function validate_asset_unique_values_within_batch(array $fieldMap, array $fieldValues, array &$seenValues, array &$errors): void
+{
+    foreach ($fieldMap as $fieldKey => $field) {
+        if ((int)($field['is_unique'] ?? 0) !== 1 || (string)($field['data_type'] ?? '') === 'file') {
+            continue;
+        }
+        $normalized = match ((string)$field['data_type']) {
+            'number' => isset($fieldValues[$fieldKey]['value_number']) && $fieldValues[$fieldKey]['value_number'] !== null
+                ? asset_normalize_unique_compare_value($field, $fieldValues[$fieldKey]['value_number'])
+                : null,
+            'date' => $fieldValues[$fieldKey]['value_date'] ?? null,
+            'yes_no' => isset($fieldValues[$fieldKey]['value_bool']) && $fieldValues[$fieldKey]['value_bool'] !== null
+                ? (string)$fieldValues[$fieldKey]['value_bool']
+                : null,
+            'dropdown' => $fieldValues[$fieldKey]['value_option'] ?? null,
+            default => $fieldValues[$fieldKey]['value_text'] ?? null,
+        };
+        if ($normalized === null || $normalized === '') {
+            continue;
+        }
+        if (!isset($seenValues[$fieldKey])) {
+            $seenValues[$fieldKey] = [];
+        }
+        if (isset($seenValues[$fieldKey][$normalized])) {
+            $errors[$fieldKey] = ($field['label'] ?? $fieldKey) . ' already exists.';
+            continue;
+        }
+        $seenValues[$fieldKey][$normalized] = true;
+    }
+}
+
 function create_asset(array $validated, array $user): int
 {
     $fileCleanup = ['new_paths' => [], 'delete_paths' => []];
+    $fieldMap = asset_field_map(true);
     db()->beginTransaction();
     try {
         $assetId = persist_asset_record($validated, $user, $fileCleanup);
         db()->commit();
         finalize_asset_file_changes($fileCleanup, true);
         add_log((int)$user['id'], 'assets', $assetId, 'Asset created.');
+        add_asset_activity_log(
+            $assetId,
+            (int)$user['id'],
+            'created',
+            'Asset created.',
+            build_asset_create_log_details($validated, $fieldMap)
+        );
         return $assetId;
     } catch (Throwable $e) {
         if (db()->inTransaction()) {
@@ -1461,6 +1966,8 @@ function update_asset(int $assetId, array $validated, array $user): void
     if (!$asset) {
         throw new RuntimeException('Asset not found.');
     }
+    $fieldMap = asset_field_map(true);
+    $logDetails = build_asset_update_log_details($asset, $validated, $fieldMap);
     $fileCleanup = ['new_paths' => [], 'delete_paths' => []];
     db()->beginTransaction();
     try {
@@ -1476,9 +1983,68 @@ function update_asset(int $assetId, array $validated, array $user): void
         db()->commit();
         finalize_asset_file_changes($fileCleanup, true);
         add_log((int)$user['id'], 'assets', $assetId, 'Asset updated.');
+        add_asset_activity_log(
+            $assetId,
+            (int)$user['id'],
+            'updated',
+            $logDetails ? 'Asset updated.' : 'Asset saved without data changes.',
+            $logDetails
+        );
     } catch (Throwable $e) {
         db()->rollBack();
         finalize_asset_file_changes($fileCleanup, false);
+        throw $e;
+    }
+}
+
+function upload_asset_files_for_field(int $assetId, string $fieldKey, array $user, array $fileBag): void
+{
+    $asset = get_asset($assetId, true);
+    if (!$asset) {
+        throw new RuntimeException('Asset not found.');
+    }
+    if (!user_can_manage_asset($user, $asset)) {
+        throw new RuntimeException('Not allowed.');
+    }
+
+    $field = asset_field_map(true)[$fieldKey] ?? null;
+    if (!$field || (string)($field['data_type'] ?? '') !== 'file' || (int)($field['active_status'] ?? 0) !== 1) {
+        throw new RuntimeException('Invalid file field.');
+    }
+
+    $errors = [];
+    $operation = validate_asset_file_field_value($field, $assetId, [], $fileBag, $errors);
+    if ($errors) {
+        throw new RuntimeException(implode(' ', array_values($errors)));
+    }
+    if (empty($operation['uploads'])) {
+        throw new RuntimeException('Please choose file(s) to upload.');
+    }
+
+    $cleanup = ['new_paths' => [], 'delete_paths' => []];
+    db()->beginTransaction();
+    try {
+        sync_asset_file_values($assetId, [$fieldKey => $operation], $cleanup);
+        db()->prepare('UPDATE assets SET updated_by = ?, updated_at = NOW() WHERE id = ?')->execute([(int)$user['id'], $assetId]);
+        db()->commit();
+        finalize_asset_file_changes($cleanup, true);
+        add_log((int)$user['id'], 'assets', $assetId, 'Asset file uploaded.');
+        $uploadedNames = array_values(array_filter(array_map(
+            static fn(array $upload): string => (string)($upload['name'] ?? ''),
+            $operation['uploads'] ?? []
+        )));
+        add_asset_activity_log(
+            $assetId,
+            (int)$user['id'],
+            'file_upload',
+            'Asset file uploaded.',
+            [['field' => (string)$field['label'], 'value' => 'Uploaded: ' . implode(', ', $uploadedNames)]]
+        );
+    } catch (Throwable $e) {
+        if (db()->inTransaction()) {
+            db()->rollBack();
+        }
+        finalize_asset_file_changes($cleanup, false);
         throw $e;
     }
 }
@@ -1520,7 +2086,13 @@ function save_asset_values(int $assetId, array $fieldValues): void
 
 function get_asset(int $assetId, bool $includeDeleted = false): ?array
 {
-    $sql = 'SELECT a.*, c.name AS category_name, s.name AS subcategory_name FROM assets a JOIN asset_categories c ON c.id = a.category_id LEFT JOIN asset_subcategories s ON s.id = a.subcategory_id WHERE a.id = ?';
+    $sql = 'SELECT a.*, c.name AS category_name, s.name AS subcategory_name, creator.email_id AS created_by_email, editor.email_id AS updated_by_email
+            FROM assets a
+            JOIN asset_categories c ON c.id = a.category_id
+            LEFT JOIN asset_subcategories s ON s.id = a.subcategory_id
+            JOIN users creator ON creator.id = a.created_by
+            LEFT JOIN users editor ON editor.id = a.updated_by
+            WHERE a.id = ?';
     if (!$includeDeleted) {
         $sql .= ' AND a.deleted_at IS NULL AND a.active_status = 1';
     }
@@ -1563,11 +2135,7 @@ function user_can_manage_asset(array $user, array $asset): bool
     if (is_superadmin()) {
         return true;
     }
-    $ctx = current_office_context($user);
-    if (!$ctx) {
-        return false;
-    }
-    return (int)$asset['office_type'] === (int)$ctx['office_type'] && (int)$asset['office_id'] === (int)$ctx['office_id'];
+    return user_can_view_asset($user, $asset, 'my_office');
 }
 
 function soft_delete_assets(array $assetIds, array $user): int
@@ -1592,7 +2160,14 @@ function soft_delete_assets(array $assetIds, array $user): int
 function get_assets(array $filters = [], ?array $user = null, bool $includeDeleted = false): array
 {
     $user = $user ?: current_user();
-    $sql = 'SELECT a.*, c.name AS category_name, s.name AS subcategory_name FROM assets a JOIN asset_categories c ON c.id = a.category_id LEFT JOIN asset_subcategories s ON s.id = a.subcategory_id WHERE 1=1';
+    $viewScope = (string)($filters['office_view_scope'] ?? 'my_office');
+    $sql = 'SELECT a.*, c.name AS category_name, s.name AS subcategory_name, creator.email_id AS created_by_email, editor.email_id AS updated_by_email
+            FROM assets a
+            JOIN asset_categories c ON c.id = a.category_id
+            LEFT JOIN asset_subcategories s ON s.id = a.subcategory_id
+            JOIN users creator ON creator.id = a.created_by
+            LEFT JOIN users editor ON editor.id = a.updated_by
+            WHERE 1=1';
     $params = [];
     if (!$includeDeleted) {
         $sql .= ' AND a.deleted_at IS NULL AND a.active_status = 1';
@@ -1600,7 +2175,7 @@ function get_assets(array $filters = [], ?array $user = null, bool $includeDelet
 
     if (!is_superadmin()) {
         $ctx = current_office_context($user);
-        if ($ctx) {
+        if ($ctx && $viewScope !== 'office_under_me') {
             $sql .= ' AND a.office_type = ? AND a.office_id = ?';
             $params[] = $ctx['office_type'];
             $params[] = $ctx['office_id'];
@@ -1661,7 +2236,52 @@ function get_assets(array $filters = [], ?array $user = null, bool $includeDelet
         $row['office_type_label'] = asset_office_type_label((int)$row['office_type']);
     }
     unset($row);
+    if (!is_superadmin() && $viewScope === 'office_under_me') {
+        $rows = array_values(array_filter($rows, static fn(array $row): bool => user_can_view_subordinate_asset($user, $row)));
+    }
+    $sortColumn = trim((string)($filters['sort_col'] ?? ''));
+    $sortDirection = strtolower(trim((string)($filters['sort_dir'] ?? 'asc')));
+    if ($sortDirection !== 'desc') {
+        $sortDirection = 'asc';
+    }
+    if ($sortColumn === '' && !is_superadmin() && $viewScope === 'office_under_me') {
+        $sortColumn = 'office_name';
+        $sortDirection = 'asc';
+    }
+    if ($sortColumn !== '') {
+        $rows = sort_asset_rows($rows, $sortColumn, $sortDirection);
+    }
     return $rows;
+}
+
+function sort_asset_rows(array $rows, string $sortColumn, string $sortDirection = 'asc'): array
+{
+    usort($rows, static function (array $left, array $right) use ($sortColumn, $sortDirection): int {
+        $leftValue = asset_sort_value($left, $sortColumn);
+        $rightValue = asset_sort_value($right, $sortColumn);
+        if (is_numeric($leftValue) && is_numeric($rightValue)) {
+            $comparison = (float)$leftValue <=> (float)$rightValue;
+        } else {
+            $comparison = strnatcasecmp((string)$leftValue, (string)$rightValue);
+        }
+        if ($comparison === 0) {
+            $comparison = ((int)$left['id']) <=> ((int)$right['id']);
+        }
+        return $sortDirection === 'desc' ? -$comparison : $comparison;
+    });
+    return $rows;
+}
+
+function asset_sort_value(array $asset, string $sortColumn): string
+{
+    return match ($sortColumn) {
+        '__sl' => (string)($asset['id'] ?? ''),
+        'asset_number' => (string)($asset['asset_number'] ?? ''),
+        'office_name' => (string)($asset['office_name'] ?? ''),
+        'subcategory_name' => (string)($asset['subcategory_name'] ?? ''),
+        'data_provider' => strtok((string)($asset['created_by_email'] ?? ''), '@') ?: '',
+        default => (string)($asset['values'][$sortColumn] ?? ''),
+    };
 }
 
 function get_asset_values_for_assets(array $assetIds): array
@@ -1876,7 +2496,7 @@ function stream_asset_file(int $fileId, ?array $user = null): void
     }
 
     $asset = get_asset((int)$file['asset_id'], true);
-    if (!$asset || !user_can_manage_asset($user ?: current_user(), $asset)) {
+    if (!$asset || !user_can_view_asset($user ?: current_user(), $asset, office_user_has_under_me_scope($user ?: current_user()) ? 'office_under_me' : 'my_office')) {
         http_response_code(403);
         exit('Not allowed.');
     }
@@ -1914,12 +2534,26 @@ function asset_relative_time_label(?string $datetime, string $emptyLabel = 'Neve
         return $emptyLabel;
     }
     $diff = max(0, time() - $timestamp);
+    if ($diff < 60) {
+        return '1 min ago';
+    }
+    if ($diff < 3600) {
+        return '1 hr ago';
+    }
     if ($diff < 86400) {
         $hours = max(1, (int)floor($diff / 3600));
-        return $hours . ' hr' . ($hours === 1 ? '' : 's') . ' ago';
+        return $hours . ' hrs ago';
     }
-    $days = max(1, (int)floor($diff / 86400));
-    return $days . ' day' . ($days === 1 ? '' : 's') . ' ago';
+    if ($diff < 2592000) {
+        $days = max(1, (int)floor($diff / 86400));
+        return $days . ' days ago';
+    }
+    if ($diff < 31536000) {
+        $months = max(1, (int)floor($diff / 2592000));
+        return $months . ' month' . ($months === 1 ? '' : 's') . ' ago';
+    }
+    $years = max(1, (int)floor($diff / 31536000));
+    return $years . ' year' . ($years === 1 ? '' : 's') . ' ago';
 }
 
 function asset_relative_age_days(?string $datetime): ?float
@@ -3045,10 +3679,10 @@ function save_uploaded_asset_template(array $file): array
     return $syncSummary;
 }
 
-function output_asset_template_download(): void
+function output_asset_template_download(bool $preferUploaded = true): void
 {
     $stored = asset_template_uploaded_info();
-    if ($stored && asset_subcategory_enabled()) {
+    if ($preferUploaded && $stored) {
         header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         header('Content-Disposition: attachment; filename="asset_import_template.xlsx"');
         header('Content-Length: ' . (string)$stored['size']);
@@ -3153,6 +3787,23 @@ function parse_asset_import_file(string $tmpName, string $originalName, array $u
     return ['errors' => $topErrors, 'rows' => $importRows];
 }
 
+function validate_import_review_row(array $row): array
+{
+    $payload = [
+        'category' => trim((string)($row['category'] ?? '')),
+    ];
+    if (asset_subcategory_enabled()) {
+        $payload['subcategory'] = trim((string)($row['subcategory'] ?? ''));
+    }
+    foreach (get_asset_fields() as $field) {
+        if ((int)$field['is_import_enabled'] !== 1 || (int)$field['active_status'] !== 1) {
+            continue;
+        }
+        $payload[$field['field_key']] = trim((string)($row['fields'][$field['field_key']] ?? ''));
+    }
+    return stage_asset_import_row($payload, (int)($row['row_number'] ?? 0));
+}
+
 function stage_asset_import_row(array $input, int $rowNumber): array
 {
     $categoryName = trim((string)($input['category'] ?? ''));
@@ -3189,7 +3840,7 @@ function stage_asset_import_row(array $input, int $rowNumber): array
         'category_id' => $categoryId,
         'subcategory_id' => $subcategoryId,
         'fields' => $fieldInputs,
-    ]);
+    ], null, [], true);
 
     return [
         'row_number' => $rowNumber,
@@ -3205,21 +3856,9 @@ function stage_asset_import_row(array $input, int $rowNumber): array
 function restage_asset_import_rows(array $submittedRows): array
 {
     $reviewRows = [];
-    $subcategoryEnabled = asset_subcategory_enabled();
     foreach ($submittedRows as $index => $row) {
-        $payload = [
-            'category' => trim((string)($row['category'] ?? '')),
-        ];
-        if ($subcategoryEnabled) {
-            $payload['subcategory'] = trim((string)($row['subcategory'] ?? ''));
-        }
-        foreach (get_asset_fields() as $field) {
-            if ((int)$field['is_import_enabled'] !== 1) {
-                continue;
-            }
-            $payload[$field['field_key']] = trim((string)($row['fields'][$field['field_key']] ?? ''));
-        }
-        $reviewRows[] = stage_asset_import_row($payload, (int)($row['row_number'] ?? ($index + 1)));
+        $row['row_number'] = (int)($row['row_number'] ?? ($index + 1));
+        $reviewRows[] = validate_import_review_row($row);
     }
     if ($reviewRows) {
         $_SESSION['asset_import_review']['rows'] = $reviewRows;
@@ -3248,19 +3887,35 @@ function commit_asset_import_review(array $user): array
     $batchId = (int)db()->lastInsertId();
 
     $validRows = [];
+    $seenUniqueValues = [];
+    $importFieldMap = asset_field_map();
     foreach ($review['rows'] as $row) {
-        $validated = validate_asset_payload([
-            'category_id' => (int)$row['category_id'],
-            'subcategory_id' => (int)$row['subcategory_id'],
-            'fields' => $row['fields'] ?? [],
-        ]);
-        if (!empty($validated['errors'])) {
-            $row['errors'] = $validated['errors'];
-            $invalidRows[] = $row;
+        $restagedRow = validate_import_review_row($row);
+        if (!empty($restagedRow['errors'])) {
+            $invalidRows[] = $restagedRow;
             $errors[] = 'Row ' . $row['row_number'] . ' still has validation errors.';
             continue;
         }
-        $validRows[] = ['row' => $row, 'payload' => $validated['payload']];
+        $validated = validate_asset_payload([
+            'category_id' => (int)$restagedRow['category_id'],
+            'subcategory_id' => (int)$restagedRow['subcategory_id'],
+            'fields' => $restagedRow['fields'] ?? [],
+        ], null, [], true);
+        if (!empty($validated['errors'])) {
+            $restagedRow['errors'] = $validated['errors'];
+            $invalidRows[] = $restagedRow;
+            $errors[] = 'Row ' . $row['row_number'] . ' still has validation errors.';
+            continue;
+        }
+        $batchErrors = [];
+        validate_asset_unique_values_within_batch($importFieldMap, $validated['payload']['field_values'] ?? [], $seenUniqueValues, $batchErrors);
+        if (!empty($batchErrors)) {
+            $restagedRow['errors'] = $batchErrors;
+            $invalidRows[] = $restagedRow;
+            $errors[] = 'Row ' . $row['row_number'] . ' still has validation errors.';
+            continue;
+        }
+        $validRows[] = ['row' => $restagedRow, 'payload' => $validated['payload']];
     }
 
     if ($validRows) {
@@ -3277,10 +3932,12 @@ function commit_asset_import_review(array $user): array
                 db()->rollBack();
             }
             foreach ($validRows as $item) {
-                $invalidRows[] = $item['row'];
+                $failedRow = $item['row'];
+                $failedRow['errors'] = ['_db' => 'Database save failed for this row.'];
+                $invalidRows[] = $failedRow;
             }
             $saved = 0;
-            $errors[] = 'Database save failed. No rows were imported.';
+            $errors[] = 'Database save failed. No rows were imported. ' . $e->getMessage();
         }
     } else {
         db()->prepare('UPDATE asset_import_batches SET imported_count = ?, skipped_count = ?, updated_at = NOW() WHERE id = ?')->execute([$saved, count($invalidRows), $batchId]);

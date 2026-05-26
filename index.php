@@ -159,6 +159,16 @@ if ($action === 'save_subcategory_visibility') {
     redirect('index.php?page=admin');
 }
 
+if ($action === 'save_asset_number_visibility') {
+    if (!can_manage_superadmin_scope()) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
+    set_asset_number_visible_to_users(!empty($_POST['asset_number_visible_to_users']) ? 1 : 0);
+    flash('success', 'Asset number visibility updated.');
+    redirect('index.php?page=admin');
+}
+
 if ($action === 'create_asset_field' || $action === 'update_asset_field') {
     if (!can_manage_superadmin_scope()) {
         http_response_code(403);
@@ -258,6 +268,21 @@ if ($action === 'asset_save') {
         }
     } catch (Throwable $e) {
         flash('error', 'Asset save failed: ' . $e->getMessage());
+    }
+    redirect('index.php?page=board');
+}
+
+if ($action === 'asset_upload_field_files') {
+    $user = current_user();
+    if (!can_modify_office_assets($user)) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
+    try {
+        upload_asset_files_for_field(input_int('asset_id'), input_str('field_key'), $user, $_FILES);
+        flash('success', 'File uploaded successfully.');
+    } catch (Throwable $e) {
+        flash('error', 'File upload failed: ' . $e->getMessage());
     }
     redirect('index.php?page=board');
 }
@@ -540,7 +565,10 @@ if ($action === 'asset_import_save') {
     } elseif (($result['saved'] ?? 0) > 0) {
         flash('success', $result['saved'] . ' asset(s) imported successfully.');
     } elseif ($result['errors']) {
-        flash('error', 'Please fix the highlighted import rows before saving.');
+        $message = ($result['remaining'] ?? 0) > 0
+            ? 'Please fix the highlighted import rows before saving.'
+            : implode(' ', array_unique(array_map('strval', $result['errors'])));
+        flash('error', $message);
     } else {
         flash('success', 'No rows were imported.');
     }
@@ -554,7 +582,14 @@ if ($action === 'asset_import_cancel') {
 }
 
 if ($action === 'asset_download_data') {
-    if (!is_superadmin() && !can_modify_office_assets(current_user())) {
+    $user = current_user();
+    $officeViewScope = input_str('office_view_scope', 'my_office');
+    if (is_superadmin()) {
+        if (!can_manage_superadmin_scope()) {
+            http_response_code(403);
+            exit('Not allowed.');
+        }
+    } elseif (!current_office_context($user)) {
         http_response_code(403);
         exit('Not allowed.');
     }
@@ -581,14 +616,42 @@ if ($action === 'asset_download_data') {
                 $filters['office_type'] = 5;
                 $filters['office_id'] = input_int('subdivision_id');
             }
-            export_asset_data_excel($filters, current_user(), true);
+            export_asset_data_excel($filters, $user, true);
         } else {
-            export_asset_data_excel([], current_user(), false);
+            $filters = ['office_view_scope' => $officeViewScope];
+            export_asset_data_excel($filters, $user, $officeViewScope === 'office_under_me');
         }
     } catch (Throwable $e) {
         flash('error', 'Download failed: ' . $e->getMessage());
         redirect('index.php?page=board');
     }
+}
+
+if ($action === 'save_asset_table_visibility') {
+    $categoryId = input_int('category_id');
+    $tableScope = input_str('table_scope', 'my_office');
+    $visibleColumns = array_values(array_filter(array_map('strval', $_POST['visible_columns'] ?? [])));
+    try {
+        $boardFields = get_asset_fields();
+        $boardLabels = [];
+        foreach ($boardFields as $field) {
+            $rawLabel = trim((string)($field['label'] ?? ''));
+            $parts = preg_split('/\s*\/\s*/u', $rawLabel);
+            $boardLabels[$field['field_key']] = trim((string)($parts[0] ?? $rawLabel));
+        }
+        save_asset_table_column_preferences(
+            (int)current_user()['id'],
+            $categoryId,
+            asset_table_available_columns($boardFields, $boardLabels, $tableScope),
+            $visibleColumns,
+            !empty($_POST['apply_to_all']),
+            $tableScope
+        );
+        flash('success', !empty($_POST['apply_to_all']) ? 'Column visibility applied to all tables.' : 'Column visibility saved.');
+    } catch (Throwable $e) {
+        flash('error', 'Column visibility save failed: ' . $e->getMessage());
+    }
+    redirect('index.php?page=board');
 }
 
 if ($action === 'csv_import') {

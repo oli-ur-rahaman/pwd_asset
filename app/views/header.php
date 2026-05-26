@@ -31,19 +31,31 @@
     </div>
 </nav>
 <main class="container">
-<?php if ($msg = flash('success')): ?>
-    <div class="alert success"><?= e($msg); ?></div>
-<?php endif; ?>
-<?php if ($msg = flash('error')): ?>
-    <div class="alert error"><?= e($msg); ?></div>
-<?php endif; ?>
 <?php
+    $success_message = flash('success');
+    $error_message = flash('error');
     $needs_name = $user && (empty($user['officer_name']) || $user['officer_name'] === '0');
     $show_welcome_message = !$needs_name && !empty($_SESSION['show_welcome_message']) && !empty($info['welcome_message']);
     if ($show_welcome_message) {
         unset($_SESSION['show_welcome_message']);
     }
 ?>
+<?php if ($success_message || $error_message): ?>
+    <div class="modal-backdrop open" id="flash-modal" aria-hidden="false">
+        <div class="modal-card flash-modal-card" role="dialog" aria-modal="true" aria-labelledby="flash-modal-title">
+            <div class="flash-modal-head">
+                <h3 id="flash-modal-title"><?= $error_message ? 'Notice' : 'Success'; ?></h3>
+                <button type="button" class="welcome-modal-close modal-close" data-close="flash-modal" aria-label="Close">Ã—</button>
+            </div>
+            <div class="alert <?= $error_message ? 'error' : 'success'; ?> flash-modal-alert">
+                <?= e((string)($error_message ?: $success_message)); ?>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="modal-close" data-close="flash-modal">Close</button>
+            </div>
+        </div>
+    </div>
+<?php endif; ?>
 <?php if ($needs_name): ?>
     <div class="modal-backdrop open" id="name-modal" aria-hidden="false">
         <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="name-title">
@@ -57,7 +69,7 @@
                 </label>
                 <div class="modal-actions">
                     <button type="submit">Save</button>
-                    <button type="button" class="modal-close" id="name-cancel">Cancel</button>
+                    <button type="button" class="modal-close" id="name-cancel" data-close="name-modal">Cancel</button>
                 </div>
             </form>
         </div>
