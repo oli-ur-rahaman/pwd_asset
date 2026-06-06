@@ -169,6 +169,16 @@ if ($action === 'save_asset_number_visibility') {
     redirect('index.php?page=admin');
 }
 
+if ($action === 'save_asset_filter_threshold') {
+    if (!can_manage_superadmin_scope()) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
+    set_asset_filter_distinct_threshold(input_int('asset_filter_distinct_threshold', 20));
+    flash('success', 'Filter threshold updated.');
+    redirect('index.php?page=admin');
+}
+
 if ($action === 'create_asset_field' || $action === 'update_asset_field') {
     if (!can_manage_superadmin_scope()) {
         http_response_code(403);

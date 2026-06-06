@@ -258,11 +258,57 @@ document.addEventListener('DOMContentLoaded', () => {
         assetCategorySelect.addEventListener('change', () => filterSubcategories(assetCategorySelect, assetSubcategorySelect));
     }
 
+    const syncConditionalSelects = (container) => {
+        container.querySelectorAll('[data-conditional-primary="1"]').forEach((primarySelect) => {
+            const childKey = primarySelect.getAttribute('data-conditional-child') || '';
+            if (!childKey) {
+                return;
+            }
+            const childSelect = container.querySelector(`[data-field-key="${childKey}"][data-conditional-secondary], [data-field-name="fields[${childKey}]"][data-conditional-secondary]`);
+            if (!childSelect) {
+                return;
+            }
+            let map = {};
+            try {
+                map = JSON.parse(primarySelect.getAttribute('data-conditional-map') || '{}');
+            } catch (error) {
+                map = {};
+            }
+            const previousValue = childSelect.value || '';
+            const allowed = Array.isArray(map[primarySelect.value]) ? map[primarySelect.value] : [];
+            childSelect.innerHTML = '<option value="">Select</option>';
+            allowed.forEach((optionValue) => {
+                const option = document.createElement('option');
+                option.value = optionValue;
+                option.textContent = optionValue;
+                childSelect.appendChild(option);
+            });
+            childSelect.value = allowed.includes(previousValue) ? previousValue : '';
+        });
+    };
+
+    const assetModal = document.getElementById('asset-modal');
+    if (assetModal) {
+        syncConditionalSelects(assetModal);
+        assetModal.querySelectorAll('[data-conditional-primary="1"]').forEach((primarySelect) => {
+            primarySelect.addEventListener('change', () => syncConditionalSelects(assetModal));
+        });
+    }
+
     const filterCategory = document.querySelector('#asset-filters select[name="category_id"]');
     const filterSubcategory = document.querySelector('#asset-filters select[name="subcategory_id"]');
     if (filterCategory && filterSubcategory) {
         filterSubcategories(filterCategory, filterSubcategory);
         filterCategory.addEventListener('change', () => filterSubcategories(filterCategory, filterSubcategory));
+        filterSubcategory.addEventListener('change', () => {
+            if (filterSubcategory.value !== '0' && filterSubcategory.selectedOptions[0]) {
+                const categoryId = filterSubcategory.selectedOptions[0].getAttribute('data-category') || '0';
+                if (categoryId !== '0') {
+                    filterCategory.value = categoryId;
+                    filterSubcategories(filterCategory, filterSubcategory);
+                }
+            }
+        });
     }
 
     const downloadCategory = document.getElementById('download-category-select');
@@ -274,40 +320,159 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const assetFilters = document.getElementById('asset-filters');
     if (assetFilters) {
-        assetFilters.querySelectorAll('select').forEach((select) => {
-            select.addEventListener('change', () => {
-                const zoneSelect = assetFilters.querySelector('select[name="zone_id"]');
-                const circleSelect = assetFilters.querySelector('select[name="circle_id"]');
-                const divisionSelect = assetFilters.querySelector('select[name="division_id"]');
-                const subdivisionSelect = assetFilters.querySelector('select[name="subdivision_id"]');
-                if (select === circleSelect && circleSelect.value !== '0') {
-                    const selected = circleSelect.options[circleSelect.selectedIndex];
-                    if (zoneSelect) {
-                        zoneSelect.value = selected.getAttribute('data-zone') || '0';
-                    }
+        const zoneSelect = assetFilters.querySelector('select[name="zone_id"]');
+        const circleSelect = assetFilters.querySelector('select[name="circle_id"]');
+        const divisionSelect = assetFilters.querySelector('select[name="division_id"]');
+        const subdivisionSelect = assetFilters.querySelector('select[name="subdivision_id"]');
+
+        const updateDependentSelect = (select, matcher) => {
+            if (!select) {
+                return;
+            }
+            const previous = select.value;
+            const visibleOptions = [];
+            select.querySelectorAll('option').forEach((option) => {
+                if (option.value === '0' || option.value === '') {
+                    option.hidden = false;
+                    return;
                 }
-                if (select === divisionSelect && divisionSelect.value !== '0') {
-                    const selected = divisionSelect.options[divisionSelect.selectedIndex];
-                    if (zoneSelect) {
-                        zoneSelect.value = selected.getAttribute('data-zone') || '0';
-                    }
-                    if (circleSelect) {
-                        circleSelect.value = selected.getAttribute('data-circle') || '0';
-                    }
+                const matches = matcher(option);
+                option.hidden = !matches;
+                if (matches) {
+                    visibleOptions.push(option);
                 }
-                if (select === subdivisionSelect && subdivisionSelect.value !== '0') {
-                    const selected = subdivisionSelect.options[subdivisionSelect.selectedIndex];
-                    if (zoneSelect) {
-                        zoneSelect.value = selected.getAttribute('data-zone') || '0';
-                    }
-                    if (circleSelect) {
-                        circleSelect.value = selected.getAttribute('data-circle') || '0';
-                    }
-                    if (divisionSelect) {
-                        divisionSelect.value = selected.getAttribute('data-division') || '0';
-                    }
+            });
+            const selectedVisible = Array.from(select.selectedOptions).some((option) => !option.hidden);
+            if (!selectedVisible) {
+                if (visibleOptions.length === 1) {
+                    select.value = visibleOptions[0].value;
+                } else {
+                    select.value = select.querySelector('option')?.value || '0';
                 }
-                assetFilters.submit();
+            }
+            return previous !== select.value;
+        };
+
+        const syncOfficeFilters = (source = null) => {
+            if (source === circleSelect && circleSelect?.value !== '0') {
+                const selected = circleSelect.selectedOptions[0];
+                if (zoneSelect && selected) {
+                    zoneSelect.value = selected.getAttribute('data-zone') || '0';
+                }
+            }
+            if (source === divisionSelect && divisionSelect?.value !== '0') {
+                const selected = divisionSelect.selectedOptions[0];
+                if (zoneSelect && selected) {
+                    zoneSelect.value = selected.getAttribute('data-zone') || '0';
+                }
+                if (circleSelect && selected) {
+                    circleSelect.value = selected.getAttribute('data-circle') || '0';
+                }
+            }
+            if (source === subdivisionSelect && subdivisionSelect?.value !== '0') {
+                const selected = subdivisionSelect.selectedOptions[0];
+                if (zoneSelect && selected) {
+                    zoneSelect.value = selected.getAttribute('data-zone') || '0';
+                }
+                if (circleSelect && selected) {
+                    circleSelect.value = selected.getAttribute('data-circle') || '0';
+                }
+                if (divisionSelect && selected) {
+                    divisionSelect.value = selected.getAttribute('data-division') || '0';
+                }
+            }
+
+            const currentZone = zoneSelect?.value || '0';
+            const currentCircle = circleSelect?.value || '0';
+            const currentDivision = divisionSelect?.value || '0';
+
+            updateDependentSelect(circleSelect, (option) => currentZone === '0' || option.getAttribute('data-zone') === currentZone);
+            updateDependentSelect(divisionSelect, (option) => {
+                const zoneMatch = currentZone === '0' || option.getAttribute('data-zone') === currentZone;
+                const circleMatch = currentCircle === '0' || option.getAttribute('data-circle') === currentCircle;
+                return zoneMatch && circleMatch;
+            });
+            updateDependentSelect(subdivisionSelect, (option) => {
+                const zoneMatch = currentZone === '0' || option.getAttribute('data-zone') === currentZone;
+                const circleMatch = currentCircle === '0' || option.getAttribute('data-circle') === currentCircle;
+                const divisionMatch = currentDivision === '0' || option.getAttribute('data-division') === currentDivision;
+                return zoneMatch && circleMatch && divisionMatch;
+            });
+        };
+
+        [zoneSelect, circleSelect, divisionSelect, subdivisionSelect].forEach((select) => {
+            if (!select) {
+                return;
+            }
+            select.addEventListener('change', () => syncOfficeFilters(select));
+        });
+        syncOfficeFilters();
+
+        const syncConditionalFilter = (primarySelect) => {
+            const childKey = primarySelect.getAttribute('data-filter-conditional-child') || '';
+            if (!childKey) {
+                return;
+            }
+            const primaryKey = primarySelect.name.replace('field_filter_', '');
+            const childSelect = assetFilters.querySelector(`[data-filter-conditional-secondary="${primaryKey}"], select[name="field_filter_${childKey}"]`);
+            if (!childSelect) {
+                return;
+            }
+            let map = {};
+            try {
+                map = JSON.parse(primarySelect.getAttribute('data-filter-conditional-map') || '{}');
+            } catch (error) {
+                map = {};
+            }
+            const previous = childSelect.value || '';
+            const selectedPrimary = primarySelect.value || '';
+            let allowed = [];
+            if (selectedPrimary !== '' && Array.isArray(map[selectedPrimary])) {
+                allowed = map[selectedPrimary];
+            } else {
+                Object.values(map).forEach((items) => {
+                    (items || []).forEach((item) => {
+                        if (!allowed.includes(item)) {
+                            allowed.push(item);
+                        }
+                    });
+                });
+            }
+            childSelect.innerHTML = '<option value="">All</option>';
+            allowed.forEach((optionValue) => {
+                const option = document.createElement('option');
+                option.value = optionValue;
+                option.textContent = optionValue;
+                childSelect.appendChild(option);
+            });
+            childSelect.value = allowed.includes(previous) ? previous : '';
+        };
+
+        assetFilters.querySelectorAll('[data-filter-conditional-primary="1"]').forEach((primarySelect) => {
+            primarySelect.addEventListener('change', () => syncConditionalFilter(primarySelect));
+            syncConditionalFilter(primarySelect);
+        });
+        assetFilters.querySelectorAll('[data-filter-conditional-secondary]').forEach((childSelect) => {
+            childSelect.addEventListener('change', () => {
+                const primaryKey = childSelect.getAttribute('data-filter-conditional-secondary') || '';
+                const primarySelect = assetFilters.querySelector(`[name="field_filter_${primaryKey}"]`);
+                if (!primarySelect || childSelect.value === '') {
+                    return;
+                }
+                let map = {};
+                try {
+                    map = JSON.parse(primarySelect.getAttribute('data-filter-conditional-map') || '{}');
+                } catch (error) {
+                    map = {};
+                }
+                const matches = Object.entries(map)
+                    .filter(([, options]) => Array.isArray(options) && options.includes(childSelect.value))
+                    .map(([primary]) => primary);
+                if (matches.length === 1) {
+                    primarySelect.value = matches[0];
+                    syncConditionalFilter(primarySelect);
+                    childSelect.value = childSelect.value;
+                }
             });
         });
     }
@@ -588,6 +753,82 @@ document.addEventListener('DOMContentLoaded', () => {
             return value;
         };
 
+        const parseNumberRule = (rule) => {
+            const value = String(rule || '').trim();
+            const match = value.match(/^(-)?(\*)?(\d+)\.(\*)?(\d+)$/);
+            if (!match) {
+                return null;
+            }
+            return {
+                allowNegative: match[1] === '-',
+                beforeExact: match[2] === '*',
+                beforeDigits: Number.parseInt(match[3], 10),
+                afterExact: match[4] === '*',
+                afterDigits: Number.parseInt(match[5], 10),
+            };
+        };
+
+        const matchesNumberRule = (value, rule) => {
+            if (!/^-?\d+(?:\.\d+)?$/.test(value)) {
+                return false;
+            }
+            if (!rule.allowNegative && value.startsWith('-')) {
+                return false;
+            }
+            const unsigned = value.replace(/^-/, '');
+            const [before, after = ''] = unsigned.split('.');
+            if (rule.beforeExact) {
+                if (before.length !== rule.beforeDigits) {
+                    return false;
+                }
+            } else if (before.length > rule.beforeDigits) {
+                return false;
+            }
+            if (rule.afterExact) {
+                if (after.length !== rule.afterDigits) {
+                    return false;
+                }
+            } else if (after.length > rule.afterDigits) {
+                return false;
+            }
+            return true;
+        };
+
+        const numberRuleMessage = (label, rule) => {
+            const beforeText = `${rule.beforeExact ? 'exactly' : 'at most'} ${rule.beforeDigits} digit${rule.beforeDigits === 1 ? '' : 's'} before decimal`;
+            const afterText = `${rule.afterExact ? 'exactly' : 'at most'} ${rule.afterDigits} digit${rule.afterDigits === 1 ? '' : 's'} after decimal`;
+            return `${label} must follow ${beforeText} and ${afterText}${rule.allowNegative ? ' (negative allowed).' : ' (no negative allowed).'}`;
+        };
+
+        const syncReviewConditionalSelects = (row) => {
+            row.querySelectorAll('[data-conditional-primary="1"]').forEach((primarySelect) => {
+                const childKey = primarySelect.getAttribute('data-conditional-child') || '';
+                if (!childKey) {
+                    return;
+                }
+                const childSelect = row.querySelector(`[data-field-key="${childKey}"]`);
+                if (!childSelect) {
+                    return;
+                }
+                let map = {};
+                try {
+                    map = JSON.parse(primarySelect.getAttribute('data-conditional-map') || '{}');
+                } catch (error) {
+                    map = {};
+                }
+                const previousValue = childSelect.value || '';
+                const allowed = Array.isArray(map[primarySelect.value]) ? map[primarySelect.value] : [];
+                childSelect.innerHTML = '<option value="">Select</option>';
+                allowed.forEach((optionValue) => {
+                    const option = document.createElement('option');
+                    option.value = optionValue;
+                    option.textContent = optionValue;
+                    childSelect.appendChild(option);
+                });
+                childSelect.value = allowed.includes(previousValue) ? previousValue : '';
+            });
+        };
+
         const validateRow = (row) => {
             const errors = [];
             const categoryInput = row.querySelector('[data-review-role="category"]');
@@ -642,6 +883,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 } else if (value !== '') {
                     if (field.data_type === 'number' && Number.isNaN(Number(value))) {
                         message = `${field.label} must be numeric.`;
+                    } else if (field.data_type === 'number') {
+                        const parsedRule = parseNumberRule(field.number_format_rule || '');
+                        if (parsedRule && !matchesNumberRule(value, parsedRule)) {
+                            message = numberRuleMessage(field.label, parsedRule);
+                        }
                     } else if (field.data_type === 'date' && Number.isNaN(Date.parse(value))) {
                         message = `${field.label} must be a valid date.`;
                     } else if (field.data_type === 'yes_no') {
@@ -653,6 +899,19 @@ document.addEventListener('DOMContentLoaded', () => {
                         const options = (field.options || []).map((item) => String(item).trim().toLowerCase());
                         if (!options.includes(value.toLowerCase())) {
                             message = `${field.label} has an invalid option.`;
+                        }
+                    } else if (field.data_type === 'conditional') {
+                        const options = (field.options || []).map((item) => String(item).trim().toLowerCase());
+                        if (!options.includes(value.toLowerCase())) {
+                            message = `${field.label} has an invalid option.`;
+                        }
+                    } else if (field.secondary_of_field_key) {
+                        const primaryInput = row.querySelector(`[data-field-key="${field.secondary_of_field_key}"]`);
+                        const primaryField = fieldMap.get(field.secondary_of_field_key);
+                        const conditionalMap = primaryField?.conditional_map || {};
+                        const allowed = Array.isArray(conditionalMap[primaryInput?.value || '']) ? conditionalMap[primaryInput.value] : [];
+                        if (!allowed.map((item) => String(item).trim().toLowerCase()).includes(value.toLowerCase())) {
+                            message = `${field.label} has an invalid option for the selected ${primaryField?.label || 'primary value'}.`;
                         }
                     }
                 }
@@ -698,6 +957,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (input.getAttribute('data-review-role') === 'category') {
                         syncSubcategoryOptions(row);
                     }
+                    if (input.getAttribute('data-conditional-primary') === '1') {
+                        syncReviewConditionalSelects(row);
+                    }
                     validateRow(row);
                 };
                 input.addEventListener('input', rerun);
@@ -713,6 +975,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             syncSubcategoryOptions(row);
+            syncReviewConditionalSelects(row);
             validateRow(row);
         };
 
@@ -737,7 +1000,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const td = document.createElement('td');
             td.className = 'cell-valid';
             let input;
-            if (field.data_type === 'dropdown' || field.data_type === 'yes_no') {
+            if (field.data_type === 'dropdown' || field.data_type === 'yes_no' || field.data_type === 'conditional') {
                 input = document.createElement('select');
                 const placeholder = document.createElement('option');
                 placeholder.value = '';
@@ -754,18 +1017,37 @@ document.addEventListener('DOMContentLoaded', () => {
                     input.appendChild(option);
                 });
             } else {
-                input = document.createElement('input');
-                input.type = field.data_type === 'number' ? 'number' : (field.data_type === 'date' ? 'date' : 'text');
-                if (field.data_type === 'number') {
-                    input.step = '0.01';
+                if (field.data_type === 'text') {
+                    input = document.createElement('textarea');
+                    input.rows = 3;
+                    input.className = 'review-input review-textarea';
+                } else {
+                    input = document.createElement('input');
+                    input.type = field.data_type === 'number' ? 'number' : (field.data_type === 'date' ? 'date' : 'text');
+                    if (field.data_type === 'number') {
+                        input.step = '0.01';
+                    }
                 }
             }
-            input.className = 'review-input';
+            if (!input.className) {
+                input.className = 'review-input';
+            }
             input.name = `rows[${index}][fields][${field.field_key}]`;
             input.setAttribute('data-review-role', 'field');
             input.setAttribute('data-field-key', field.field_key);
             input.setAttribute('data-field-type', field.data_type);
             input.setAttribute('data-required', field.required ? '1' : '0');
+            input.setAttribute('data-number-format-rule', field.number_format_rule || '');
+            if (field.data_type === 'conditional') {
+                input.setAttribute('data-conditional-primary', '1');
+                input.setAttribute('data-conditional-map', JSON.stringify(field.conditional_map || {}));
+                const childField = fields.find((item) => item.secondary_of_field_key === field.field_key);
+                if (childField) {
+                    input.setAttribute('data-conditional-child', childField.field_key);
+                }
+            } else if (field.secondary_of_field_key) {
+                input.setAttribute('data-conditional-secondary', field.secondary_of_field_key);
+            }
             td.appendChild(input);
             return td;
         };

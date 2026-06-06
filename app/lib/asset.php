@@ -42,6 +42,9 @@ function ensure_asset_schema(): void
             field_key VARCHAR(100) NOT NULL,
             label VARCHAR(255) NOT NULL,
             data_type VARCHAR(20) NOT NULL,
+            number_format_rule VARCHAR(30) DEFAULT NULL,
+            secondary_of_field_id INT DEFAULT NULL,
+            conditional_map_json LONGTEXT DEFAULT NULL,
             is_required TINYINT NOT NULL DEFAULT 0,
             is_displayed TINYINT NOT NULL DEFAULT 1,
             is_import_enabled TINYINT NOT NULL DEFAULT 1,
@@ -254,7 +257,12 @@ function ensure_asset_schema(): void
     asset_ensure_column('info', 'welcome_message', 'LONGTEXT DEFAULT NULL');
     asset_ensure_column('info', 'asset_subcategory_enabled', 'TINYINT NOT NULL DEFAULT 1');
     asset_ensure_column('info', 'asset_number_visible_to_users', 'TINYINT NOT NULL DEFAULT 1');
+    asset_ensure_column('info', 'asset_filter_distinct_threshold', 'INT NOT NULL DEFAULT 20');
     asset_ensure_column('asset_fields', 'is_unique', 'TINYINT NOT NULL DEFAULT 0');
+    asset_ensure_column('asset_fields', 'is_filter_enabled', 'TINYINT NOT NULL DEFAULT 0');
+    asset_ensure_column('asset_fields', 'number_format_rule', 'VARCHAR(30) DEFAULT NULL');
+    asset_ensure_column('asset_fields', 'secondary_of_field_id', 'INT DEFAULT NULL');
+    asset_ensure_column('asset_fields', 'conditional_map_json', 'LONGTEXT DEFAULT NULL');
     asset_relax_subcategory_requirement();
 
     asset_seed_default_fields();
@@ -410,7 +418,162 @@ function asset_seed_default_fields(): void
 
 function asset_supported_data_types(): array
 {
-    return ['text', 'number', 'date', 'dropdown', 'yes_no', 'file'];
+    return ['text', 'number', 'date', 'dropdown', 'yes_no', 'file', 'conditional'];
+}
+
+function asset_number_format_rule_examples(): array
+{
+    return [
+        '8.2 -> max 8 digits before decimal and max 2 digits after decimal (no negative allowed)',
+        '-8.2 -> max 8 digits before decimal and max 2 digits after decimal (negative allowed)',
+        '*8.2 -> exact 8 digits before decimal and max 2 digits after decimal (no negative allowed)',
+        '*8.*2 -> exact 8 digits before decimal and exact 2 digits after decimal (no negative allowed)',
+        '-*8.*2 -> exact 8 digits before decimal and exact 2 digits after decimal (negative allowed)',
+    ];
+}
+
+function asset_is_conditional_secondary(array $field): bool
+{
+    return (int)($field['secondary_of_field_id'] ?? 0) > 0;
+}
+
+function asset_is_conditional_primary(array $field): bool
+{
+    return (string)($field['data_type'] ?? '') === 'conditional';
+}
+
+function get_asset_management_fields(bool $includeInactive = false): array
+{
+    return array_values(array_filter(
+        get_asset_fields($includeInactive),
+        static fn(array $field): bool => !asset_is_conditional_secondary($field)
+    ));
+}
+
+function get_asset_conditional_child_field(int $parentFieldId, bool $includeInactive = true): ?array
+{
+    foreach (get_asset_fields($includeInactive) as $field) {
+        if ((int)($field['secondary_of_field_id'] ?? 0) === $parentFieldId) {
+            return $field;
+        }
+    }
+    return null;
+}
+
+function asset_decode_conditional_map(array $field): array
+{
+    $raw = (string)($field['conditional_map_json'] ?? '');
+    if ($raw === '') {
+        return [];
+    }
+    $map = json_decode($raw, true);
+    if (!is_array($map)) {
+        return [];
+    }
+    $normalized = [];
+    foreach ($map as $primary => $options) {
+        $primary = trim((string)$primary);
+        if ($primary === '') {
+            continue;
+        }
+        $normalized[$primary] = array_values(array_filter(array_map(
+            static fn(mixed $item): string => trim((string)$item),
+            is_array($options) ? $options : []
+        ), static fn(string $item): bool => $item !== ''));
+    }
+    return $normalized;
+}
+
+function asset_conditional_child_options(array $parentField, string $parentValue): array
+{
+    $map = asset_decode_conditional_map($parentField);
+    foreach ($map as $primary => $options) {
+        if (strcasecmp($primary, trim($parentValue)) === 0) {
+            return $options;
+        }
+    }
+    return [];
+}
+
+function asset_conditional_union_options(array $map): array
+{
+    $all = [];
+    foreach ($map as $options) {
+        foreach ($options as $option) {
+            $option = trim((string)$option);
+            if ($option !== '') {
+                $all[$option] = $option;
+            }
+        }
+    }
+    return array_values($all);
+}
+
+function asset_parse_number_format_rule(string $rule): ?array
+{
+    $rule = trim($rule);
+    if ($rule === '') {
+        return null;
+    }
+    if (!preg_match('/^(-)?(\*)?(\d+)\.(\*)?(\d+)$/', $rule, $matches)) {
+        return null;
+    }
+    return [
+        'allow_negative' => $matches[1] === '-',
+        'before_exact' => $matches[2] === '*',
+        'before_digits' => (int)$matches[3],
+        'after_exact' => $matches[4] === '*',
+        'after_digits' => (int)$matches[5],
+    ];
+}
+
+function asset_normalize_number_string(mixed $value): ?string
+{
+    $value = trim((string)$value);
+    if ($value === '') {
+        return null;
+    }
+    if (!preg_match('/^-?\d+(?:\.\d+)?$/', $value)) {
+        return null;
+    }
+    return $value;
+}
+
+function asset_number_format_error(string $label, array $parsedRule): string
+{
+    $beforeText = ($parsedRule['before_exact'] ? 'exactly ' : 'at most ') . $parsedRule['before_digits'] . ' digit' . ($parsedRule['before_digits'] === 1 ? '' : 's') . ' before decimal';
+    $afterText = ($parsedRule['after_exact'] ? 'exactly ' : 'at most ') . $parsedRule['after_digits'] . ' digit' . ($parsedRule['after_digits'] === 1 ? '' : 's') . ' after decimal';
+    $signText = $parsedRule['allow_negative'] ? 'negative allowed' : 'no negative allowed';
+    return "{$label} must follow {$beforeText} and {$afterText} ({$signText}).";
+}
+
+function asset_number_matches_rule(string $value, array $parsedRule): bool
+{
+    if (!preg_match('/^-?\d+(?:\.\d+)?$/', $value)) {
+        return false;
+    }
+    if (!$parsedRule['allow_negative'] && str_starts_with($value, '-')) {
+        return false;
+    }
+    $unsigned = ltrim($value, '-');
+    [$before, $after] = array_pad(explode('.', $unsigned, 2), 2, '');
+    $beforeLength = strlen($before);
+    $afterLength = strlen($after);
+    if ($parsedRule['before_exact']) {
+        if ($beforeLength !== $parsedRule['before_digits']) {
+            return false;
+        }
+    } elseif ($beforeLength > $parsedRule['before_digits']) {
+        return false;
+    }
+    if ($parsedRule['after_exact']) {
+        if ($afterLength !== $parsedRule['after_digits']) {
+            return false;
+        }
+    } elseif ($afterLength > $parsedRule['after_digits']) {
+        return false;
+    }
+    return true;
 }
 
 function asset_locked_field_keys(): array
@@ -555,6 +718,7 @@ function set_asset_subcategory_enabled(int $status): void
             'welcome_message' => $existing['welcome_message'] ?? null,
             'asset_subcategory_enabled' => $status === 1 ? 1 : 0,
             'asset_number_visible_to_users' => $existing['asset_number_visible_to_users'] ?? 1,
+            'asset_filter_distinct_threshold' => $existing['asset_filter_distinct_threshold'] ?? 20,
             'i_opr_repair' => $existing['i_opr_repair'] ?? null,
             'i_opr_other' => $existing['i_opr_other'] ?? null,
             'i_dev_pw' => $existing['i_dev_pw'] ?? null,
@@ -587,6 +751,37 @@ function set_asset_number_visible_to_users(int $status): void
             'welcome_message' => $existing['welcome_message'] ?? null,
             'asset_subcategory_enabled' => $existing['asset_subcategory_enabled'] ?? 1,
             'asset_number_visible_to_users' => $status === 1 ? 1 : 0,
+            'asset_filter_distinct_threshold' => $existing['asset_filter_distinct_threshold'] ?? 20,
+            'i_opr_repair' => $existing['i_opr_repair'] ?? null,
+            'i_opr_other' => $existing['i_opr_other'] ?? null,
+            'i_dev_pw' => $existing['i_dev_pw'] ?? null,
+            'i_opr_min' => $existing['i_opr_min'] ?? null,
+            'i_dev_min' => $existing['i_dev_min'] ?? null,
+            'i_opr' => $existing['i_opr'] ?? null,
+            'i_dev' => $existing['i_dev'] ?? null,
+        ]
+    );
+}
+
+function asset_filter_distinct_threshold(): int
+{
+    $info = get_info_row();
+    $value = (int)($info['asset_filter_distinct_threshold'] ?? 20);
+    return $value > 0 ? $value : 20;
+}
+
+function set_asset_filter_distinct_threshold(int $threshold): void
+{
+    $existing = get_info_row();
+    save_info_row(
+        $existing['video_tutorial_url'] ?? null,
+        $existing['login_message'] ?? null,
+        [
+            'site_name' => $existing['site_name'] ?? null,
+            'welcome_message' => $existing['welcome_message'] ?? null,
+            'asset_subcategory_enabled' => $existing['asset_subcategory_enabled'] ?? 1,
+            'asset_number_visible_to_users' => $existing['asset_number_visible_to_users'] ?? 1,
+            'asset_filter_distinct_threshold' => max(1, $threshold),
             'i_opr_repair' => $existing['i_opr_repair'] ?? null,
             'i_opr_other' => $existing['i_opr_other'] ?? null,
             'i_dev_pw' => $existing['i_dev_pw'] ?? null,
@@ -730,7 +925,7 @@ function asset_format_normalized_value_for_log(array $field, ?array $normalized)
         'number' => $normalized['value_number'] !== null ? rtrim(rtrim((string)$normalized['value_number'], '0'), '.') : '',
         'date' => (string)($normalized['value_date'] ?? ''),
         'yes_no' => $normalized['value_bool'] === null ? '' : ((int)$normalized['value_bool'] === 1 ? 'Yes' : 'No'),
-        'dropdown' => (string)($normalized['value_option'] ?? ''),
+        'dropdown', 'conditional' => (string)($normalized['value_option'] ?? ''),
         default => (string)($normalized['value_text'] ?? ''),
     };
 }
@@ -1370,42 +1565,131 @@ function delete_asset_field_file_rule(int $fieldId): void
 
 function create_asset_field(array $payload): void
 {
-    $stmt = db()->prepare('INSERT INTO asset_fields (field_key, label, data_type, is_required, is_displayed, is_import_enabled, is_unique, active_status, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, NOW())');
-    $stmt->execute([
-        $payload['field_key'],
-        $payload['label'],
-        $payload['data_type'],
-        $payload['is_required'],
-        $payload['is_displayed'],
-        $payload['is_import_enabled'],
-        $payload['is_unique'],
-        $payload['sort_order'],
-    ]);
-    $fieldId = (int)db()->lastInsertId();
-    replace_asset_field_options($fieldId, $payload['options'] ?? []);
-    if ($payload['data_type'] === 'file') {
-        save_asset_field_file_rule($fieldId, $payload['file_rule'] ?? asset_default_file_rule());
+    db()->beginTransaction();
+    try {
+        if (($payload['data_type'] ?? '') === 'conditional') {
+            $stmt = db()->prepare('INSERT INTO asset_fields (field_key, label, data_type, number_format_rule, secondary_of_field_id, conditional_map_json, is_required, is_displayed, is_import_enabled, is_unique, is_filter_enabled, active_status, sort_order, created_at) VALUES (?, ?, ?, NULL, NULL, ?, ?, ?, ?, 0, 1, 1, ?, NOW())');
+            $stmt->execute([
+                $payload['field_key'],
+                $payload['label'],
+                'conditional',
+                json_encode($payload['conditional_map'] ?? [], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                $payload['is_required'],
+                $payload['is_displayed'],
+                $payload['is_import_enabled'],
+                $payload['sort_order'],
+            ]);
+            $fieldId = (int)db()->lastInsertId();
+            replace_asset_field_options($fieldId, $payload['options'] ?? []);
+
+            $childStmt = db()->prepare('INSERT INTO asset_fields (field_key, label, data_type, number_format_rule, secondary_of_field_id, conditional_map_json, is_required, is_displayed, is_import_enabled, is_unique, is_filter_enabled, active_status, sort_order, created_at) VALUES (?, ?, ?, NULL, ?, NULL, ?, ?, ?, 0, 1, 1, ?, NOW())');
+            $childStmt->execute([
+                $payload['secondary_field_key'],
+                $payload['secondary_label'],
+                'dropdown',
+                $fieldId,
+                $payload['is_required'],
+                $payload['is_displayed'],
+                $payload['is_import_enabled'],
+                $payload['sort_order'] + 1,
+            ]);
+            $childId = (int)db()->lastInsertId();
+            replace_asset_field_options($childId, $payload['secondary_options'] ?? []);
+        } else {
+            $stmt = db()->prepare('INSERT INTO asset_fields (field_key, label, data_type, number_format_rule, secondary_of_field_id, conditional_map_json, is_required, is_displayed, is_import_enabled, is_unique, is_filter_enabled, active_status, sort_order, created_at) VALUES (?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, 1, ?, NOW())');
+            $stmt->execute([
+                $payload['field_key'],
+                $payload['label'],
+                $payload['data_type'],
+                $payload['number_format_rule'] ?: null,
+                $payload['is_required'],
+                $payload['is_displayed'],
+                $payload['is_import_enabled'],
+                $payload['is_unique'],
+                $payload['is_filter_enabled'],
+                $payload['sort_order'],
+            ]);
+            $fieldId = (int)db()->lastInsertId();
+            replace_asset_field_options($fieldId, $payload['options'] ?? []);
+            if ($payload['data_type'] === 'file') {
+                save_asset_field_file_rule($fieldId, $payload['file_rule'] ?? asset_default_file_rule());
+            }
+        }
+        db()->commit();
+    } catch (Throwable $e) {
+        if (db()->inTransaction()) {
+            db()->rollBack();
+        }
+        throw $e;
     }
 }
 
 function update_asset_field(int $id, array $payload): void
 {
-    $stmt = db()->prepare('UPDATE asset_fields SET label = ?, data_type = ?, is_required = ?, is_displayed = ?, is_import_enabled = ?, is_unique = ?, sort_order = ?, updated_at = NOW() WHERE id = ?');
-    $stmt->execute([
-        $payload['label'],
-        $payload['data_type'],
-        $payload['is_required'],
-        $payload['is_displayed'],
-        $payload['is_import_enabled'],
-        $payload['is_unique'],
-        $payload['sort_order'],
-        $id,
-    ]);
-    replace_asset_field_options($id, $payload['options'] ?? []);
-    if ($payload['data_type'] === 'file') {
-        save_asset_field_file_rule($id, $payload['file_rule'] ?? asset_default_file_rule());
-    } else {
-        delete_asset_field_file_rule($id);
+    $existing = get_asset_field($id);
+    if (!$existing) {
+        throw new RuntimeException('Field not found.');
+    }
+    $childField = get_asset_conditional_child_field($id, true);
+    db()->beginTransaction();
+    try {
+        if (($payload['data_type'] ?? '') === 'conditional') {
+            $stmt = db()->prepare('UPDATE asset_fields SET label = ?, data_type = ?, number_format_rule = NULL, conditional_map_json = ?, is_required = ?, is_displayed = ?, is_import_enabled = ?, is_unique = 0, is_filter_enabled = 1, sort_order = ?, updated_at = NOW() WHERE id = ?');
+            $stmt->execute([
+                $payload['label'],
+                'conditional',
+                json_encode($payload['conditional_map'] ?? [], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                $payload['is_required'],
+                $payload['is_displayed'],
+                $payload['is_import_enabled'],
+                $payload['sort_order'],
+                $id,
+            ]);
+            replace_asset_field_options($id, $payload['options'] ?? []);
+            delete_asset_field_file_rule($id);
+
+            if (!$childField) {
+                throw new RuntimeException('Conditional child field not found.');
+            }
+            $childStmt = db()->prepare('UPDATE asset_fields SET label = ?, data_type = ?, number_format_rule = NULL, is_required = ?, is_displayed = ?, is_import_enabled = ?, is_unique = 0, is_filter_enabled = 1, sort_order = ?, updated_at = NOW() WHERE id = ?');
+            $childStmt->execute([
+                $payload['secondary_label'],
+                'dropdown',
+                $payload['is_required'],
+                $payload['is_displayed'],
+                $payload['is_import_enabled'],
+                $payload['sort_order'] + 1,
+                (int)$childField['id'],
+            ]);
+            replace_asset_field_options((int)$childField['id'], $payload['secondary_options'] ?? []);
+            delete_asset_field_file_rule((int)$childField['id']);
+        } else {
+            $stmt = db()->prepare('UPDATE asset_fields SET label = ?, data_type = ?, number_format_rule = ?, conditional_map_json = NULL, is_required = ?, is_displayed = ?, is_import_enabled = ?, is_unique = ?, is_filter_enabled = ?, sort_order = ?, updated_at = NOW() WHERE id = ?');
+            $stmt->execute([
+                $payload['label'],
+                $payload['data_type'],
+                $payload['number_format_rule'] ?: null,
+                $payload['is_required'],
+                $payload['is_displayed'],
+                $payload['is_import_enabled'],
+                $payload['is_unique'],
+                $payload['is_filter_enabled'],
+                $payload['sort_order'],
+                $id,
+            ]);
+            replace_asset_field_options($id, $payload['options'] ?? []);
+            if ($payload['data_type'] === 'file') {
+                save_asset_field_file_rule($id, $payload['file_rule'] ?? asset_default_file_rule());
+            } else {
+                delete_asset_field_file_rule($id);
+            }
+        }
+        db()->commit();
+    } catch (Throwable $e) {
+        if (db()->inTransaction()) {
+            db()->rollBack();
+        }
+        throw $e;
     }
 }
 
@@ -1428,6 +1712,10 @@ function set_asset_field_status(int $id, int $status): void
 {
     $stmt = db()->prepare('UPDATE asset_fields SET active_status = ?, updated_at = NOW() WHERE id = ?');
     $stmt->execute([$status === 1 ? 1 : 0, $id]);
+    $child = get_asset_conditional_child_field($id, true);
+    if ($child) {
+        $stmt->execute([$status === 1 ? 1 : 0, (int)$child['id']]);
+    }
 }
 
 function delete_asset_field(int $id): bool
@@ -1439,19 +1727,30 @@ function delete_asset_field(int $id): bool
     if (in_array($field['field_key'], asset_locked_field_keys(), true)) {
         return false;
     }
+    $linkedFieldIds = [$id];
+    $child = get_asset_conditional_child_field($id, true);
+    if ($child) {
+        $linkedFieldIds[] = (int)$child['id'];
+    }
     $stmt = db()->prepare('SELECT COUNT(*) FROM asset_values WHERE field_id = ?');
-    $stmt->execute([$id]);
-    if ((int)$stmt->fetchColumn() > 0) {
-        return false;
+    foreach ($linkedFieldIds as $fieldId) {
+        $stmt->execute([$fieldId]);
+        if ((int)$stmt->fetchColumn() > 0) {
+            return false;
+        }
     }
     $stmt = db()->prepare('SELECT COUNT(*) FROM asset_file_values WHERE field_id = ?');
-    $stmt->execute([$id]);
-    if ((int)$stmt->fetchColumn() > 0) {
-        return false;
+    foreach ($linkedFieldIds as $fieldId) {
+        $stmt->execute([$fieldId]);
+        if ((int)$stmt->fetchColumn() > 0) {
+            return false;
+        }
     }
-    db()->prepare('DELETE FROM asset_field_options WHERE field_id = ?')->execute([$id]);
-    delete_asset_field_file_rule($id);
-    db()->prepare('DELETE FROM asset_fields WHERE id = ?')->execute([$id]);
+    foreach ($linkedFieldIds as $fieldId) {
+        db()->prepare('DELETE FROM asset_field_options WHERE field_id = ?')->execute([$fieldId]);
+        delete_asset_field_file_rule($fieldId);
+        db()->prepare('DELETE FROM asset_fields WHERE id = ?')->execute([$fieldId]);
+    }
     return true;
 }
 
@@ -1512,6 +1811,12 @@ function validate_asset_field_definition(array $input, ?int $fieldId = null): ar
     if (!in_array($dataType, asset_supported_data_types(), true)) {
         $errors[] = 'Invalid field type.';
     }
+    if ($existingField && (
+        ((string)$existingField['data_type'] === 'conditional' && $dataType !== 'conditional')
+        || ((string)$existingField['data_type'] !== 'conditional' && $dataType === 'conditional')
+    )) {
+        $errors[] = 'Changing to or from conditional type is not supported. Create a new field instead.';
+    }
     $sortOrder = (int)($input['sort_order'] ?? 0);
     if ($sortOrder <= 0) {
         $sortOrder = $fieldId ? (int)($existingField['sort_order'] ?? 0) : next_sort_order('asset_fields');
@@ -1536,6 +1841,87 @@ function validate_asset_field_definition(array $input, ?int $fieldId = null): ar
         }
         if (!$options) {
             $errors[] = 'Dropdown fields need at least one option.';
+        }
+    }
+
+    $numberFormatRule = trim((string)($input['number_format_rule'] ?? ''));
+    if ($dataType === 'number' && $numberFormatRule !== '' && asset_parse_number_format_rule($numberFormatRule) === null) {
+        $errors[] = 'Invalid number format rule.';
+    }
+    if ($dataType !== 'number') {
+        $numberFormatRule = '';
+    }
+
+    $secondaryLabel = trim((string)($input['secondary_label'] ?? ''));
+    $conditionalMap = [];
+    $secondaryOptions = [];
+    $secondaryFieldKey = '';
+    if ($dataType === 'conditional') {
+        $rawPrimaryOptions = preg_split('/\r\n|\r|\n/', (string)($input['conditional_primary_options_text'] ?? ''));
+        $primaryOptions = [];
+        foreach ($rawPrimaryOptions as $option) {
+            $option = trim((string)$option);
+            if ($option !== '') {
+                $primaryOptions[] = ['value' => $option, 'label' => $option];
+            }
+        }
+        $options = $primaryOptions;
+        if (!$options) {
+            $errors[] = 'Conditional fields need at least one primary option.';
+        }
+        if ($secondaryLabel === '') {
+            $errors[] = 'Secondary label is required for conditional fields.';
+        }
+        $ruleLines = preg_split('/\r\n|\r|\n/', (string)($input['conditional_rules_text'] ?? ''));
+        $primaryLookup = [];
+        foreach ($options as $option) {
+            $primaryLookup[strtolower((string)$option['value'])] = (string)$option['value'];
+        }
+        foreach ($ruleLines as $line) {
+            $line = trim((string)$line);
+            if ($line === '') {
+                continue;
+            }
+            $parts = preg_split('/\s*=\s*/', $line, 2);
+            if (!$parts || count($parts) !== 2) {
+                $errors[] = 'Conditional rules must use Primary=child1,child2 format.';
+                continue;
+            }
+            $primaryKey = strtolower(trim((string)$parts[0]));
+            if (!isset($primaryLookup[$primaryKey])) {
+                $errors[] = 'Conditional rules reference an unknown primary option.';
+                continue;
+            }
+            $children = array_values(array_filter(array_map(
+                static fn(string $item): string => trim($item),
+                preg_split('/\s*,\s*/', (string)$parts[1]) ?: []
+            ), static fn(string $item): bool => $item !== ''));
+            if (!$children) {
+                $errors[] = 'Each conditional primary option needs at least one secondary option.';
+                continue;
+            }
+            $conditionalMap[$primaryLookup[$primaryKey]] = array_values(array_unique($children));
+        }
+        foreach ($options as $option) {
+            if (empty($conditionalMap[(string)$option['value']])) {
+                $errors[] = 'Each conditional primary option needs secondary options defined.';
+                break;
+            }
+        }
+        $secondaryOptions = array_map(
+            static fn(string $option): array => ['value' => $option, 'label' => $option],
+            asset_conditional_union_options($conditionalMap)
+        );
+        $existingChild = $fieldId ? get_asset_conditional_child_field($fieldId, true) : null;
+        $secondaryFieldKey = $existingChild['field_key'] ?? asset_slug(trim((string)($input['secondary_field_key'] ?? $secondaryLabel)));
+        if ($secondaryFieldKey === '') {
+            $secondaryFieldKey = $fieldKey . '_secondary';
+        }
+        $existingSecondary = db()->prepare('SELECT id FROM asset_fields WHERE field_key = ? LIMIT 1');
+        $existingSecondary->execute([$secondaryFieldKey]);
+        $existingSecondaryId = (int)($existingSecondary->fetchColumn() ?: 0);
+        if ($existingSecondaryId > 0 && (!$existingChild || $existingSecondaryId !== (int)$existingChild['id'])) {
+            $errors[] = 'Secondary field key already exists.';
         }
     }
 
@@ -1567,13 +1953,19 @@ function validate_asset_field_definition(array $input, ?int $fieldId = null): ar
             'field_key' => $fieldKey,
             'label' => $label,
             'data_type' => $dataType,
+            'number_format_rule' => $numberFormatRule,
             'is_required' => !empty($input['is_required']) ? 1 : 0,
             'is_displayed' => !empty($input['is_displayed']) ? 1 : 0,
-            'is_import_enabled' => $dataType === 'file' ? 0 : (!empty($input['is_import_enabled']) ? 1 : 0),
-            'is_unique' => $dataType === 'file' ? 0 : (!empty($input['is_unique']) ? 1 : 0),
+            'is_import_enabled' => in_array($dataType, ['file'], true) ? 0 : (!empty($input['is_import_enabled']) ? 1 : 0),
+            'is_unique' => in_array($dataType, ['file', 'conditional'], true) ? 0 : (!empty($input['is_unique']) ? 1 : 0),
+            'is_filter_enabled' => $dataType === 'conditional' ? 1 : (!empty($input['is_filter_enabled']) ? 1 : 0),
             'sort_order' => $sortOrder,
             'options' => $options,
             'file_rule' => $fileRule,
+            'secondary_label' => $secondaryLabel,
+            'secondary_field_key' => $secondaryFieldKey,
+            'secondary_options' => $secondaryOptions,
+            'conditional_map' => $conditionalMap,
         ],
     ];
 }
@@ -1612,6 +2004,31 @@ function validate_asset_payload(array $input, ?int $assetId = null, array $fileB
             continue;
         }
         validate_asset_unique_value($field, $values[$fieldKey] ?? [], $assetId, $errors);
+    }
+    foreach ($fieldMap as $fieldKey => $field) {
+        $parentId = (int)($field['secondary_of_field_id'] ?? 0);
+        if ($parentId <= 0 || isset($errors[$fieldKey])) {
+            continue;
+        }
+        $parentField = null;
+        foreach ($fieldMap as $candidateField) {
+            if ((int)$candidateField['id'] === $parentId) {
+                $parentField = $candidateField;
+                break;
+            }
+        }
+        if (!$parentField) {
+            continue;
+        }
+        $parentValue = (string)(($values[(string)$parentField['field_key']]['value_option'] ?? '') ?: ($values[(string)$parentField['field_key']]['value_text'] ?? ''));
+        $childValue = (string)(($values[$fieldKey]['value_option'] ?? '') ?: ($values[$fieldKey]['value_text'] ?? ''));
+        if ($childValue === '') {
+            continue;
+        }
+        $allowedChildren = array_map('strtolower', asset_conditional_child_options($parentField, $parentValue));
+        if (!$allowedChildren || !in_array(strtolower($childValue), $allowedChildren, true)) {
+            $errors[$fieldKey] = ($field['label'] ?? $fieldKey) . ' has an invalid option for the selected ' . ($parentField['label'] ?? $parentField['field_key']) . '.';
+        }
     }
 
     return [
@@ -1729,12 +2146,18 @@ function normalize_asset_field_value(array $field, mixed $raw, array $fieldMap, 
     }
 
     if ($type === 'number') {
-        if (!is_numeric($value)) {
+        $valueString = asset_normalize_number_string($value);
+        if ($valueString === null) {
             $errors[$key] = "{$label} must be numeric.";
             return $normalized;
         }
-        $normalized['value_number'] = (float)$value;
-        $normalized['display'] = (string)$value;
+        $parsedRule = asset_parse_number_format_rule((string)($field['number_format_rule'] ?? ''));
+        if ($parsedRule && !asset_number_matches_rule($valueString, $parsedRule)) {
+            $errors[$key] = asset_number_format_error((string)$label, $parsedRule);
+            return $normalized;
+        }
+        $normalized['value_number'] = (float)$valueString;
+        $normalized['display'] = $valueString;
         return $normalized;
     }
 
@@ -1760,7 +2183,7 @@ function normalize_asset_field_value(array $field, mixed $raw, array $fieldMap, 
         return $normalized;
     }
 
-    if ($type === 'dropdown') {
+    if ($type === 'dropdown' || $type === 'conditional') {
         $allowed = [];
         foreach (get_asset_field_options((int)$field['id']) as $option) {
             $allowed[strtolower($option['option_value'])] = $option['option_value'];
@@ -2157,6 +2580,272 @@ function soft_delete_assets(array $assetIds, array $user): int
     return $deleted;
 }
 
+function asset_filter_value(array $asset, string $fieldKey): string
+{
+    return trim((string)($asset['values'][$fieldKey] ?? ''));
+}
+
+function asset_file_extensions_for_asset(array $asset, string $fieldKey): array
+{
+    $extensions = [];
+    foreach (($asset['files'][$fieldKey] ?? []) as $fileRow) {
+        $ext = strtolower(trim((string)($fileRow['file_ext'] ?? '')));
+        if ($ext !== '') {
+            $extensions[$ext] = $ext;
+        }
+    }
+    ksort($extensions, SORT_NATURAL | SORT_FLAG_CASE);
+    return array_values($extensions);
+}
+
+function asset_date_in_range(string $value, string $from, string $to): bool
+{
+    $value = trim($value);
+    if ($value === '') {
+        return false;
+    }
+    if ($from !== '' && $value < $from) {
+        return false;
+    }
+    if ($to !== '' && $value > $to) {
+        return false;
+    }
+    return true;
+}
+
+function asset_matches_hierarchy_filters(array $asset, array $filters): bool
+{
+    $zoneId = (int)($filters['zone_id'] ?? 0);
+    $circleId = (int)($filters['circle_id'] ?? 0);
+    $divisionId = (int)($filters['division_id'] ?? 0);
+    $subdivisionId = (int)($filters['subdivision_id'] ?? 0);
+    if ($zoneId <= 0 && $circleId <= 0 && $divisionId <= 0 && $subdivisionId <= 0) {
+        return true;
+    }
+    $assetOfficeType = (int)($asset['office_type'] ?? 0);
+    $assetOfficeId = (int)($asset['office_id'] ?? 0);
+    $resolvedZoneId = 0;
+    $resolvedCircleId = 0;
+    $resolvedDivisionId = 0;
+    $resolvedSubdivisionId = 0;
+    if ($assetOfficeType === 2) {
+        $resolvedZoneId = $assetOfficeId;
+    } elseif ($assetOfficeType === 3) {
+        $circle = find_circle_with_zone($assetOfficeId);
+        $resolvedZoneId = (int)($circle['zone_id'] ?? 0);
+        $resolvedCircleId = $assetOfficeId;
+    } elseif ($assetOfficeType === 4) {
+        $division = find_division_with_hierarchy($assetOfficeId);
+        $resolvedZoneId = (int)($division['zone_id'] ?? 0);
+        $resolvedCircleId = (int)($division['circle_id'] ?? 0);
+        $resolvedDivisionId = $assetOfficeId;
+    } elseif ($assetOfficeType === 5) {
+        $subdivision = find_subdivision_with_hierarchy($assetOfficeId);
+        $resolvedZoneId = (int)($subdivision['zone_id'] ?? 0);
+        $resolvedCircleId = (int)($subdivision['circle_id'] ?? 0);
+        $resolvedDivisionId = (int)($subdivision['division_id'] ?? 0);
+        $resolvedSubdivisionId = $assetOfficeId;
+    }
+    if ($zoneId > 0 && $resolvedZoneId !== $zoneId) {
+        return false;
+    }
+    if ($circleId > 0 && $resolvedCircleId !== $circleId) {
+        return false;
+    }
+    if ($divisionId > 0 && $resolvedDivisionId !== $divisionId) {
+        return false;
+    }
+    if ($subdivisionId > 0 && $resolvedSubdivisionId !== $subdivisionId) {
+        return false;
+    }
+    return true;
+}
+
+function asset_matches_dynamic_filters(array $asset, array $filters, array $fieldMap): bool
+{
+    foreach ($fieldMap as $fieldKey => $field) {
+        if ((int)($field['active_status'] ?? 0) !== 1) {
+            continue;
+        }
+        $filterKey = 'field_filter_' . $fieldKey;
+        $value = trim((string)($filters[$filterKey] ?? ''));
+        $from = trim((string)($filters[$filterKey . '_from'] ?? ''));
+        $to = trim((string)($filters[$filterKey . '_to'] ?? ''));
+        if ($value === '' && $from === '' && $to === '') {
+            continue;
+        }
+        $fieldType = (string)($field['data_type'] ?? 'text');
+        if ($fieldType === 'date') {
+            if (!asset_date_in_range(asset_filter_value($asset, $fieldKey), $from, $to)) {
+                return false;
+            }
+            continue;
+        }
+        if ($fieldType === 'file') {
+            $extensions = asset_file_extensions_for_asset($asset, $fieldKey);
+            if ($value === '__no_file__') {
+                if ($extensions) {
+                    return false;
+                }
+            } elseif ($value !== '' && !in_array(strtolower($value), $extensions, true)) {
+                return false;
+            }
+            continue;
+        }
+        if ($fieldType === 'conditional') {
+            if ($value !== '' && strcasecmp(asset_filter_value($asset, $fieldKey), $value) !== 0) {
+                return false;
+            }
+            continue;
+        }
+        if (asset_is_conditional_secondary($field)) {
+            if ($value !== '' && strcasecmp(asset_filter_value($asset, $fieldKey), $value) !== 0) {
+                return false;
+            }
+            continue;
+        }
+        if ($value !== '' && strcasecmp(asset_filter_value($asset, $fieldKey), $value) !== 0) {
+            return false;
+        }
+    }
+    return true;
+}
+
+function asset_filter_visible_fields(array $fields, array $assets): array
+{
+    $threshold = asset_filter_distinct_threshold();
+    $visible = [];
+    foreach ($fields as $field) {
+        if ((int)($field['active_status'] ?? 0) !== 1 || asset_is_conditional_secondary($field)) {
+            continue;
+        }
+        $type = (string)($field['data_type'] ?? 'text');
+        $force = (int)($field['is_filter_enabled'] ?? 0) === 1;
+        if (in_array($type, ['dropdown', 'yes_no', 'date', 'file', 'conditional'], true) || $force) {
+            $visible[$field['field_key']] = true;
+            continue;
+        }
+        $distinct = [];
+        foreach ($assets as $asset) {
+            $value = asset_filter_value($asset, (string)$field['field_key']);
+            if ($value === '') {
+                continue;
+            }
+            $distinct[mb_strtolower($value, 'UTF-8')] = $value;
+            if (count($distinct) > $threshold && !$force) {
+                break;
+            }
+        }
+        if ($force || count($distinct) <= $threshold) {
+            $visible[$field['field_key']] = true;
+        }
+    }
+    return $visible;
+}
+
+function build_asset_filter_catalog(array $assets, array $fields): array
+{
+    $catalog = [
+        'categories' => [],
+        'subcategories' => [],
+        'zones' => [],
+        'circles' => [],
+        'divisions' => [],
+        'subdivisions' => [],
+        'fields' => [],
+    ];
+    foreach (get_asset_categories() as $category) {
+        $catalog['categories'][(int)$category['id']] = ['id' => (int)$category['id'], 'name' => (string)$category['name']];
+    }
+    foreach (get_asset_subcategories(null) as $subcategory) {
+        $catalog['subcategories'][(int)$subcategory['id']] = [
+            'id' => (int)$subcategory['id'],
+            'category_id' => (int)$subcategory['category_id'],
+            'name' => (string)$subcategory['name'],
+        ];
+    }
+    $visibleFields = asset_filter_visible_fields($fields, $assets);
+    foreach ($assets as $asset) {
+        $officeType = (int)($asset['office_type'] ?? 0);
+        $officeId = (int)($asset['office_id'] ?? 0);
+        if ($officeType === 2) {
+            $catalog['zones'][$officeId] = ['id' => $officeId, 'name' => (string)$asset['office_name']];
+        } elseif ($officeType === 3) {
+            $circle = find_circle_with_zone($officeId);
+            if ($circle) {
+                $catalog['zones'][(int)$circle['zone_id']] = ['id' => (int)$circle['zone_id'], 'name' => (string)$circle['zone_name']];
+                $catalog['circles'][$officeId] = ['id' => $officeId, 'zone_id' => (int)$circle['zone_id'], 'name' => (string)$circle['office_name']];
+            }
+        } elseif ($officeType === 4) {
+            $division = find_division_with_hierarchy($officeId);
+            if ($division) {
+                $catalog['zones'][(int)$division['zone_id']] = ['id' => (int)$division['zone_id'], 'name' => (string)$division['zone_name']];
+                $catalog['circles'][(int)$division['circle_id']] = ['id' => (int)$division['circle_id'], 'zone_id' => (int)$division['zone_id'], 'name' => (string)$division['circle_name']];
+                $catalog['divisions'][$officeId] = ['id' => $officeId, 'zone_id' => (int)$division['zone_id'], 'circle_id' => (int)$division['circle_id'], 'name' => (string)$division['office_name']];
+            }
+        } elseif ($officeType === 5) {
+            $subdivision = find_subdivision_with_hierarchy($officeId);
+            if ($subdivision) {
+                $catalog['zones'][(int)$subdivision['zone_id']] = ['id' => (int)$subdivision['zone_id'], 'name' => (string)$subdivision['zone_name']];
+                $catalog['circles'][(int)$subdivision['circle_id']] = ['id' => (int)$subdivision['circle_id'], 'zone_id' => (int)$subdivision['zone_id'], 'name' => (string)$subdivision['circle_name']];
+                $catalog['divisions'][(int)$subdivision['division_id']] = ['id' => (int)$subdivision['division_id'], 'zone_id' => (int)$subdivision['zone_id'], 'circle_id' => (int)$subdivision['circle_id'], 'name' => (string)$subdivision['division_name']];
+                $catalog['subdivisions'][$officeId] = ['id' => $officeId, 'zone_id' => (int)$subdivision['zone_id'], 'circle_id' => (int)$subdivision['circle_id'], 'division_id' => (int)$subdivision['division_id'], 'name' => (string)$subdivision['office_name']];
+            }
+        }
+        foreach ($fields as $field) {
+            $fieldKey = (string)$field['field_key'];
+            if (empty($visibleFields[$fieldKey]) || asset_is_conditional_secondary($field) || (int)($field['active_status'] ?? 0) !== 1) {
+                continue;
+            }
+            $fieldType = (string)($field['data_type'] ?? 'text');
+            $catalog['fields'][$fieldKey] ??= [
+                'field_key' => $fieldKey,
+                'label' => (string)$field['label'],
+                'data_type' => $fieldType,
+                'secondary_of_field_id' => (int)($field['secondary_of_field_id'] ?? 0),
+                'options' => [],
+                'secondary_options_map' => [],
+            ];
+            if ($fieldType === 'file') {
+                $extensions = asset_file_extensions_for_asset($asset, $fieldKey);
+                if (!$extensions) {
+                    $catalog['fields'][$fieldKey]['options']['__no_file__'] = 'No file';
+                }
+                foreach ($extensions as $ext) {
+                    $catalog['fields'][$fieldKey]['options'][$ext] = $ext;
+                }
+            } elseif ($fieldType === 'conditional') {
+                foreach (asset_decode_conditional_map($field) as $primary => $children) {
+                    $catalog['fields'][$fieldKey]['options'][$primary] = $primary;
+                    $catalog['fields'][$fieldKey]['secondary_options_map'][$primary] = $children;
+                }
+            } elseif (in_array($fieldType, ['dropdown', 'yes_no'], true)) {
+                foreach (get_asset_field_options((int)$field['id']) as $option) {
+                    $catalog['fields'][$fieldKey]['options'][(string)$option['option_value']] = (string)$option['option_label'];
+                }
+                if ($fieldType === 'yes_no' && !$catalog['fields'][$fieldKey]['options']) {
+                    $catalog['fields'][$fieldKey]['options'] = ['Yes' => 'Yes', 'No' => 'No'];
+                }
+            } elseif ($fieldType !== 'date') {
+                $value = asset_filter_value($asset, $fieldKey);
+                if ($value !== '') {
+                    $catalog['fields'][$fieldKey]['options'][$value] = $value;
+                }
+            }
+        }
+    }
+    foreach (['zones', 'circles', 'divisions', 'subdivisions'] as $officeKey) {
+        uasort($catalog[$officeKey], static fn(array $a, array $b): int => strnatcasecmp($a['name'], $b['name']));
+    }
+    foreach ($catalog['fields'] as &$fieldMeta) {
+        if (!empty($fieldMeta['options'])) {
+            natcasesort($fieldMeta['options']);
+        }
+    }
+    unset($fieldMeta);
+    return $catalog;
+}
+
 function get_assets(array $filters = [], ?array $user = null, bool $includeDeleted = false): array
 {
     $user = $user ?: current_user();
@@ -2239,6 +2928,16 @@ function get_assets(array $filters = [], ?array $user = null, bool $includeDelet
     if (!is_superadmin() && $viewScope === 'office_under_me') {
         $rows = array_values(array_filter($rows, static fn(array $row): bool => user_can_view_subordinate_asset($user, $row)));
     }
+    $fieldMap = asset_field_map(true);
+    $rows = array_values(array_filter($rows, static function (array $row) use ($filters, $fieldMap): bool {
+        if (!asset_matches_hierarchy_filters($row, $filters)) {
+            return false;
+        }
+        if (!asset_matches_dynamic_filters($row, $filters, $fieldMap)) {
+            return false;
+        }
+        return true;
+    }));
     $sortColumn = trim((string)($filters['sort_col'] ?? ''));
     $sortDirection = strtolower(trim((string)($filters['sort_dir'] ?? 'asc')));
     if ($sortDirection !== 'desc') {

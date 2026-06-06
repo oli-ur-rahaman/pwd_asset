@@ -24,45 +24,41 @@ foreach ($subcategories as $subcategory) {
     $subcategoryByCategory[(int)$subcategory['category_id']][] = $subcategory;
 }
 
-$filters = [];
+$selectedZone = (int)request_str('zone_id', '0');
+$selectedCircle = (int)request_str('circle_id', '0');
+$selectedDivision = (int)request_str('division_id', '0');
+$selectedSubdivision = (int)request_str('subdivision_id', '0');
+$filters = [
+    'zone_id' => $selectedZone,
+    'circle_id' => $selectedCircle,
+    'division_id' => $selectedDivision,
+    'subdivision_id' => $selectedSubdivision,
+    'category_id' => (int)request_str('category_id', '0'),
+];
+if ($subcategoryEnabled) {
+    $filters['subcategory_id'] = (int)request_str('subcategory_id', '0');
+}
 $selectedOfficeType = 0;
 $selectedOfficeId = 0;
-if (is_superadmin()) {
-    $selectedZone = (int)request_str('zone_id', '0');
-    $selectedCircle = (int)request_str('circle_id', '0');
-    $selectedDivision = (int)request_str('division_id', '0');
-    $selectedSubdivision = (int)request_str('subdivision_id', '0');
-    if ($selectedSubdivision > 0) {
-        $selectedOfficeType = 5;
-        $selectedOfficeId = $selectedSubdivision;
-    } elseif ($selectedDivision > 0) {
-        $selectedOfficeType = 4;
-        $selectedOfficeId = $selectedDivision;
-    } elseif ($selectedCircle > 0) {
-        $selectedOfficeType = 3;
-        $selectedOfficeId = $selectedCircle;
-    } elseif ($selectedZone > 0) {
-        $selectedOfficeType = 2;
-        $selectedOfficeId = $selectedZone;
-    }
-    if ($selectedOfficeType > 0) {
-        $filters['office_type'] = $selectedOfficeType;
-        $filters['office_id'] = $selectedOfficeId;
-    }
-    $filters['category_id'] = (int)request_str('category_id', '0');
-    if ($subcategoryEnabled) {
-        $filters['subcategory_id'] = (int)request_str('subcategory_id', '0');
-    }
-    $filters['condition_value'] = request_str('condition_value', '');
-    $filters['declared_status'] = request_str('declared_status', '');
+if ($selectedSubdivision > 0) {
+    $selectedOfficeType = 5;
+    $selectedOfficeId = $selectedSubdivision;
+} elseif ($selectedDivision > 0) {
+    $selectedOfficeType = 4;
+    $selectedOfficeId = $selectedDivision;
+} elseif ($selectedCircle > 0) {
+    $selectedOfficeType = 3;
+    $selectedOfficeId = $selectedCircle;
+} elseif ($selectedZone > 0) {
+    $selectedOfficeType = 2;
+    $selectedOfficeId = $selectedZone;
 }
-
 $filters['office_view_scope'] = $currentOfficeViewScope;
 $sortColumn = request_str('sort_col', '');
 $sortDirection = strtolower(request_str('sort_dir', 'asc')) === 'desc' ? 'desc' : 'asc';
 $filters['sort_col'] = $sortColumn;
 $filters['sort_dir'] = $sortDirection;
-$groupedAssets = get_assets_grouped_by_category($filters, $user);
+$baseScopeAssets = get_assets(['office_view_scope' => $currentOfficeViewScope], $user);
 $declaration = null;
 $officeSummary = null;
 if (!is_superadmin()) {
@@ -91,6 +87,29 @@ foreach ($fields as $field) {
 }
 $availableTableColumns = asset_table_available_columns($fields, $uiFieldLabels, $currentOfficeViewScope);
 $columnPreferenceMap = get_asset_table_column_preferences((int)$user['id']);
+$filterCatalog = build_asset_filter_catalog($baseScopeAssets, $fields);
+$visibleFilterFields = asset_filter_visible_fields($fields, $baseScopeAssets);
+$showCategoryFilter = count($filterCatalog['categories']) > 1;
+$showSubcategoryFilter = $subcategoryEnabled && count($filterCatalog['subcategories']) > 0;
+$showZoneFilter = is_superadmin();
+$showCircleFilter = is_superadmin() || ($isUnderMeView && (int)($user['office_type'] ?? 0) === 2);
+$showDivisionFilter = is_superadmin() || ($isUnderMeView && in_array((int)($user['office_type'] ?? 0), [2, 3], true));
+$showSubdivisionFilter = is_superadmin() || ($isUnderMeView && in_array((int)($user['office_type'] ?? 0), [2, 3, 4], true));
+$fieldFilterSelections = [];
+foreach ($fields as $field) {
+    if ((int)($field['active_status'] ?? 0) !== 1) {
+        continue;
+    }
+    $fieldKey = (string)$field['field_key'];
+    $filterKey = 'field_filter_' . $fieldKey;
+    $filters[$filterKey] = request_str($filterKey, '');
+    $fieldFilterSelections[$fieldKey] = (string)$filters[$filterKey];
+    if ((string)$field['data_type'] === 'date') {
+        $filters[$filterKey . '_from'] = request_str($filterKey . '_from', '');
+        $filters[$filterKey . '_to'] = request_str($filterKey . '_to', '');
+    }
+}
+$groupedAssets = get_assets_grouped_by_category($filters, $user);
 $categoryNameById = [];
 foreach ($categories as $category) {
     $categoryNameById[(int)$category['id']] = (string)$category['name'];
@@ -101,30 +120,46 @@ foreach ($fields as $field) {
     if ((int)$field['is_import_enabled'] !== 1 || (int)$field['active_status'] !== 1) {
         continue;
     }
+    $conditionalMap = asset_is_conditional_primary($field) ? asset_decode_conditional_map($field) : [];
     $importFieldDefs[] = [
         'field_key' => (string)$field['field_key'],
         'label' => (string)($uiFieldLabels[$field['field_key']] ?? $field['label']),
         'data_type' => (string)$field['data_type'],
         'required' => (int)$field['is_required'] === 1,
         'is_unique' => (int)($field['is_unique'] ?? 0) === 1,
+        'number_format_rule' => (string)($field['number_format_rule'] ?? ''),
+        'secondary_of_field_key' => null,
+        'conditional_map' => $conditionalMap,
         'options' => array_map(
             static fn(array $option): string => (string)$option['option_value'],
             get_asset_field_options((int)$field['id'])
         ),
         'existing_values' => $uniqueValueMap[(string)$field['field_key']] ?? [],
     ];
+    $parentId = (int)($field['secondary_of_field_id'] ?? 0);
+    if ($parentId > 0) {
+        foreach ($fields as $candidateField) {
+            if ((int)$candidateField['id'] === $parentId) {
+                $importFieldDefs[count($importFieldDefs) - 1]['secondary_of_field_key'] = (string)$candidateField['field_key'];
+                break;
+            }
+        }
+    }
 }
 $downloadFilters = [
     'office_type' => $selectedOfficeType,
     'office_id' => $selectedOfficeId,
     'category_id' => (int)($filters['category_id'] ?? 0),
-    'condition_value' => (string)($filters['condition_value'] ?? ''),
     'office_view_scope' => $currentOfficeViewScope,
+    'zone_id' => $selectedZone,
+    'circle_id' => $selectedCircle,
+    'division_id' => $selectedDivision,
+    'subdivision_id' => $selectedSubdivision,
 ];
 if ($subcategoryEnabled) {
     $downloadFilters['subcategory_id'] = (int)($filters['subcategory_id'] ?? 0);
 }
-$conditionOptions = isset($fieldMap['condition_value']) ? get_asset_field_options((int)$fieldMap['condition_value']['id']) : [];
+$downloadFilters = array_merge($downloadFilters, $fieldFilterSelections);
 $defaultCategoryId = !$editingAsset && count($categories) === 1 ? (int)$categories[0]['id'] : 0;
 $historyAssetId = (int)request_str('asset_history', '0');
 $historyAsset = $historyAssetId > 0 ? get_asset($historyAssetId, true) : null;
@@ -199,7 +234,7 @@ $fileIconMeta = static function (string $originalName): array {
 </section>
 <?php endif; ?>
 
-<?php if (is_superadmin()): ?>
+<?php if (false && is_superadmin()): ?>
 <section class="card">
     <h2>Master Filters</h2>
     <form method="get" action="index.php" id="asset-filters" class="grid board-filters-grid">
@@ -274,6 +309,123 @@ $fileIconMeta = static function (string $originalName): array {
 </section>
 <?php endif; ?>
 
+<section class="card">
+    <h2>Filters</h2>
+    <form method="get" action="index.php" id="asset-filters" class="grid board-filters-grid">
+        <input type="hidden" name="page" value="board">
+        <?php if (!is_superadmin()): ?><input type="hidden" name="office_view_scope" value="<?= e($currentOfficeViewScope); ?>"><?php endif; ?>
+        <?php if ($showCategoryFilter): ?>
+        <label>Category
+            <select name="category_id" id="filter-category-select">
+                <option value="0">All</option>
+                <?php foreach ($filterCatalog['categories'] as $category): ?>
+                    <option value="<?= e((string)$category['id']); ?>" <?= (int)($filters['category_id'] ?? 0) === (int)$category['id'] ? 'selected' : ''; ?>><?= e($category['name']); ?></option>
+                <?php endforeach; ?>
+            </select>
+        </label>
+        <?php endif; ?>
+        <?php if ($showSubcategoryFilter): ?>
+        <label>Sub-category
+            <select name="subcategory_id" id="filter-subcategory-select">
+                <option value="0">All</option>
+                <?php foreach ($filterCatalog['subcategories'] as $subcategory): ?>
+                    <option value="<?= e((string)$subcategory['id']); ?>" data-category="<?= e((string)$subcategory['category_id']); ?>" <?= (int)($filters['subcategory_id'] ?? 0) === (int)$subcategory['id'] ? 'selected' : ''; ?>><?= e($subcategory['name']); ?></option>
+                <?php endforeach; ?>
+            </select>
+        </label>
+        <?php endif; ?>
+        <?php if ($showZoneFilter): ?>
+        <label>Zone
+            <select name="zone_id" id="filter-zone-select">
+                <option value="0">All</option>
+                <?php foreach ($filterCatalog['zones'] as $zone): ?>
+                    <option value="<?= e((string)$zone['id']); ?>" <?= $selectedZone === (int)$zone['id'] ? 'selected' : ''; ?>><?= e($zone['name']); ?></option>
+                <?php endforeach; ?>
+            </select>
+        </label>
+        <?php endif; ?>
+        <?php if ($showCircleFilter): ?>
+        <label>Circle
+            <select name="circle_id" id="filter-circle-select">
+                <option value="0">All</option>
+                <?php foreach ($filterCatalog['circles'] as $circle): ?>
+                    <option value="<?= e((string)$circle['id']); ?>" data-zone="<?= e((string)$circle['zone_id']); ?>" <?= $selectedCircle === (int)$circle['id'] ? 'selected' : ''; ?>><?= e($circle['name']); ?></option>
+                <?php endforeach; ?>
+            </select>
+        </label>
+        <?php endif; ?>
+        <?php if ($showDivisionFilter): ?>
+        <label>Division
+            <select name="division_id" id="filter-division-select">
+                <option value="0">All</option>
+                <?php foreach ($filterCatalog['divisions'] as $division): ?>
+                    <option value="<?= e((string)$division['id']); ?>" data-zone="<?= e((string)$division['zone_id']); ?>" data-circle="<?= e((string)$division['circle_id']); ?>" <?= $selectedDivision === (int)$division['id'] ? 'selected' : ''; ?>><?= e($division['name']); ?></option>
+                <?php endforeach; ?>
+            </select>
+        </label>
+        <?php endif; ?>
+        <?php if ($showSubdivisionFilter): ?>
+        <label>Sub-division
+            <select name="subdivision_id" id="filter-subdivision-select">
+                <option value="0">All</option>
+                <?php foreach ($filterCatalog['subdivisions'] as $subdivision): ?>
+                    <option value="<?= e((string)$subdivision['id']); ?>" data-zone="<?= e((string)$subdivision['zone_id']); ?>" data-circle="<?= e((string)$subdivision['circle_id']); ?>" data-division="<?= e((string)$subdivision['division_id']); ?>" <?= $selectedSubdivision === (int)$subdivision['id'] ? 'selected' : ''; ?>><?= e($subdivision['name']); ?></option>
+                <?php endforeach; ?>
+            </select>
+        </label>
+        <?php endif; ?>
+        <?php foreach ($fields as $field): ?>
+            <?php
+                if ((int)($field['active_status'] ?? 0) !== 1 || empty($visibleFilterFields[$field['field_key']]) || asset_is_conditional_secondary($field)) {
+                    continue;
+                }
+                $fieldKey = (string)$field['field_key'];
+                $fieldType = (string)$field['data_type'];
+                $fieldLabel = (string)($uiFieldLabels[$fieldKey] ?? $field['label']);
+                $filterKey = 'field_filter_' . $fieldKey;
+                $catalogField = $filterCatalog['fields'][$fieldKey] ?? null;
+            ?>
+            <?php if ($fieldType === 'date'): ?>
+                <label><?= e($fieldLabel); ?> From
+                    <input type="date" name="<?= e($filterKey . '_from'); ?>" value="<?= e((string)($filters[$filterKey . '_from'] ?? '')); ?>">
+                </label>
+                <label><?= e($fieldLabel); ?> To
+                    <input type="date" name="<?= e($filterKey . '_to'); ?>" value="<?= e((string)($filters[$filterKey . '_to'] ?? '')); ?>">
+                </label>
+            <?php elseif ($fieldType === 'conditional'): ?>
+                <?php $childField = get_asset_conditional_child_field((int)$field['id']); ?>
+                <label><?= e($fieldLabel); ?>
+                    <select name="<?= e($filterKey); ?>" data-filter-conditional-primary="1" data-filter-conditional-child="<?= e((string)($childField['field_key'] ?? '')); ?>" data-filter-conditional-map='<?= e(json_encode($catalogField['secondary_options_map'] ?? [], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)); ?>'>
+                        <option value="">All</option>
+                        <?php foreach (($catalogField['options'] ?? []) as $optionValue => $optionLabel): ?>
+                            <option value="<?= e((string)$optionValue); ?>" <?= ($filters[$filterKey] ?? '') === (string)$optionValue ? 'selected' : ''; ?>><?= e((string)$optionLabel); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </label>
+                <?php if ($childField): ?>
+                    <?php $childFilterKey = 'field_filter_' . $childField['field_key']; ?>
+                    <label><?= e((string)($uiFieldLabels[$childField['field_key']] ?? $childField['label'])); ?>
+                        <select name="<?= e($childFilterKey); ?>" data-filter-conditional-secondary="<?= e($fieldKey); ?>">
+                            <option value="">All</option>
+                        </select>
+                    </label>
+                <?php endif; ?>
+            <?php elseif (!empty($catalogField['options'])): ?>
+                <label><?= e($fieldLabel); ?>
+                    <select name="<?= e($filterKey); ?>">
+                        <option value="">All</option>
+                        <?php foreach ($catalogField['options'] as $optionValue => $optionLabel): ?>
+                            <option value="<?= e((string)$optionValue); ?>" <?= ($filters[$filterKey] ?? '') === (string)$optionValue ? 'selected' : ''; ?>><?= e((string)$optionLabel); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </label>
+            <?php endif; ?>
+        <?php endforeach; ?>
+        <button type="submit">Apply</button>
+        <a href="index.php?page=board<?= !is_superadmin() ? '&office_view_scope=' . urlencode($currentOfficeViewScope) : ''; ?>" class="button-link">Reset</a>
+    </form>
+</section>
+
 <?php if (!is_superadmin()): ?>
 <section class="card">
     <div class="toolbar-row">
@@ -327,6 +479,7 @@ $fileIconMeta = static function (string $originalName): array {
                     <h2><?= e($category['name']); ?></h2>
                     <div class="card-head-actions">
                         <div class="muted"><?= count($assets); ?> asset(s)</div>
+                        <a href="index.php?<?= e(http_build_query(array_diff_key(array_merge($_GET, ['page' => 'board', 'office_view_scope' => $currentOfficeViewScope]), ['sort_col' => true, 'sort_dir' => true]))); ?>" class="btn-small button-link">Refresh</a>
                         <button type="button" class="btn-small" data-modal="columns-modal-<?= (int)$category['id']; ?>">Columns</button>
                     </div>
                 </div>
@@ -345,15 +498,25 @@ $fileIconMeta = static function (string $originalName): array {
                                         $params['sort_dir'] = ($sortColumn === $columnKey && $sortDirection === 'asc') ? 'desc' : 'asc';
                                         return 'index.php?' . http_build_query($params);
                                     };
+                                    $sortIndicator = static function (string $columnKey) use ($sortColumn, $sortDirection): string {
+                                        if ($sortColumn !== $columnKey) {
+                                            return '';
+                                        }
+                                        return $sortDirection === 'desc' ? ' ↓' : ' ↑';
+                                    };
+                                    $sortClass = static function (string $columnKey) use ($sortColumn): string {
+                                        return $sortColumn === $columnKey ? ' sortable-head is-active' : ' sortable-head';
+                                    };
                                 ?>
-                                <th><a href="<?= e($headerSortUrl('__sl')); ?>" class="sortable-head">SL No</a></th>
-                                <?php if ($showAssetNumber && !empty($visibleColumnKeys['asset_number'])): ?><th><a href="<?= e($headerSortUrl('asset_number')); ?>" class="sortable-head">Asset Number</a></th><?php endif; ?>
-                                <?php if ((is_superadmin() || $isUnderMeView) && !empty($visibleColumnKeys['office_name'])): ?><th><a href="<?= e($headerSortUrl('office_name')); ?>" class="sortable-head">Office</a></th><?php endif; ?>
-                                <?php if ($subcategoryEnabled && !empty($visibleColumnKeys['subcategory_name'])): ?><th><a href="<?= e($headerSortUrl('subcategory_name')); ?>" class="sortable-head">Sub-category</a></th><?php endif; ?>
-                                <?php if (!empty($visibleColumnKeys['data_provider'])): ?><th><a href="<?= e($headerSortUrl('data_provider')); ?>" class="sortable-head">Data Provider</a></th><?php endif; ?>
+                                <th class="<?= $sortColumn === '__sl' ? 'sort-active' : ''; ?>"><a href="<?= e($headerSortUrl('__sl')); ?>" class="<?= trim($sortClass('__sl')); ?>">SL No<?= e($sortIndicator('__sl')); ?></a></th>
+                                <?php if ($showAssetNumber && !empty($visibleColumnKeys['asset_number'])): ?><th class="<?= $sortColumn === 'asset_number' ? 'sort-active' : ''; ?>"><a href="<?= e($headerSortUrl('asset_number')); ?>" class="<?= trim($sortClass('asset_number')); ?>">Asset Number<?= e($sortIndicator('asset_number')); ?></a></th><?php endif; ?>
+                                <?php if ((is_superadmin() || $isUnderMeView) && !empty($visibleColumnKeys['office_name'])): ?><th class="<?= $sortColumn === 'office_name' ? 'sort-active' : ''; ?>"><a href="<?= e($headerSortUrl('office_name')); ?>" class="<?= trim($sortClass('office_name')); ?>">Office<?= e($sortIndicator('office_name')); ?></a></th><?php endif; ?>
+                                <?php if ($subcategoryEnabled && !empty($visibleColumnKeys['subcategory_name'])): ?><th class="<?= $sortColumn === 'subcategory_name' ? 'sort-active' : ''; ?>"><a href="<?= e($headerSortUrl('subcategory_name')); ?>" class="<?= trim($sortClass('subcategory_name')); ?>">Sub-category<?= e($sortIndicator('subcategory_name')); ?></a></th><?php endif; ?>
+                                <?php if (!empty($visibleColumnKeys['data_provider'])): ?><th class="<?= $sortColumn === 'data_provider' ? 'sort-active' : ''; ?>"><a href="<?= e($headerSortUrl('data_provider')); ?>" class="<?= trim($sortClass('data_provider')); ?>">Data Provider<?= e($sortIndicator('data_provider')); ?></a></th><?php endif; ?>
                                 <?php foreach ($fields as $field): ?>
                                     <?php if ((int)$field['is_displayed'] === 1 && (int)$field['active_status'] === 1 && !empty($visibleColumnKeys[$field['field_key']])): ?>
-                                        <th><a href="<?= e($headerSortUrl((string)$field['field_key'])); ?>" class="sortable-head"><?= e((string)($uiFieldLabels[$field['field_key']] ?? $field['label'])); ?></a></th>
+                                        <?php $fieldSortKey = (string)$field['field_key']; ?>
+                                        <th class="<?= $sortColumn === $fieldSortKey ? 'sort-active' : ''; ?>"><a href="<?= e($headerSortUrl($fieldSortKey)); ?>" class="<?= trim($sortClass($fieldSortKey)); ?>"><?= e((string)($uiFieldLabels[$field['field_key']] ?? $field['label'])); ?><?= e($sortIndicator($fieldSortKey)); ?></a></th>
                                     <?php endif; ?>
                                 <?php endforeach; ?>
                                 <?php if ($showActionColumn): ?><th>Action</th><?php endif; ?>
@@ -550,10 +713,44 @@ $fileIconMeta = static function (string $originalName): array {
                         <input type="date" name="fields[<?= e($field['field_key']); ?>]" value="<?= e($value); ?>" <?= (int)$field['is_required'] === 1 ? 'required' : ''; ?>>
                     <?php elseif ($field['data_type'] === 'number'): ?>
                         <input type="number" step="0.01" name="fields[<?= e($field['field_key']); ?>]" value="<?= e($value); ?>" <?= (int)$field['is_required'] === 1 ? 'required' : ''; ?>>
-                    <?php elseif ($field['data_type'] === 'dropdown'): ?>
-                        <select name="fields[<?= e($field['field_key']); ?>]" <?= (int)$field['is_required'] === 1 ? 'required' : ''; ?>>
+                    <?php elseif ($field['data_type'] === 'dropdown' || $field['data_type'] === 'conditional'): ?>
+                        <?php
+                            $parentId = (int)($field['secondary_of_field_id'] ?? 0);
+                            $parentField = null;
+                            foreach ($fields as $candidateField) {
+                                if ((int)$candidateField['id'] === $parentId) {
+                                    $parentField = $candidateField;
+                                    break;
+                                }
+                            }
+                            $conditionalParent = asset_is_conditional_primary($field) ? $field : $parentField;
+                            $childOptions = ($parentField && $value !== '')
+                                ? asset_conditional_child_options($parentField, (string)($editValues[$parentField['field_key']] ?? ''))
+                                : [];
+                        ?>
+                        <?php $fieldNameAttr = 'fields[' . $field['field_key'] . ']'; ?>
+                        <select
+                            name="fields[<?= e($field['field_key']); ?>]"
+                            data-field-key="<?= e($field['field_key']); ?>"
+                            data-field-name="<?= e($fieldNameAttr); ?>"
+                            <?= (int)$field['is_required'] === 1 ? 'required' : ''; ?>
+                            <?php if (asset_is_conditional_primary($field)): ?>
+                                data-conditional-primary="1"
+                                data-conditional-map='<?= e(json_encode(asset_decode_conditional_map($field), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)); ?>'
+                                <?php $conditionalChildField = get_asset_conditional_child_field((int)$field['id']); ?>
+                                data-conditional-child="<?= e((string)($conditionalChildField['field_key'] ?? '')); ?>"
+                            <?php elseif ($parentField): ?>
+                                data-conditional-secondary="<?= e((string)$parentField['field_key']); ?>"
+                            <?php endif; ?>
+                        >
                             <option value="">Select</option>
-                            <?php foreach (get_asset_field_options((int)$field['id']) as $option): ?>
+                            <?php
+                                $fieldOptions = get_asset_field_options((int)$field['id']);
+                                if ($parentField) {
+                                    $fieldOptions = array_map(static fn(string $option): array => ['option_value' => $option, 'option_label' => $option], $childOptions);
+                                }
+                            ?>
+                            <?php foreach ($fieldOptions as $option): ?>
                                 <option value="<?= e($option['option_value']); ?>" <?= $value === (string)$option['option_value'] ? 'selected' : ''; ?>><?= e($option['option_label']); ?></option>
                             <?php endforeach; ?>
                         </select>
@@ -666,13 +863,31 @@ $fileIconMeta = static function (string $originalName): array {
                                         <?php $fieldError = $row['errors'][$field['field_key']] ?? null; ?>
                                         <td class="<?= $fieldError ? 'cell-error' : 'cell-valid'; ?>">
                                             <?php $fieldValue = (string)($row['fields'][$field['field_key']] ?? ''); ?>
-                                            <?php if (in_array($field['data_type'], ['dropdown', 'yes_no'], true)): ?>
+                                            <?php if (in_array($field['data_type'], ['dropdown', 'yes_no', 'conditional'], true)): ?>
                                                 <select
                                                     class="review-input"
                                                     data-review-role="field"
                                                     data-field-key="<?= e($field['field_key']); ?>"
                                                     data-field-type="<?= e($field['data_type']); ?>"
                                                     data-required="<?= (int)$field['is_required']; ?>"
+                                                    data-number-format-rule="<?= e((string)($field['number_format_rule'] ?? '')); ?>"
+                                                    <?php
+                                                        $parentId = (int)($field['secondary_of_field_id'] ?? 0);
+                                                        $parentField = null;
+                                                        foreach ($fields as $candidateField) {
+                                                            if ((int)$candidateField['id'] === $parentId) {
+                                                                $parentField = $candidateField;
+                                                                break;
+                                                            }
+                                                        }
+                                                    ?>
+                                                    <?php if (asset_is_conditional_primary($field)): ?>
+                                                        data-conditional-primary="1"
+                                                        data-conditional-map='<?= e(json_encode(asset_decode_conditional_map($field), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)); ?>'
+                                                        data-conditional-child="<?= e((string)(get_asset_conditional_child_field((int)$field['id'])['field_key'] ?? '')); ?>"
+                                                    <?php elseif ($parentField): ?>
+                                                        data-conditional-secondary="<?= e((string)$parentField['field_key']); ?>"
+                                                    <?php endif; ?>
                                                     name="rows[<?= $rowIndex; ?>][fields][<?= e($field['field_key']); ?>]"
                                                 >
                                                     <option value="">Select</option>
@@ -689,6 +904,17 @@ $fileIconMeta = static function (string $originalName): array {
                                                         <option value="<?= e((string)$option['option_value']); ?>" <?= strcasecmp($fieldValue, (string)$option['option_value']) === 0 ? 'selected' : ''; ?>><?= e((string)$option['option_label']); ?></option>
                                                     <?php endforeach; ?>
                                                 </select>
+                                            <?php elseif ($field['data_type'] === 'text'): ?>
+                                                <textarea
+                                                    class="review-input review-textarea"
+                                                    data-review-role="field"
+                                                    data-field-key="<?= e($field['field_key']); ?>"
+                                                    data-field-type="<?= e($field['data_type']); ?>"
+                                                    data-required="<?= (int)$field['is_required']; ?>"
+                                                    data-number-format-rule="<?= e((string)($field['number_format_rule'] ?? '')); ?>"
+                                                    name="rows[<?= $rowIndex; ?>][fields][<?= e($field['field_key']); ?>]"
+                                                    rows="3"
+                                                ><?= e($fieldValue); ?></textarea>
                                             <?php else: ?>
                                                 <input
                                                     type="<?= $field['data_type'] === 'number' ? 'number' : ($field['data_type'] === 'date' ? 'date' : 'text'); ?>"
@@ -698,6 +924,7 @@ $fileIconMeta = static function (string $originalName): array {
                                                     data-field-key="<?= e($field['field_key']); ?>"
                                                     data-field-type="<?= e($field['data_type']); ?>"
                                                     data-required="<?= (int)$field['is_required']; ?>"
+                                                    data-number-format-rule="<?= e((string)($field['number_format_rule'] ?? '')); ?>"
                                                     name="rows[<?= $rowIndex; ?>][fields][<?= e($field['field_key']); ?>]"
                                                     value="<?= e($fieldValue); ?>">
                                             <?php endif; ?>

@@ -486,6 +486,9 @@ function save_info_row(?string $video_url, ?string $login_message, array $extras
     $asset_number_visible_to_users = array_key_exists('asset_number_visible_to_users', $extras)
         ? (int)$extras['asset_number_visible_to_users']
         : (int)($existing['asset_number_visible_to_users'] ?? 1);
+    $asset_filter_distinct_threshold = array_key_exists('asset_filter_distinct_threshold', $extras)
+        ? max(1, (int)$extras['asset_filter_distinct_threshold'])
+        : (int)($existing['asset_filter_distinct_threshold'] ?? 20);
     $opr_repair = $extras['i_opr_repair'] ?? ($existing['i_opr_repair'] ?? null);
     $opr_other = $extras['i_opr_other'] ?? ($existing['i_opr_other'] ?? null);
     $dev_pw = $extras['i_dev_pw'] ?? ($existing['i_dev_pw'] ?? null);
@@ -494,12 +497,12 @@ function save_info_row(?string $video_url, ?string $login_message, array $extras
     $opr_msg = $extras['i_opr'] ?? ($existing['i_opr'] ?? null);
     $dev_msg = $extras['i_dev'] ?? ($existing['i_dev'] ?? null);
     if ($existing) {
-        $stmt = db()->prepare('UPDATE info SET site_name = ?, video_tutorial_url = ?, login_message = ?, welcome_message = ?, asset_subcategory_enabled = ?, asset_number_visible_to_users = ?, i_opr_repair = ?, i_opr_other = ?, i_dev_pw = ?, i_opr_min = ?, i_dev_min = ?, i_opr = ?, i_dev = ?, updated_at = NOW() WHERE id = ?');
-        $stmt->execute([$site_name, $video_url, $login_message, $welcome_message, $asset_subcategory_enabled, $asset_number_visible_to_users, $opr_repair, $opr_other, $dev_pw, $opr_min, $dev_min, $opr_msg, $dev_msg, (int)$existing['id']]);
+        $stmt = db()->prepare('UPDATE info SET site_name = ?, video_tutorial_url = ?, login_message = ?, welcome_message = ?, asset_subcategory_enabled = ?, asset_number_visible_to_users = ?, asset_filter_distinct_threshold = ?, i_opr_repair = ?, i_opr_other = ?, i_dev_pw = ?, i_opr_min = ?, i_dev_min = ?, i_opr = ?, i_dev = ?, updated_at = NOW() WHERE id = ?');
+        $stmt->execute([$site_name, $video_url, $login_message, $welcome_message, $asset_subcategory_enabled, $asset_number_visible_to_users, $asset_filter_distinct_threshold, $opr_repair, $opr_other, $dev_pw, $opr_min, $dev_min, $opr_msg, $dev_msg, (int)$existing['id']]);
         return;
     }
-    $stmt = db()->prepare('INSERT INTO info (site_name, video_tutorial_url, login_message, welcome_message, asset_subcategory_enabled, asset_number_visible_to_users, i_opr_repair, i_opr_other, i_dev_pw, i_opr_min, i_dev_min, i_opr, i_dev, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())');
-    $stmt->execute([$site_name, $video_url, $login_message, $welcome_message, $asset_subcategory_enabled, $asset_number_visible_to_users, $opr_repair, $opr_other, $dev_pw, $opr_min, $dev_min, $opr_msg, $dev_msg]);
+    $stmt = db()->prepare('INSERT INTO info (site_name, video_tutorial_url, login_message, welcome_message, asset_subcategory_enabled, asset_number_visible_to_users, asset_filter_distinct_threshold, i_opr_repair, i_opr_other, i_dev_pw, i_opr_min, i_dev_min, i_opr, i_dev, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())');
+    $stmt->execute([$site_name, $video_url, $login_message, $welcome_message, $asset_subcategory_enabled, $asset_number_visible_to_users, $asset_filter_distinct_threshold, $opr_repair, $opr_other, $dev_pw, $opr_min, $dev_min, $opr_msg, $dev_msg]);
 }
 
 function get_office_name_for_user(array $user): string
