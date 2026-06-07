@@ -1,7 +1,27 @@
 <?php
 require __DIR__ . '/header.php';
+$canManageSuperadmin = can_manage_superadmin_scope();
 $info = get_info_row();
 ?>
+<?php if (!$canManageSuperadmin): ?>
+    <style>
+        .superadmin-readonly-page button[type="submit"] {
+            display: none !important;
+        }
+        .superadmin-readonly-page input:not([type="hidden"]),
+        .superadmin-readonly-page textarea {
+            pointer-events: none;
+            background: #f4f6f8;
+            color: #425466;
+        }
+    </style>
+<?php endif; ?>
+<div class="<?= !$canManageSuperadmin ? 'superadmin-readonly-page' : ''; ?>">
+<?php if (!$canManageSuperadmin): ?>
+    <section class="card">
+        <p class="hint">View-only superadmin users can review interface settings here but cannot save changes.</p>
+    </section>
+<?php endif; ?>
 <section class="card">
     <h2>Site Name</h2>
     <form method="post" action="index.php" class="grid">
@@ -57,4 +77,5 @@ $info = get_info_row();
         <button type="submit">Save</button>
     </form>
 </section>
+ </div>
 <?php require __DIR__ . '/footer.php'; ?>

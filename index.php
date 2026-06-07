@@ -39,19 +39,86 @@ if ($action !== null && !csrf_validate($_POST['csrf_token'] ?? null)) {
     exit('Invalid CSRF token.');
 }
 
+$adminRedirect = static function (): void {
+    $segmentId = input_int('segment_id');
+    $params = ['page' => 'admin'];
+    if ($segmentId > 0) {
+        $params['segment_id'] = $segmentId;
+    }
+    redirect('index.php?' . http_build_query($params));
+};
+
+$boardRedirect = static function (): void {
+    $params = ['page' => 'board'];
+    $segmentId = input_int('segment_id');
+    if ($segmentId > 0) {
+        $params['segment_id'] = $segmentId;
+    }
+    $officeViewScope = input_str('office_view_scope');
+    if ($officeViewScope !== '') {
+        $params['office_view_scope'] = $officeViewScope;
+    }
+    redirect('index.php?' . http_build_query($params));
+};
+
+if ($action === 'create_asset_segment') {
+    if (!can_manage_superadmin_scope()) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
+    try {
+        $segmentId = create_asset_segment(input_str('segment_name'));
+        flash('success', 'Segment created.');
+        redirect('index.php?' . http_build_query(['page' => 'admin', 'segment_id' => $segmentId]));
+    } catch (Throwable $e) {
+        flash('error', $e->getMessage());
+        $adminRedirect();
+    }
+}
+
+if ($action === 'update_asset_segment') {
+    if (!can_manage_superadmin_scope()) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
+    try {
+        $segmentId = input_int('segment_id');
+        update_asset_segment($segmentId, input_str('segment_name'));
+        flash('success', 'Segment updated.');
+    } catch (Throwable $e) {
+        flash('error', $e->getMessage());
+    }
+    $adminRedirect();
+}
+
+if ($action === 'toggle_asset_segment') {
+    if (!can_manage_superadmin_scope()) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
+    try {
+        set_asset_segment_status(input_int('segment_id'), input_int('active_status', 1));
+        flash('success', 'Segment status updated.');
+    } catch (Throwable $e) {
+        flash('error', $e->getMessage());
+    }
+    $adminRedirect();
+}
+
 if ($action === 'create_asset_category') {
     if (!can_manage_superadmin_scope()) {
         http_response_code(403);
         exit('Not allowed.');
     }
     $name = input_str('name');
+    $segmentId = input_int('segment_id');
     if ($name === '') {
         flash('error', 'Category name is required.');
     } else {
-        create_asset_category($name);
+        create_asset_category($name, $segmentId);
         flash('success', 'Category created.');
     }
-    redirect('index.php?page=admin');
+    $adminRedirect();
 }
 
 if ($action === 'update_asset_category') {
@@ -61,13 +128,18 @@ if ($action === 'update_asset_category') {
     }
     $id = input_int('category_id');
     $name = input_str('name');
+    $segmentId = input_int('segment_id');
     if ($id <= 0 || $name === '') {
         flash('error', 'Category update failed.');
     } else {
-        update_asset_category($id, $name);
-        flash('success', 'Category updated.');
+        try {
+            update_asset_category($id, $name, $segmentId);
+            flash('success', 'Category updated.');
+        } catch (Throwable $e) {
+            flash('error', $e->getMessage());
+        }
     }
-    redirect('index.php?page=admin');
+    $adminRedirect();
 }
 
 if ($action === 'toggle_asset_category') {
@@ -75,9 +147,13 @@ if ($action === 'toggle_asset_category') {
         http_response_code(403);
         exit('Not allowed.');
     }
-    set_asset_category_status(input_int('category_id'), input_int('active_status', 1));
-    flash('success', 'Category status updated.');
-    redirect('index.php?page=admin');
+    try {
+        set_asset_category_status(input_int('category_id'), input_int('active_status', 1), input_int('segment_id'));
+        flash('success', 'Category status updated.');
+    } catch (Throwable $e) {
+        flash('error', $e->getMessage());
+    }
+    $adminRedirect();
 }
 
 if ($action === 'delete_asset_category') {
@@ -85,12 +161,16 @@ if ($action === 'delete_asset_category') {
         http_response_code(403);
         exit('Not allowed.');
     }
-    if (!delete_asset_category(input_int('category_id'))) {
-        flash('error', 'Used categories cannot be deleted. Disable it instead.');
-    } else {
-        flash('success', 'Category deleted.');
+    try {
+        if (!delete_asset_category(input_int('category_id'), input_int('segment_id'))) {
+            flash('error', 'Used categories cannot be deleted. Disable it instead.');
+        } else {
+            flash('success', 'Category deleted.');
+        }
+    } catch (Throwable $e) {
+        flash('error', $e->getMessage());
     }
-    redirect('index.php?page=admin');
+    $adminRedirect();
 }
 
 if ($action === 'create_asset_subcategory') {
@@ -100,13 +180,18 @@ if ($action === 'create_asset_subcategory') {
     }
     $categoryId = input_int('category_id');
     $name = input_str('name');
+    $segmentId = input_int('segment_id');
     if ($categoryId <= 0 || $name === '') {
         flash('error', 'Sub-category তথ্য অসম্পূর্ণ।');
     } else {
-        create_asset_subcategory($categoryId, $name);
-        flash('success', 'Sub-category created.');
+        try {
+            create_asset_subcategory($categoryId, $name, $segmentId);
+            flash('success', 'Sub-category created.');
+        } catch (Throwable $e) {
+            flash('error', $e->getMessage());
+        }
     }
-    redirect('index.php?page=admin');
+    $adminRedirect();
 }
 
 if ($action === 'update_asset_subcategory') {
@@ -117,13 +202,18 @@ if ($action === 'update_asset_subcategory') {
     $id = input_int('subcategory_id');
     $categoryId = input_int('category_id');
     $name = input_str('name');
+    $segmentId = input_int('segment_id');
     if ($id <= 0 || $categoryId <= 0 || $name === '') {
         flash('error', 'Sub-category update failed.');
     } else {
-        update_asset_subcategory($id, $categoryId, $name);
-        flash('success', 'Sub-category updated.');
+        try {
+            update_asset_subcategory($id, $categoryId, $name, $segmentId);
+            flash('success', 'Sub-category updated.');
+        } catch (Throwable $e) {
+            flash('error', $e->getMessage());
+        }
     }
-    redirect('index.php?page=admin');
+    $adminRedirect();
 }
 
 if ($action === 'toggle_asset_subcategory') {
@@ -131,9 +221,13 @@ if ($action === 'toggle_asset_subcategory') {
         http_response_code(403);
         exit('Not allowed.');
     }
-    set_asset_subcategory_status(input_int('subcategory_id'), input_int('active_status', 1));
-    flash('success', 'Sub-category status updated.');
-    redirect('index.php?page=admin');
+    try {
+        set_asset_subcategory_status(input_int('subcategory_id'), input_int('active_status', 1), input_int('segment_id'));
+        flash('success', 'Sub-category status updated.');
+    } catch (Throwable $e) {
+        flash('error', $e->getMessage());
+    }
+    $adminRedirect();
 }
 
 if ($action === 'delete_asset_subcategory') {
@@ -141,12 +235,16 @@ if ($action === 'delete_asset_subcategory') {
         http_response_code(403);
         exit('Not allowed.');
     }
-    if (!delete_asset_subcategory(input_int('subcategory_id'))) {
-        flash('error', 'Used sub-categories cannot be deleted. Disable it instead.');
-    } else {
-        flash('success', 'Sub-category deleted.');
+    try {
+        if (!delete_asset_subcategory(input_int('subcategory_id'), input_int('segment_id'))) {
+            flash('error', 'Used sub-categories cannot be deleted. Disable it instead.');
+        } else {
+            flash('success', 'Sub-category deleted.');
+        }
+    } catch (Throwable $e) {
+        flash('error', $e->getMessage());
     }
-    redirect('index.php?page=admin');
+    $adminRedirect();
 }
 
 if ($action === 'save_subcategory_visibility') {
@@ -154,9 +252,9 @@ if ($action === 'save_subcategory_visibility') {
         http_response_code(403);
         exit('Not allowed.');
     }
-    set_asset_subcategory_enabled(!empty($_POST['asset_subcategory_enabled']) ? 1 : 0);
+    set_asset_subcategory_enabled(!empty($_POST['asset_subcategory_enabled']) ? 1 : 0, input_int('segment_id'));
     flash('success', 'Sub-category visibility updated.');
-    redirect('index.php?page=admin');
+    $adminRedirect();
 }
 
 if ($action === 'save_asset_number_visibility') {
@@ -166,7 +264,7 @@ if ($action === 'save_asset_number_visibility') {
     }
     set_asset_number_visible_to_users(!empty($_POST['asset_number_visible_to_users']) ? 1 : 0);
     flash('success', 'Asset number visibility updated.');
-    redirect('index.php?page=admin');
+    $adminRedirect();
 }
 
 if ($action === 'save_asset_filter_threshold') {
@@ -176,7 +274,7 @@ if ($action === 'save_asset_filter_threshold') {
     }
     set_asset_filter_distinct_threshold(input_int('asset_filter_distinct_threshold', 20));
     flash('success', 'Filter threshold updated.');
-    redirect('index.php?page=admin');
+    $adminRedirect();
 }
 
 if ($action === 'create_asset_field' || $action === 'update_asset_field') {
@@ -188,7 +286,7 @@ if ($action === 'create_asset_field' || $action === 'update_asset_field') {
     $validation = validate_asset_field_definition($_POST, $action === 'update_asset_field' ? $fieldId : null);
     if ($validation['errors']) {
         flash('error', implode(' ', $validation['errors']));
-        redirect('index.php?page=admin');
+        $adminRedirect();
     }
     if ($action === 'create_asset_field') {
         create_asset_field($validation['payload']);
@@ -197,7 +295,7 @@ if ($action === 'create_asset_field' || $action === 'update_asset_field') {
         update_asset_field($fieldId, $validation['payload']);
         flash('success', 'Field updated.');
     }
-    redirect('index.php?page=admin');
+    $adminRedirect();
 }
 
 if ($action === 'toggle_asset_field') {
@@ -205,9 +303,13 @@ if ($action === 'toggle_asset_field') {
         http_response_code(403);
         exit('Not allowed.');
     }
-    set_asset_field_status(input_int('field_id'), input_int('active_status', 1));
-    flash('success', 'Field status updated.');
-    redirect('index.php?page=admin');
+    try {
+        set_asset_field_status(input_int('field_id'), input_int('active_status', 1), input_int('segment_id'));
+        flash('success', 'Field status updated.');
+    } catch (Throwable $e) {
+        flash('error', $e->getMessage());
+    }
+    $adminRedirect();
 }
 
 if ($action === 'delete_asset_field') {
@@ -215,12 +317,16 @@ if ($action === 'delete_asset_field') {
         http_response_code(403);
         exit('Not allowed.');
     }
-    if (!delete_asset_field(input_int('field_id'))) {
-        flash('error', 'This field cannot be deleted. Disable it instead.');
-    } else {
-        flash('success', 'Field deleted.');
+    try {
+        if (!delete_asset_field(input_int('field_id'), input_int('segment_id'))) {
+            flash('error', 'This field cannot be deleted. Disable it instead.');
+        } else {
+            flash('success', 'Field deleted.');
+        }
+    } catch (Throwable $e) {
+        flash('error', $e->getMessage());
     }
-    redirect('index.php?page=admin');
+    $adminRedirect();
 }
 
 if ($action === 'upload_asset_template') {
@@ -229,12 +335,12 @@ if ($action === 'upload_asset_template') {
         exit('Not allowed.');
     }
     try {
-        $summary = save_uploaded_asset_template($_FILES['template_file'] ?? []);
+        $summary = save_uploaded_asset_template($_FILES['template_file'] ?? [], input_int('segment_id'));
         flash('success', 'Excel template uploaded. Categories added: ' . (int)($summary['categories_created'] ?? 0) . ', sub-categories added: ' . (int)($summary['subcategories_created'] ?? 0) . '.');
     } catch (Throwable $e) {
         flash('error', $e->getMessage());
     }
-    redirect('index.php?page=admin');
+    $adminRedirect();
 }
 
 if ($action === 'create_office_order') {
@@ -261,7 +367,7 @@ if ($action === 'asset_save') {
     $validation = validate_asset_payload($_POST, $assetId > 0 ? $assetId : null, $_FILES);
     if ($validation['errors']) {
         flash('error', implode(' ', array_values($validation['errors'])));
-        redirect('index.php?page=board');
+        $boardRedirect();
     }
     try {
         if ($assetId > 0) {
@@ -279,7 +385,7 @@ if ($action === 'asset_save') {
     } catch (Throwable $e) {
         flash('error', 'Asset save failed: ' . $e->getMessage());
     }
-    redirect('index.php?page=board');
+    $boardRedirect();
 }
 
 if ($action === 'asset_upload_field_files') {
@@ -294,7 +400,7 @@ if ($action === 'asset_upload_field_files') {
     } catch (Throwable $e) {
         flash('error', 'File upload failed: ' . $e->getMessage());
     }
-    redirect('index.php?page=board');
+    $boardRedirect();
 }
 
 if ($action === 'asset_bulk_delete') {
@@ -305,7 +411,7 @@ if ($action === 'asset_bulk_delete') {
     $ids = $_POST['asset_ids'] ?? [];
     $deleted = soft_delete_assets(is_array($ids) ? $ids : [], current_user());
     flash($deleted > 0 ? 'success' : 'error', $deleted > 0 ? $deleted . ' asset(s) deleted.' : 'No assets were deleted.');
-    redirect('index.php?page=board');
+    $boardRedirect();
 }
 
 if ($action === 'asset_declare') {
@@ -317,11 +423,11 @@ if ($action === 'asset_declare') {
     if (!$ctx) {
         flash('error', 'Office declaration is not available for this user.');
     } else {
-        declare_office_assets($ctx['office_type'], $ctx['office_id'], (int)current_user()['id']);
+        declare_office_assets($ctx['office_type'], $ctx['office_id'], (int)current_user()['id'], input_int('segment_id'));
         add_log((int)current_user()['id'], 'office_asset_declarations', $ctx['office_id'], 'Office asset data declared up to date.');
         flash('success', 'Declaration saved.');
     }
-    redirect('index.php?page=board');
+    $boardRedirect();
 }
 
 if ($action === 'asset_reset_declarations') {
@@ -339,9 +445,14 @@ if ($action === 'asset_reset_declarations') {
     } else {
         $pairs[] = ['office_type' => input_int('office_type'), 'office_id' => input_int('office_id')];
     }
-    $count = reset_office_asset_declarations($pairs, (int)current_user()['id']);
+    $count = reset_office_asset_declarations($pairs, (int)current_user()['id'], input_int('segment_id'));
     flash('success', $count . ' declaration(s) reset.');
-    redirect('index.php?page=declarations');
+    $params = ['page' => 'declarations'];
+    $segmentId = input_int('segment_id');
+    if ($segmentId > 0) {
+        $params['segment_id'] = $segmentId;
+    }
+    redirect('index.php?' . http_build_query($params));
 }
 
 if ($action === 'create_office') {
@@ -542,15 +653,15 @@ if ($action === 'asset_import_upload') {
     }
     if (empty($_FILES['asset_file']['tmp_name'])) {
         flash('error', 'Please choose an Excel file.');
-        redirect('index.php?page=board');
+        $boardRedirect();
     }
-    $result = parse_asset_import_file($_FILES['asset_file']['tmp_name'], $_FILES['asset_file']['name'], current_user());
+    $result = parse_asset_import_file($_FILES['asset_file']['tmp_name'], $_FILES['asset_file']['name'], current_user(), input_int('segment_id'));
     if ($result['errors']) {
         flash('error', implode(' ', $result['errors']));
     } else {
         flash('success', 'Import file audited. Please review the rows below.');
     }
-    redirect('index.php?page=board');
+    $boardRedirect();
 }
 
 if ($action === 'asset_import_save') {
@@ -562,12 +673,12 @@ if ($action === 'asset_import_save') {
     if (!is_array($rows)) {
         unset($_SESSION['asset_import_review']);
         flash('success', 'Import review cleared.');
-        redirect('index.php?page=board');
+        $boardRedirect();
     }
     $reviewRows = restage_asset_import_rows($rows);
     if (!$reviewRows) {
         flash('success', 'Import review cleared.');
-        redirect('index.php?page=board');
+        $boardRedirect();
     }
     $result = commit_asset_import_review(current_user());
     if (($result['saved'] ?? 0) > 0 && ($result['remaining'] ?? 0) > 0) {
@@ -582,20 +693,21 @@ if ($action === 'asset_import_save') {
     } else {
         flash('success', 'No rows were imported.');
     }
-    redirect('index.php?page=board');
+    $boardRedirect();
 }
 
 if ($action === 'asset_import_cancel') {
     unset($_SESSION['asset_import_review']);
     flash('success', 'Import review cleared.');
-    redirect('index.php?page=board');
+    $boardRedirect();
 }
 
 if ($action === 'asset_download_data') {
     $user = current_user();
     $officeViewScope = input_str('office_view_scope', 'my_office');
+    $segmentId = input_int('segment_id');
     if (is_superadmin()) {
-        if (!can_manage_superadmin_scope()) {
+        if (!$user) {
             http_response_code(403);
             exit('Not allowed.');
         }
@@ -610,7 +722,7 @@ if ($action === 'asset_download_data') {
                 'category_id' => input_int('category_id'),
                 'condition_value' => input_str('condition_value', ''),
             ];
-            if (asset_subcategory_enabled()) {
+            if (asset_subcategory_enabled($segmentId)) {
                 $filters['subcategory_id'] = input_int('subcategory_id');
             }
             if ($scope === 'zone') {
@@ -626,23 +738,25 @@ if ($action === 'asset_download_data') {
                 $filters['office_type'] = 5;
                 $filters['office_id'] = input_int('subdivision_id');
             }
+            $filters['segment_id'] = $segmentId;
             export_asset_data_excel($filters, $user, true);
         } else {
-            $filters = ['office_view_scope' => $officeViewScope];
+            $filters = ['office_view_scope' => $officeViewScope, 'segment_id' => $segmentId];
             export_asset_data_excel($filters, $user, $officeViewScope === 'office_under_me');
         }
     } catch (Throwable $e) {
         flash('error', 'Download failed: ' . $e->getMessage());
-        redirect('index.php?page=board');
+        $boardRedirect();
     }
 }
 
 if ($action === 'save_asset_table_visibility') {
     $categoryId = input_int('category_id');
     $tableScope = input_str('table_scope', 'my_office');
+    $segmentId = input_int('segment_id');
     $visibleColumns = array_values(array_filter(array_map('strval', $_POST['visible_columns'] ?? [])));
     try {
-        $boardFields = get_asset_fields();
+        $boardFields = get_asset_fields(false, $segmentId);
         $boardLabels = [];
         foreach ($boardFields as $field) {
             $rawLabel = trim((string)($field['label'] ?? ''));
@@ -652,16 +766,25 @@ if ($action === 'save_asset_table_visibility') {
         save_asset_table_column_preferences(
             (int)current_user()['id'],
             $categoryId,
-            asset_table_available_columns($boardFields, $boardLabels, $tableScope),
+            asset_table_available_columns($boardFields, $boardLabels, $tableScope, $segmentId),
             $visibleColumns,
             !empty($_POST['apply_to_all']),
-            $tableScope
+            $tableScope,
+            $segmentId
         );
         flash('success', !empty($_POST['apply_to_all']) ? 'Column visibility applied to all tables.' : 'Column visibility saved.');
     } catch (Throwable $e) {
         flash('error', 'Column visibility save failed: ' . $e->getMessage());
     }
-    redirect('index.php?page=board');
+    $params = ['page' => 'board'];
+    if ($segmentId > 0) {
+        $params['segment_id'] = $segmentId;
+    }
+    $officeViewScope = input_str('office_view_scope');
+    if ($officeViewScope !== '') {
+        $params['office_view_scope'] = $officeViewScope;
+    }
+    redirect('index.php?' . http_build_query($params));
 }
 
 if ($action === 'csv_import') {

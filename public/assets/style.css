@@ -86,6 +86,53 @@ button:disabled { opacity: .6; cursor: not-allowed; }
 .board-filters-grid { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
 input, select, textarea { width: 100%; border: 1px solid #c7d4e3; border-radius: 10px; padding: 10px 12px; font: inherit; background: #fff; color: #17324d; }
 textarea { resize: vertical; }
+.filter-picker {
+  position: relative;
+}
+.filter-picker.is-selected [data-filter-picker-input] {
+  background: #0f4c81;
+  color: #fff;
+  border-color: #0f4c81;
+  font-weight: 600;
+}
+.filter-picker.is-selected [data-filter-picker-input]::placeholder {
+  color: rgba(255, 255, 255, 0.8);
+}
+.filter-picker-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  background: #fff;
+  border: 1px solid #c7d4e3;
+  border-radius: 12px;
+  box-shadow: 0 14px 30px rgba(15, 76, 129, 0.14);
+  max-height: 240px;
+  overflow-y: auto;
+  display: none;
+  z-index: 30;
+  padding: 6px;
+}
+.filter-picker.is-open .filter-picker-menu {
+  display: block;
+}
+.filter-picker-option {
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  color: #17324d;
+  padding: 9px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  font: inherit;
+}
+.filter-picker-option:hover {
+  background: #edf3fa;
+}
+.filter-picker-option[hidden] {
+  display: none;
+}
 .inline-edit,
 .inline-readonly {
   border: 1px solid transparent;

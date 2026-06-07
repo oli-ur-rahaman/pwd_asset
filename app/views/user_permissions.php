@@ -1,7 +1,13 @@
 <?php
 require __DIR__ . '/header.php';
+$canManageSuperadmin = can_manage_superadmin_scope();
 $tables = get_office_user_management_tables();
 ?>
+<?php if (!$canManageSuperadmin): ?>
+    <section class="card">
+        <p class="hint">View-only superadmin users can review office user-management permissions here but cannot change them.</p>
+    </section>
+<?php endif; ?>
 <section class="card">
     <h2>User Permissions</h2>
     <p class="hint">Allow or block offices from creating and managing additional users in bulk.</p>
@@ -17,7 +23,7 @@ $tables = get_office_user_management_tables();
                 <table>
                     <thead>
                     <tr>
-                        <th><input type="checkbox" class="select-all"></th>
+                        <?php if ($canManageSuperadmin): ?><th><input type="checkbox" class="select-all"></th><?php endif; ?>
                         <th>Office</th>
                         <th>Office Head</th>
                         <th>ID</th>
@@ -26,11 +32,11 @@ $tables = get_office_user_management_tables();
                     </thead>
                     <tbody>
                     <?php if (!$tables[$type]): ?>
-                        <tr><td colspan="5" class="muted">No offices found.</td></tr>
+                        <tr><td colspan="<?= $canManageSuperadmin ? '5' : '4'; ?>" class="muted">No offices found.</td></tr>
                     <?php endif; ?>
                     <?php foreach ($tables[$type] as $row): ?>
                         <tr>
-                            <td><input type="checkbox" name="offices[]" value="<?= e($type . ':' . $row['office_id']); ?>"></td>
+                            <?php if ($canManageSuperadmin): ?><td><input type="checkbox" name="offices[]" value="<?= e($type . ':' . $row['office_id']); ?>"></td><?php endif; ?>
                             <td><?= e($row['office_name']); ?></td>
                             <td><?= e($row['officer_name']); ?></td>
                             <td><?= e($row['email_id']); ?></td>
@@ -40,10 +46,12 @@ $tables = get_office_user_management_tables();
                     </tbody>
                 </table>
             </div>
-            <div class="bulk-actions">
-                <button type="submit" name="allowed_status" value="1" class="btn-small">Allow Selected</button>
-                <button type="submit" name="allowed_status" value="0" class="btn-small btn-danger">Block Selected</button>
-            </div>
+            <?php if ($canManageSuperadmin): ?>
+                <div class="bulk-actions">
+                    <button type="submit" name="allowed_status" value="1" class="btn-small">Allow Selected</button>
+                    <button type="submit" name="allowed_status" value="0" class="btn-small btn-danger">Block Selected</button>
+                </div>
+            <?php endif; ?>
         </form>
     </section>
 <?php endforeach; ?>

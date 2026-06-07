@@ -1,16 +1,93 @@
 <?php
 require __DIR__ . '/header.php';
-$categories = get_asset_categories(true);
-$subcategories = get_asset_subcategories(null, true);
-$fields = get_asset_management_fields(true);
-$templateColumns = asset_template_columns();
-$uploadedTemplate = asset_template_uploaded_info();
-$subcategoryEnabled = asset_subcategory_enabled();
+$canManageSuperadmin = can_manage_superadmin_scope();
+$activeSegmentId = asset_active_segment_id((int)request_str('segment_id', '0'));
+$activeSegment = asset_active_segment($activeSegmentId, true);
+$segments = get_asset_segments(true);
+$categories = get_asset_categories(true, $activeSegmentId);
+$subcategories = get_asset_subcategories(null, true, $activeSegmentId);
+$fields = get_asset_management_fields(true, $activeSegmentId);
+$templateColumns = asset_template_columns($activeSegmentId);
+$uploadedTemplate = asset_template_uploaded_info($activeSegmentId);
+$subcategoryEnabled = asset_subcategory_enabled($activeSegmentId);
 $assetNumberVisibleToUsers = asset_number_visible_to_users();
-$assetFilterDistinctThreshold = asset_filter_distinct_threshold();
 ?>
+<?php if (!$canManageSuperadmin): ?>
+    <style>
+        .superadmin-readonly-page button[type="submit"],
+        .superadmin-readonly-page .btn-danger,
+        .superadmin-readonly-page .office-save-button {
+            display: none !important;
+        }
+        .superadmin-readonly-page input:not([type="hidden"]),
+        .superadmin-readonly-page select,
+        .superadmin-readonly-page textarea {
+            pointer-events: none;
+            background: #f4f6f8;
+            color: #425466;
+        }
+    </style>
+<?php endif; ?>
+<div class="<?= !$canManageSuperadmin ? 'superadmin-readonly-page' : ''; ?>">
+<?php if (!$canManageSuperadmin): ?>
+    <section class="card">
+        <p class="hint">View-only superadmin users can review this page but cannot change segment settings, templates, categories, sub-categories, or fields.</p>
+    </section>
+<?php endif; ?>
+<section class="card">
+    <h2>Segments</h2>
+    <div class="toolbar-row scope-switch-row">
+        <?php foreach ($segments as $segment): ?>
+            <a href="index.php?<?= e(http_build_query(['page' => 'admin', 'segment_id' => (int)$segment['id']])); ?>" class="button-link<?= $activeSegmentId === (int)$segment['id'] ? ' is-active' : ''; ?>">
+                <?= e((string)$segment['segment_name']); ?>
+            </a>
+        <?php endforeach; ?>
+    </div>
+    <form method="post" action="index.php" class="inline-form">
+        <?= csrf_input(); ?>
+        <input type="hidden" name="action" value="create_asset_segment">
+        <input type="text" name="segment_name" placeholder="New segment name" required>
+        <button type="submit">Add Segment</button>
+    </form>
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr><th>Name</th><th>Status</th><th>Action</th></tr>
+            </thead>
+            <tbody>
+                <?php foreach ($segments as $segment): ?>
+                    <?php $segmentFormId = 'segment-' . (int)$segment['id']; $segmentActive = (int)($segment['active_status'] ?? 0) === 1; ?>
+                    <tr>
+                        <td><input form="<?= e($segmentFormId); ?>" class="inline-edit" type="text" name="segment_name" value="<?= e((string)$segment['segment_name']); ?>" required></td>
+                        <td><span class="<?= $segmentActive ? 'status-active' : 'status-inactive'; ?>"><?= $segmentActive ? 'Active' : 'Disabled'; ?></span></td>
+                        <td>
+                            <div class="action-row">
+                                <form method="post" action="index.php" id="<?= e($segmentFormId); ?>" class="office-inline-form">
+                                    <?= csrf_input(); ?>
+                                    <input type="hidden" name="action" value="update_asset_segment">
+                                    <input type="hidden" name="segment_id" value="<?= e((string)$segment['id']); ?>">
+                                    <button type="submit" class="btn-small office-save-button">Save</button>
+                                </form>
+                                <form method="post" action="index.php" class="inline-form">
+                                    <?= csrf_input(); ?>
+                                    <input type="hidden" name="action" value="toggle_asset_segment">
+                                    <input type="hidden" name="segment_id" value="<?= e((string)$segment['id']); ?>">
+                                    <input type="hidden" name="active_status" value="<?= $segmentActive ? '0' : '1'; ?>">
+                                    <button type="submit" class="btn-small <?= $segmentActive ? 'btn-danger' : ''; ?>"><?= $segmentActive ? 'Disable' : 'Enable'; ?></button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
+</section>
+ </div>
+
 <section class="card">
     <h2>Excel Template</h2>
+    <?php if ($activeSegment): ?><p class="muted">Active segment: <?= e((string)$activeSegment['segment_name']); ?></p><?php endif; ?>
     <p class="hint">Serial No stays first and Instruction stays last. The middle columns are driven by active import fields.</p>
     <?php if ($uploadedTemplate): ?>
         <p class="muted">Custom template uploaded at <?= e($uploadedTemplate['updated_at']); ?>.</p>
@@ -36,13 +113,14 @@ $assetFilterDistinctThreshold = asset_filter_distinct_threshold();
     <form method="post" action="index.php" enctype="multipart/form-data" class="grid">
         <?= csrf_input(); ?>
         <input type="hidden" name="action" value="upload_asset_template">
+        <input type="hidden" name="segment_id" value="<?= e((string)$activeSegmentId); ?>">
         <label>Upload Template Excel File
             <input type="file" name="template_file" accept=".xlsx,.xls" required>
         </label>
         <div class="toolbar-row">
             <button type="submit">Upload Template</button>
-            <a href="asset_template.php" class="button-link">Download Current Template</a>
-            <a href="asset_template.php?mode=auto" class="button-link">Download Auto Template</a>
+            <a href="asset_template.php?<?= e(http_build_query(['segment_id' => $activeSegmentId])); ?>" class="button-link">Download Current Template</a>
+            <a href="asset_template.php?<?= e(http_build_query(['mode' => 'auto', 'segment_id' => $activeSegmentId])); ?>" class="button-link">Download Auto Template</a>
         </div>
     </form>
 </section>
@@ -53,6 +131,7 @@ $assetFilterDistinctThreshold = asset_filter_distinct_threshold();
     <form method="post" action="index.php" class="inline-form">
         <?= csrf_input(); ?>
         <input type="hidden" name="action" value="save_subcategory_visibility">
+        <input type="hidden" name="segment_id" value="<?= e((string)$activeSegmentId); ?>">
         <label><input type="checkbox" name="asset_subcategory_enabled" value="1" <?= $subcategoryEnabled ? 'checked' : ''; ?>> Show Sub-category</label>
         <button type="submit">Save</button>
     </form>
@@ -64,20 +143,8 @@ $assetFilterDistinctThreshold = asset_filter_distinct_threshold();
     <form method="post" action="index.php" class="inline-form">
         <?= csrf_input(); ?>
         <input type="hidden" name="action" value="save_asset_number_visibility">
+        <input type="hidden" name="segment_id" value="<?= e((string)$activeSegmentId); ?>">
         <label><input type="checkbox" name="asset_number_visible_to_users" value="1" <?= $assetNumberVisibleToUsers ? 'checked' : ''; ?>> Show Asset Number for office users</label>
-        <button type="submit">Save</button>
-    </form>
-</section>
-
-<section class="card">
-    <h2>Filter Threshold</h2>
-    <p class="hint">For text, number and similar fields, show a filter only when distinct values are within this limit, unless the field is forced as a filter.</p>
-    <form method="post" action="index.php" class="inline-form">
-        <?= csrf_input(); ?>
-        <input type="hidden" name="action" value="save_asset_filter_threshold">
-        <label>Distinct value threshold
-            <input type="number" name="asset_filter_distinct_threshold" min="1" step="1" value="<?= e((string)$assetFilterDistinctThreshold); ?>" required>
-        </label>
         <button type="submit">Save</button>
     </form>
 </section>
@@ -87,6 +154,7 @@ $assetFilterDistinctThreshold = asset_filter_distinct_threshold();
     <form method="post" action="index.php" class="inline-form">
         <?= csrf_input(); ?>
         <input type="hidden" name="action" value="create_asset_category">
+        <input type="hidden" name="segment_id" value="<?= e((string)$activeSegmentId); ?>">
         <input type="text" name="name" placeholder="New category" required>
         <button type="submit">Add Category</button>
     </form>
@@ -106,12 +174,14 @@ $assetFilterDistinctThreshold = asset_filter_distinct_threshold();
                                 <form method="post" action="index.php" id="<?= e($formId); ?>" class="office-inline-form">
                                     <?= csrf_input(); ?>
                                     <input type="hidden" name="action" value="update_asset_category">
+                                    <input type="hidden" name="segment_id" value="<?= e((string)$activeSegmentId); ?>">
                                     <input type="hidden" name="category_id" value="<?= e((string)$category['id']); ?>">
                                     <button type="submit" class="btn-small office-save-button">Save</button>
                                 </form>
                                 <form method="post" action="index.php" class="inline-form">
                                     <?= csrf_input(); ?>
                                     <input type="hidden" name="action" value="toggle_asset_category">
+                                    <input type="hidden" name="segment_id" value="<?= e((string)$activeSegmentId); ?>">
                                     <input type="hidden" name="category_id" value="<?= e((string)$category['id']); ?>">
                                     <input type="hidden" name="active_status" value="<?= $isActive ? '0' : '1'; ?>">
                                     <button type="submit" class="btn-small <?= $isActive ? 'btn-danger' : ''; ?>"><?= $isActive ? 'Disable' : 'Enable'; ?></button>
@@ -119,6 +189,7 @@ $assetFilterDistinctThreshold = asset_filter_distinct_threshold();
                                 <form method="post" action="index.php" class="inline-form">
                                     <?= csrf_input(); ?>
                                     <input type="hidden" name="action" value="delete_asset_category">
+                                    <input type="hidden" name="segment_id" value="<?= e((string)$activeSegmentId); ?>">
                                     <input type="hidden" name="category_id" value="<?= e((string)$category['id']); ?>">
                                     <button type="submit" class="btn-small btn-danger">Delete</button>
                                 </form>
@@ -136,6 +207,7 @@ $assetFilterDistinctThreshold = asset_filter_distinct_threshold();
     <form method="post" action="index.php" class="inline-form">
         <?= csrf_input(); ?>
         <input type="hidden" name="action" value="create_asset_subcategory">
+        <input type="hidden" name="segment_id" value="<?= e((string)$activeSegmentId); ?>">
         <select name="category_id" required>
             <option value="">Category</option>
             <?php foreach ($categories as $category): ?>
@@ -168,12 +240,14 @@ $assetFilterDistinctThreshold = asset_filter_distinct_threshold();
                                 <form method="post" action="index.php" id="<?= e($formId); ?>" class="office-inline-form">
                                     <?= csrf_input(); ?>
                                     <input type="hidden" name="action" value="update_asset_subcategory">
+                                    <input type="hidden" name="segment_id" value="<?= e((string)$activeSegmentId); ?>">
                                     <input type="hidden" name="subcategory_id" value="<?= e((string)$subcategory['id']); ?>">
                                     <button type="submit" class="btn-small office-save-button">Save</button>
                                 </form>
                                 <form method="post" action="index.php" class="inline-form">
                                     <?= csrf_input(); ?>
                                     <input type="hidden" name="action" value="toggle_asset_subcategory">
+                                    <input type="hidden" name="segment_id" value="<?= e((string)$activeSegmentId); ?>">
                                     <input type="hidden" name="subcategory_id" value="<?= e((string)$subcategory['id']); ?>">
                                     <input type="hidden" name="active_status" value="<?= $isActive ? '0' : '1'; ?>">
                                     <button type="submit" class="btn-small <?= $isActive ? 'btn-danger' : ''; ?>"><?= $isActive ? 'Disable' : 'Enable'; ?></button>
@@ -181,6 +255,7 @@ $assetFilterDistinctThreshold = asset_filter_distinct_threshold();
                                 <form method="post" action="index.php" class="inline-form">
                                     <?= csrf_input(); ?>
                                     <input type="hidden" name="action" value="delete_asset_subcategory">
+                                    <input type="hidden" name="segment_id" value="<?= e((string)$activeSegmentId); ?>">
                                     <input type="hidden" name="subcategory_id" value="<?= e((string)$subcategory['id']); ?>">
                                     <button type="submit" class="btn-small btn-danger">Delete</button>
                                 </form>
@@ -198,6 +273,7 @@ $assetFilterDistinctThreshold = asset_filter_distinct_threshold();
     <form method="post" action="index.php" class="grid asset-field-form" data-asset-field-form>
         <?= csrf_input(); ?>
         <input type="hidden" name="action" value="create_asset_field">
+        <input type="hidden" name="segment_id" value="<?= e((string)$activeSegmentId); ?>">
         <label>Serial
             <input type="number" name="sort_order" min="1" step="1" value="<?= e((string)((count($fields) + 1) * 10)); ?>" required>
         </label>
@@ -364,6 +440,7 @@ $assetFilterDistinctThreshold = asset_filter_distinct_threshold();
                                 <form method="post" action="index.php" id="<?= e($formId); ?>" class="office-inline-form">
                                     <?= csrf_input(); ?>
                                     <input type="hidden" name="action" value="update_asset_field">
+                                    <input type="hidden" name="segment_id" value="<?= e((string)$activeSegmentId); ?>">
                                     <input type="hidden" name="field_id" value="<?= e((string)$field['id']); ?>">
                                     <input type="hidden" name="field_key" value="<?= e($field['field_key']); ?>">
                                     <label class="inline-check"><input form="<?= e($formId); ?>" type="checkbox" name="is_required" value="1" <?= (int)$field['is_required'] === 1 ? 'checked' : ''; ?>> Required</label>
@@ -376,6 +453,7 @@ $assetFilterDistinctThreshold = asset_filter_distinct_threshold();
                                 <form method="post" action="index.php" class="inline-form">
                                     <?= csrf_input(); ?>
                                     <input type="hidden" name="action" value="toggle_asset_field">
+                                    <input type="hidden" name="segment_id" value="<?= e((string)$activeSegmentId); ?>">
                                     <input type="hidden" name="field_id" value="<?= e((string)$field['id']); ?>">
                                     <input type="hidden" name="active_status" value="<?= $isActive ? '0' : '1'; ?>">
                                     <button type="submit" class="btn-small <?= $isActive ? 'btn-danger' : ''; ?>"><?= $isActive ? 'Disable' : 'Enable'; ?></button>
@@ -383,6 +461,7 @@ $assetFilterDistinctThreshold = asset_filter_distinct_threshold();
                                 <form method="post" action="index.php" class="inline-form">
                                     <?= csrf_input(); ?>
                                     <input type="hidden" name="action" value="delete_asset_field">
+                                    <input type="hidden" name="segment_id" value="<?= e((string)$activeSegmentId); ?>">
                                     <input type="hidden" name="field_id" value="<?= e((string)$field['id']); ?>">
                                     <button type="submit" class="btn-small btn-danger">Delete</button>
                                 </form>

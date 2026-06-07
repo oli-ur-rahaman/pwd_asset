@@ -9,8 +9,21 @@ function ensure_asset_schema(): void
     $initialized = true;
 
     db()->exec(
+        "CREATE TABLE IF NOT EXISTS segments (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            segment_name VARCHAR(255) NOT NULL,
+            active_status TINYINT NOT NULL DEFAULT 1,
+            sort_order INT NOT NULL DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT NULL,
+            UNIQUE KEY uniq_segments_name (segment_name)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    );
+
+    db()->exec(
         "CREATE TABLE IF NOT EXISTS asset_categories (
             id INT AUTO_INCREMENT PRIMARY KEY,
+            segment_id INT DEFAULT NULL,
             name VARCHAR(255) NOT NULL,
             active_status TINYINT NOT NULL DEFAULT 1,
             sort_order INT NOT NULL DEFAULT 0,
@@ -24,6 +37,7 @@ function ensure_asset_schema(): void
     db()->exec(
         "CREATE TABLE IF NOT EXISTS asset_subcategories (
             id INT AUTO_INCREMENT PRIMARY KEY,
+            segment_id INT DEFAULT NULL,
             category_id INT NOT NULL,
             name VARCHAR(255) NOT NULL,
             active_status TINYINT NOT NULL DEFAULT 1,
@@ -39,6 +53,7 @@ function ensure_asset_schema(): void
     db()->exec(
         "CREATE TABLE IF NOT EXISTS asset_fields (
             id INT AUTO_INCREMENT PRIMARY KEY,
+            segment_id INT DEFAULT NULL,
             field_key VARCHAR(100) NOT NULL,
             label VARCHAR(255) NOT NULL,
             data_type VARCHAR(20) NOT NULL,
@@ -75,6 +90,7 @@ function ensure_asset_schema(): void
     db()->exec(
         "CREATE TABLE IF NOT EXISTS assets (
             id INT AUTO_INCREMENT PRIMARY KEY,
+            segment_id INT DEFAULT NULL,
             asset_number VARCHAR(50) NOT NULL,
             category_id INT NOT NULL,
             subcategory_id INT DEFAULT NULL,
@@ -162,6 +178,7 @@ function ensure_asset_schema(): void
     db()->exec(
         "CREATE TABLE IF NOT EXISTS office_asset_declarations (
             id INT AUTO_INCREMENT PRIMARY KEY,
+            segment_id INT DEFAULT NULL,
             office_type TINYINT NOT NULL,
             office_id INT NOT NULL,
             declared_status TINYINT NOT NULL DEFAULT 0,
@@ -179,6 +196,7 @@ function ensure_asset_schema(): void
     db()->exec(
         "CREATE TABLE IF NOT EXISTS asset_import_batches (
             id INT AUTO_INCREMENT PRIMARY KEY,
+            segment_id INT DEFAULT NULL,
             office_type TINYINT NOT NULL,
             office_id INT NOT NULL,
             uploaded_by INT NOT NULL,
@@ -194,6 +212,7 @@ function ensure_asset_schema(): void
     db()->exec(
         "CREATE TABLE IF NOT EXISTS asset_activity_logs (
             id INT AUTO_INCREMENT PRIMARY KEY,
+            segment_id INT DEFAULT NULL,
             asset_id INT NOT NULL,
             user_id INT NOT NULL,
             action_type VARCHAR(50) NOT NULL,
@@ -209,6 +228,7 @@ function ensure_asset_schema(): void
         "CREATE TABLE IF NOT EXISTS asset_table_column_preferences (
             id INT AUTO_INCREMENT PRIMARY KEY,
             user_id INT NOT NULL,
+            segment_id INT DEFAULT NULL,
             category_id INT NOT NULL,
             column_key VARCHAR(100) NOT NULL,
             is_visible TINYINT NOT NULL DEFAULT 1,
@@ -258,12 +278,23 @@ function ensure_asset_schema(): void
     asset_ensure_column('info', 'asset_subcategory_enabled', 'TINYINT NOT NULL DEFAULT 1');
     asset_ensure_column('info', 'asset_number_visible_to_users', 'TINYINT NOT NULL DEFAULT 1');
     asset_ensure_column('info', 'asset_filter_distinct_threshold', 'INT NOT NULL DEFAULT 20');
+    asset_ensure_column('segments', 'asset_subcategory_enabled', 'TINYINT NOT NULL DEFAULT 1');
     asset_ensure_column('asset_fields', 'is_unique', 'TINYINT NOT NULL DEFAULT 0');
     asset_ensure_column('asset_fields', 'is_filter_enabled', 'TINYINT NOT NULL DEFAULT 0');
     asset_ensure_column('asset_fields', 'number_format_rule', 'VARCHAR(30) DEFAULT NULL');
     asset_ensure_column('asset_fields', 'secondary_of_field_id', 'INT DEFAULT NULL');
     asset_ensure_column('asset_fields', 'conditional_map_json', 'LONGTEXT DEFAULT NULL');
+    asset_ensure_column('asset_categories', 'segment_id', 'INT DEFAULT NULL');
+    asset_ensure_column('asset_subcategories', 'segment_id', 'INT DEFAULT NULL');
+    asset_ensure_column('asset_fields', 'segment_id', 'INT DEFAULT NULL');
+    asset_ensure_column('assets', 'segment_id', 'INT DEFAULT NULL');
+    asset_ensure_column('office_asset_declarations', 'segment_id', 'INT DEFAULT NULL');
+    asset_ensure_column('asset_import_batches', 'segment_id', 'INT DEFAULT NULL');
+    asset_ensure_column('asset_activity_logs', 'segment_id', 'INT DEFAULT NULL');
+    asset_ensure_column('asset_table_column_preferences', 'segment_id', 'INT DEFAULT NULL');
+    asset_ensure_segment_indexes();
     asset_relax_subcategory_requirement();
+    asset_backfill_segment_assignments();
 
     asset_seed_default_fields();
     asset_backfill_office_user_access_levels();
@@ -277,6 +308,237 @@ function asset_ensure_column(string $table, string $column, string $definition):
         return;
     }
     db()->exec("ALTER TABLE {$table} ADD COLUMN {$column} {$definition}");
+}
+
+function asset_index_exists(string $table, string $indexName): bool
+{
+    $stmt = db()->prepare('SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND INDEX_NAME = ? LIMIT 1');
+    $stmt->execute([$table, $indexName]);
+    return (bool)$stmt->fetchColumn();
+}
+
+function asset_drop_index_if_exists(string $table, string $indexName): void
+{
+    if (!asset_index_exists($table, $indexName)) {
+        return;
+    }
+    db()->exec("ALTER TABLE {$table} DROP INDEX {$indexName}");
+}
+
+function asset_ensure_unique_index(string $table, string $indexName, array $columns): void
+{
+    if (asset_index_exists($table, $indexName)) {
+        return;
+    }
+    $columnSql = implode(', ', $columns);
+    db()->exec("ALTER TABLE {$table} ADD UNIQUE KEY {$indexName} ({$columnSql})");
+}
+
+function asset_ensure_index(string $table, string $indexName, array $columns): void
+{
+    if (asset_index_exists($table, $indexName)) {
+        return;
+    }
+    $columnSql = implode(', ', $columns);
+    db()->exec("ALTER TABLE {$table} ADD KEY {$indexName} ({$columnSql})");
+}
+
+function asset_ensure_segment_indexes(): void
+{
+    asset_drop_index_if_exists('asset_categories', 'uniq_asset_categories_name');
+    asset_ensure_unique_index('asset_categories', 'uniq_asset_categories_segment_name', ['segment_id', 'name']);
+    asset_ensure_index('asset_categories', 'idx_asset_categories_segment', ['segment_id']);
+
+    asset_ensure_index('asset_subcategories', 'idx_asset_subcategories_segment', ['segment_id']);
+
+    asset_drop_index_if_exists('asset_fields', 'uniq_asset_fields_key');
+    asset_ensure_unique_index('asset_fields', 'uniq_asset_fields_segment_key', ['segment_id', 'field_key']);
+    asset_ensure_index('asset_fields', 'idx_asset_fields_segment', ['segment_id']);
+
+    asset_ensure_index('assets', 'idx_assets_segment', ['segment_id']);
+
+    asset_drop_index_if_exists('office_asset_declarations', 'uniq_asset_declaration');
+    asset_ensure_unique_index('office_asset_declarations', 'uniq_asset_declaration_segment', ['segment_id', 'office_type', 'office_id']);
+    asset_ensure_index('office_asset_declarations', 'idx_asset_declaration_segment', ['segment_id']);
+
+    asset_ensure_index('asset_import_batches', 'idx_asset_import_batches_segment', ['segment_id']);
+    asset_ensure_index('asset_activity_logs', 'idx_asset_activity_logs_segment', ['segment_id']);
+
+    asset_drop_index_if_exists('asset_table_column_preferences', 'uniq_asset_table_column_pref');
+    asset_ensure_unique_index('asset_table_column_preferences', 'uniq_asset_table_column_pref_segment', ['user_id', 'segment_id', 'category_id', 'column_key']);
+    asset_ensure_index('asset_table_column_preferences', 'idx_asset_table_column_pref_segment', ['segment_id']);
+}
+
+function asset_default_segment_name(): string
+{
+    return 'General';
+}
+
+function get_asset_segments(bool $includeInactive = false): array
+{
+    $sql = 'SELECT * FROM segments';
+    if (!$includeInactive) {
+        $sql .= ' WHERE active_status = 1';
+    }
+    $sql .= ' ORDER BY sort_order ASC, segment_name ASC, id ASC';
+    $rows = db()->query($sql)->fetchAll();
+    if (!$rows) {
+        asset_default_segment_id();
+        $rows = db()->query($sql)->fetchAll();
+    }
+    return $rows;
+}
+
+function create_asset_segment(string $segmentName): int
+{
+    $segmentName = trim($segmentName);
+    if ($segmentName === '') {
+        throw new RuntimeException('Segment name is required.');
+    }
+    $stmt = db()->prepare('SELECT id FROM segments WHERE LOWER(segment_name) = LOWER(?) LIMIT 1');
+    $stmt->execute([$segmentName]);
+    if ($stmt->fetchColumn()) {
+        throw new RuntimeException('Segment name already exists.');
+    }
+    $sortOrder = ((int)db()->query('SELECT COALESCE(MAX(sort_order), 0) FROM segments')->fetchColumn()) + 10;
+    $insert = db()->prepare('INSERT INTO segments (segment_name, active_status, sort_order, created_at) VALUES (?, 1, ?, NOW())');
+    $insert->execute([$segmentName, $sortOrder]);
+    return (int)db()->lastInsertId();
+}
+
+function update_asset_segment(int $segmentId, string $segmentName): void
+{
+    $segmentName = trim($segmentName);
+    if ($segmentId <= 0 || $segmentName === '') {
+        throw new RuntimeException('Segment name is required.');
+    }
+    $stmt = db()->prepare('SELECT id FROM segments WHERE LOWER(segment_name) = LOWER(?) AND id <> ? LIMIT 1');
+    $stmt->execute([$segmentName, $segmentId]);
+    if ($stmt->fetchColumn()) {
+        throw new RuntimeException('Segment name already exists.');
+    }
+    db()->prepare('UPDATE segments SET segment_name = ?, updated_at = NOW() WHERE id = ?')->execute([$segmentName, $segmentId]);
+}
+
+function set_asset_segment_status(int $segmentId, int $status): void
+{
+    if ($segmentId <= 0) {
+        throw new RuntimeException('Invalid segment.');
+    }
+    $segment = get_asset_segment($segmentId);
+    if (!$segment) {
+        throw new RuntimeException('Segment not found.');
+    }
+    $normalizedStatus = $status === 1 ? 1 : 0;
+    if ($normalizedStatus === 0) {
+        $activeCount = (int)db()->query('SELECT COUNT(*) FROM segments WHERE active_status = 1')->fetchColumn();
+        if ($activeCount <= 1 && (int)($segment['active_status'] ?? 0) === 1) {
+            throw new RuntimeException('At least one active segment is required.');
+        }
+    }
+    db()->prepare('UPDATE segments SET active_status = ?, updated_at = NOW() WHERE id = ?')->execute([$normalizedStatus, $segmentId]);
+}
+
+function get_asset_segment(int $id): ?array
+{
+    $stmt = db()->prepare('SELECT * FROM segments WHERE id = ? LIMIT 1');
+    $stmt->execute([$id]);
+    $row = $stmt->fetch();
+    return $row ?: null;
+}
+
+function asset_default_segment_id(): int
+{
+    static $segmentId = null;
+    if ($segmentId !== null) {
+        return $segmentId;
+    }
+    $stmt = db()->prepare('SELECT id FROM segments WHERE segment_name = ? LIMIT 1');
+    $stmt->execute([asset_default_segment_name()]);
+    $existingId = (int)($stmt->fetchColumn() ?: 0);
+    if ($existingId > 0) {
+        $segmentId = $existingId;
+        return $segmentId;
+    }
+
+    db()->prepare(
+        'INSERT INTO segments (segment_name, active_status, sort_order, created_at) VALUES (?, 1, 10, NOW())'
+    )->execute([asset_default_segment_name()]);
+    $segmentId = (int)db()->lastInsertId();
+    return $segmentId;
+}
+
+function asset_requested_segment_id(): ?int
+{
+    $raw = $_POST['segment_id'] ?? $_GET['segment_id'] ?? ($_SESSION['asset_active_segment_id'] ?? null);
+    $segmentId = (int)$raw;
+    return $segmentId > 0 ? $segmentId : null;
+}
+
+function asset_active_segment_id(?int $segmentId = null, bool $allowInactive = false): int
+{
+    $candidate = $segmentId && $segmentId > 0 ? $segmentId : asset_requested_segment_id();
+    if ($candidate && $candidate > 0) {
+        $sql = 'SELECT id FROM segments WHERE id = ?';
+        if (!$allowInactive) {
+            $sql .= ' AND active_status = 1';
+        }
+        $sql .= ' LIMIT 1';
+        $stmt = db()->prepare($sql);
+        $stmt->execute([$candidate]);
+        $resolved = (int)($stmt->fetchColumn() ?: 0);
+        if ($resolved > 0) {
+            $_SESSION['asset_active_segment_id'] = $resolved;
+            return $resolved;
+        }
+    }
+
+    $sql = 'SELECT id FROM segments';
+    if (!$allowInactive) {
+        $sql .= ' WHERE active_status = 1';
+    }
+    $sql .= ' ORDER BY sort_order ASC, segment_name ASC, id ASC LIMIT 1';
+    $resolved = (int)(db()->query($sql)->fetchColumn() ?: 0);
+    if ($resolved <= 0) {
+        $resolved = asset_default_segment_id();
+    }
+    $_SESSION['asset_active_segment_id'] = $resolved;
+    return $resolved;
+}
+
+function asset_active_segment(?int $segmentId = null, bool $allowInactive = false): ?array
+{
+    return get_asset_segment(asset_active_segment_id($segmentId, $allowInactive));
+}
+
+function asset_has_multiple_segments(bool $includeInactive = false): bool
+{
+    return count(get_asset_segments($includeInactive)) > 1;
+}
+
+function asset_normalize_segment_id(?int $segmentId = null): int
+{
+    return asset_active_segment_id($segmentId);
+}
+
+function asset_backfill_segment_assignments(): void
+{
+    $defaultSegmentId = asset_default_segment_id();
+    $tableColumns = [
+        'asset_categories' => 'segment_id',
+        'asset_subcategories' => 'segment_id',
+        'asset_fields' => 'segment_id',
+        'assets' => 'segment_id',
+        'office_asset_declarations' => 'segment_id',
+        'asset_import_batches' => 'segment_id',
+        'asset_activity_logs' => 'segment_id',
+        'asset_table_column_preferences' => 'segment_id',
+    ];
+
+    foreach ($tableColumns as $table => $column) {
+        db()->prepare("UPDATE {$table} SET {$column} = ? WHERE {$column} IS NULL OR {$column} <= 0")
+            ->execute([$defaultSegmentId]);
+    }
 }
 
 function asset_relax_subcategory_requirement(): void
@@ -351,6 +613,7 @@ function asset_backfill_office_user_access_levels(): void
 
 function asset_seed_default_fields(): void
 {
+    $segmentId = asset_default_segment_id();
     $defaults = [
         [
             'field_key' => 'description',
@@ -387,12 +650,13 @@ function asset_seed_default_fields(): void
     ];
 
     foreach ($defaults as $field) {
-        $stmt = db()->prepare('SELECT id FROM asset_fields WHERE field_key = ? LIMIT 1');
-        $stmt->execute([$field['field_key']]);
+        $stmt = db()->prepare('SELECT id FROM asset_fields WHERE segment_id = ? AND field_key = ? LIMIT 1');
+        $stmt->execute([$segmentId, $field['field_key']]);
         $fieldId = (int)($stmt->fetchColumn() ?: 0);
         if ($fieldId === 0) {
-            $insert = db()->prepare('INSERT INTO asset_fields (field_key, label, data_type, is_required, is_displayed, is_import_enabled, active_status, sort_order, created_at) VALUES (?, ?, ?, ?, 1, 1, 1, ?, NOW())');
+            $insert = db()->prepare('INSERT INTO asset_fields (segment_id, field_key, label, data_type, is_required, is_displayed, is_import_enabled, active_status, sort_order, created_at) VALUES (?, ?, ?, ?, ?, 1, 1, 1, ?, NOW())');
             $insert->execute([
+                $segmentId,
                 $field['field_key'],
                 $field['label'],
                 $field['data_type'],
@@ -442,22 +706,51 @@ function asset_is_conditional_primary(array $field): bool
     return (string)($field['data_type'] ?? '') === 'conditional';
 }
 
-function get_asset_management_fields(bool $includeInactive = false): array
+function get_asset_management_fields(bool $includeInactive = false, ?int $segmentId = null): array
 {
     return array_values(array_filter(
-        get_asset_fields($includeInactive),
+        get_asset_fields($includeInactive, $segmentId),
         static fn(array $field): bool => !asset_is_conditional_secondary($field)
     ));
 }
 
-function get_asset_conditional_child_field(int $parentFieldId, bool $includeInactive = true): ?array
+function get_asset_conditional_child_field(int $parentFieldId, bool $includeInactive = true, ?int $segmentId = null): ?array
 {
-    foreach (get_asset_fields($includeInactive) as $field) {
+    foreach (get_asset_fields($includeInactive, $segmentId) as $field) {
         if ((int)($field['secondary_of_field_id'] ?? 0) === $parentFieldId) {
             return $field;
         }
     }
     return null;
+}
+
+function asset_assert_segment_match(?array $row, ?int $segmentId, string $label): array
+{
+    if (!$row) {
+        throw new RuntimeException("{$label} not found.");
+    }
+    $normalizedSegmentId = asset_normalize_segment_id($segmentId);
+    if ((int)($row['segment_id'] ?? 0) !== $normalizedSegmentId) {
+        throw new RuntimeException("{$label} does not belong to the selected segment.");
+    }
+    return $row;
+}
+
+function next_sort_order_for_filters(string $table, array $conditions = []): int
+{
+    $sql = "SELECT COALESCE(MAX(sort_order), 0) FROM {$table}";
+    $params = [];
+    if ($conditions) {
+        $clauses = [];
+        foreach ($conditions as $column => $value) {
+            $clauses[] = "{$column} = ?";
+            $params[] = $value;
+        }
+        $sql .= ' WHERE ' . implode(' AND ', $clauses);
+    }
+    $stmt = db()->prepare($sql);
+    $stmt->execute($params);
+    return (int)$stmt->fetchColumn() + 10;
 }
 
 function asset_decode_conditional_map(array $field): array
@@ -697,37 +990,24 @@ function asset_core_columns(): array
     ];
 }
 
-function asset_subcategory_enabled(): bool
+function asset_subcategory_enabled(?int $segmentId = null): bool
 {
+    $normalizedSegmentId = asset_normalize_segment_id($segmentId);
+    $segment = get_asset_segment($normalizedSegmentId, true);
+    if ($segment && array_key_exists('asset_subcategory_enabled', $segment)) {
+        return (int)($segment['asset_subcategory_enabled'] ?? 1) === 1;
+    }
     $info = get_info_row();
     $value = $info['asset_subcategory_enabled'] ?? null;
-    if ($value === null || $value === '') {
-        return true;
-    }
-    return (int)$value === 1;
+    return $value === null || $value === '' ? true : (int)$value === 1;
 }
 
-function set_asset_subcategory_enabled(int $status): void
+function set_asset_subcategory_enabled(int $status, ?int $segmentId = null): void
 {
-    $existing = get_info_row();
-    save_info_row(
-        $existing['video_tutorial_url'] ?? null,
-        $existing['login_message'] ?? null,
-        [
-            'site_name' => $existing['site_name'] ?? null,
-            'welcome_message' => $existing['welcome_message'] ?? null,
-            'asset_subcategory_enabled' => $status === 1 ? 1 : 0,
-            'asset_number_visible_to_users' => $existing['asset_number_visible_to_users'] ?? 1,
-            'asset_filter_distinct_threshold' => $existing['asset_filter_distinct_threshold'] ?? 20,
-            'i_opr_repair' => $existing['i_opr_repair'] ?? null,
-            'i_opr_other' => $existing['i_opr_other'] ?? null,
-            'i_dev_pw' => $existing['i_dev_pw'] ?? null,
-            'i_opr_min' => $existing['i_opr_min'] ?? null,
-            'i_dev_min' => $existing['i_dev_min'] ?? null,
-            'i_opr' => $existing['i_opr'] ?? null,
-            'i_dev' => $existing['i_dev'] ?? null,
-        ]
-    );
+    db()->prepare('UPDATE segments SET asset_subcategory_enabled = ?, updated_at = NOW() WHERE id = ?')->execute([
+        $status === 1 ? 1 : 0,
+        asset_normalize_segment_id($segmentId),
+    ]);
 }
 
 function asset_number_visible_to_users(): bool
@@ -798,7 +1078,7 @@ function asset_table_preference_category_id(int $categoryId, string $tableScope 
     return $tableScope === 'office_under_me' ? $categoryId + 1000000 : $categoryId;
 }
 
-function asset_table_available_columns(array $fields, array $uiFieldLabels, string $tableScope = 'my_office'): array
+function asset_table_available_columns(array $fields, array $uiFieldLabels, string $tableScope = 'my_office', ?int $segmentId = null): array
 {
     $columns = [];
     if (is_superadmin() || asset_number_visible_to_users()) {
@@ -807,7 +1087,7 @@ function asset_table_available_columns(array $fields, array $uiFieldLabels, stri
     if (is_superadmin() || $tableScope === 'office_under_me') {
         $columns[] = ['key' => 'office_name', 'label' => 'Office', 'type' => 'fixed'];
     }
-    if (asset_subcategory_enabled()) {
+    if (asset_subcategory_enabled($segmentId)) {
         $columns[] = ['key' => 'subcategory_name', 'label' => 'Sub-category', 'type' => 'fixed'];
     }
     $columns[] = ['key' => 'data_provider', 'label' => 'Data Provider', 'type' => 'fixed'];
@@ -824,10 +1104,10 @@ function asset_table_available_columns(array $fields, array $uiFieldLabels, stri
     return $columns;
 }
 
-function get_asset_table_column_preferences(int $userId): array
+function get_asset_table_column_preferences(int $userId, ?int $segmentId = null): array
 {
-    $stmt = db()->prepare('SELECT category_id, column_key, is_visible FROM asset_table_column_preferences WHERE user_id = ?');
-    $stmt->execute([$userId]);
+    $stmt = db()->prepare('SELECT category_id, column_key, is_visible FROM asset_table_column_preferences WHERE user_id = ? AND segment_id = ?');
+    $stmt->execute([$userId, asset_normalize_segment_id($segmentId)]);
     $map = [];
     foreach ($stmt->fetchAll() as $row) {
         $map[(int)$row['category_id']][(string)$row['column_key']] = (int)$row['is_visible'] === 1;
@@ -846,11 +1126,12 @@ function resolve_asset_table_visible_column_keys(int $categoryId, array $availab
     return $visible;
 }
 
-function save_asset_table_column_preferences(int $userId, int $categoryId, array $availableColumns, array $visibleKeys, bool $applyToAll = false, string $tableScope = 'my_office'): void
+function save_asset_table_column_preferences(int $userId, int $categoryId, array $availableColumns, array $visibleKeys, bool $applyToAll = false, string $tableScope = 'my_office', ?int $segmentId = null): void
 {
     if ($userId <= 0 || $categoryId <= 0) {
         throw new RuntimeException('Invalid visibility target.');
     }
+    $segmentId = asset_normalize_segment_id($segmentId);
     $availableKeys = array_map(static fn(array $column): string => (string)$column['key'], $availableColumns);
     $normalizedVisible = array_fill_keys($availableKeys, false);
     foreach ($visibleKeys as $key) {
@@ -861,28 +1142,31 @@ function save_asset_table_column_preferences(int $userId, int $categoryId, array
     }
     $targetCategoryIds = [$categoryId];
     if ($applyToAll) {
-        $targetCategoryIds = array_map(static fn(array $category): int => (int)$category['id'], get_asset_categories());
+        $targetCategoryIds = array_map(static fn(array $category): int => (int)$category['id'], get_asset_categories(false, $segmentId));
     }
     $stmt = db()->prepare(
-        'INSERT INTO asset_table_column_preferences (user_id, category_id, column_key, is_visible, created_at, updated_at)
-         VALUES (?, ?, ?, ?, NOW(), NOW())
+        'INSERT INTO asset_table_column_preferences (user_id, segment_id, category_id, column_key, is_visible, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, NOW(), NOW())
          ON DUPLICATE KEY UPDATE is_visible = VALUES(is_visible), updated_at = NOW()'
     );
     foreach ($targetCategoryIds as $targetCategoryId) {
         $prefCategoryId = asset_table_preference_category_id($targetCategoryId, $tableScope);
         foreach ($normalizedVisible as $columnKey => $isVisible) {
-            $stmt->execute([$userId, $prefCategoryId, $columnKey, $isVisible ? 1 : 0]);
+            $stmt->execute([$userId, $segmentId, $prefCategoryId, $columnKey, $isVisible ? 1 : 0]);
         }
     }
 }
 
 function add_asset_activity_log(int $assetId, int $userId, string $actionType, string $summary, array $details = []): void
 {
+    $asset = get_asset($assetId);
+    $segmentId = (int)($asset['segment_id'] ?? asset_default_segment_id());
     $stmt = db()->prepare(
-        'INSERT INTO asset_activity_logs (asset_id, user_id, action_type, summary, details, created_at)
-         VALUES (?, ?, ?, ?, ?, NOW())'
+        'INSERT INTO asset_activity_logs (segment_id, asset_id, user_id, action_type, summary, details, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, NOW())'
     );
     $stmt->execute([
+        $segmentId,
         $assetId,
         $userId,
         $actionType,
@@ -955,7 +1239,7 @@ function build_asset_create_log_details(array $validated, array $fieldMap): arra
     $details = [
         ['field' => 'Category', 'value' => asset_category_name_by_id((int)$validated['category_id'])],
     ];
-    if (asset_subcategory_enabled()) {
+    if (asset_subcategory_enabled((int)($validated['segment_id'] ?? 0))) {
         $details[] = ['field' => 'Sub-category', 'value' => asset_subcategory_name_by_id((int)$validated['subcategory_id'])];
     }
     foreach ($validated['field_values'] as $fieldKey => $normalized) {
@@ -990,7 +1274,7 @@ function build_asset_update_log_details(array $beforeAsset, array $validated, ar
     if ($oldCategory !== $newCategory) {
         $details[] = ['field' => 'Category', 'from' => $oldCategory, 'to' => $newCategory];
     }
-    if (asset_subcategory_enabled()) {
+    if (asset_subcategory_enabled((int)($validated['segment_id'] ?? 0))) {
         $oldSub = asset_subcategory_name_by_id((int)($beforeAsset['subcategory_id'] ?? 0));
         $newSub = asset_subcategory_name_by_id((int)$validated['subcategory_id']);
         if ($oldSub !== $newSub) {
@@ -1380,58 +1664,66 @@ function asset_normalize_yes_no(mixed $value): ?int
     return null;
 }
 
-function get_asset_categories(bool $includeInactive = false): array
+function get_asset_categories(bool $includeInactive = false, ?int $segmentId = null): array
 {
-    $sql = 'SELECT * FROM asset_categories WHERE deleted_at IS NULL';
+    $sql = 'SELECT * FROM asset_categories WHERE deleted_at IS NULL AND segment_id = ?';
+    $params = [asset_normalize_segment_id($segmentId)];
     if (!$includeInactive) {
         $sql .= ' AND active_status = 1';
     }
     $sql .= ' ORDER BY sort_order ASC, name ASC';
-    return db()->query($sql)->fetchAll();
+    $stmt = db()->prepare($sql);
+    $stmt->execute($params);
+    return $stmt->fetchAll();
 }
 
-function get_asset_category(int $id): ?array
+function get_asset_category(int $id, ?int $segmentId = null): ?array
 {
-    $stmt = db()->prepare('SELECT * FROM asset_categories WHERE id = ? LIMIT 1');
-    $stmt->execute([$id]);
+    $stmt = db()->prepare('SELECT * FROM asset_categories WHERE id = ? AND segment_id = ? LIMIT 1');
+    $stmt->execute([$id, asset_normalize_segment_id($segmentId)]);
     $row = $stmt->fetch();
     return $row ?: null;
 }
 
-function create_asset_category(string $name): void
+function create_asset_category(string $name, ?int $segmentId = null): void
 {
-    $stmt = db()->prepare('INSERT INTO asset_categories (name, active_status, sort_order, created_at) VALUES (?, 1, ?, NOW())');
-    $stmt->execute([$name, next_sort_order('asset_categories')]);
+    $segmentId = asset_normalize_segment_id($segmentId);
+    $stmt = db()->prepare('INSERT INTO asset_categories (segment_id, name, active_status, sort_order, created_at) VALUES (?, ?, 1, ?, NOW())');
+    $stmt->execute([$segmentId, $name, next_sort_order_for_filters('asset_categories', ['segment_id' => $segmentId])]);
 }
 
-function update_asset_category(int $id, string $name): void
+function update_asset_category(int $id, string $name, ?int $segmentId = null): void
 {
-    $stmt = db()->prepare('UPDATE asset_categories SET name = ?, updated_at = NOW() WHERE id = ?');
-    $stmt->execute([$name, $id]);
+    asset_assert_segment_match(get_asset_category($id, $segmentId), $segmentId, 'Category');
+    $stmt = db()->prepare('UPDATE asset_categories SET name = ?, updated_at = NOW() WHERE id = ? AND segment_id = ?');
+    $stmt->execute([$name, $id, asset_normalize_segment_id($segmentId)]);
 }
 
-function set_asset_category_status(int $id, int $status): void
+function set_asset_category_status(int $id, int $status, ?int $segmentId = null): void
 {
-    $stmt = db()->prepare('UPDATE asset_categories SET active_status = ?, updated_at = NOW() WHERE id = ?');
-    $stmt->execute([$status === 1 ? 1 : 0, $id]);
+    asset_assert_segment_match(get_asset_category($id, $segmentId), $segmentId, 'Category');
+    $stmt = db()->prepare('UPDATE asset_categories SET active_status = ?, updated_at = NOW() WHERE id = ? AND segment_id = ?');
+    $stmt->execute([$status === 1 ? 1 : 0, $id, asset_normalize_segment_id($segmentId)]);
 }
 
-function delete_asset_category(int $id): bool
+function delete_asset_category(int $id, ?int $segmentId = null): bool
 {
+    asset_assert_segment_match(get_asset_category($id, $segmentId), $segmentId, 'Category');
     $stmt = db()->prepare('SELECT COUNT(*) FROM assets WHERE category_id = ?');
     $stmt->execute([$id]);
     if ((int)$stmt->fetchColumn() > 0) {
         return false;
     }
-    $stmt = db()->prepare('DELETE FROM asset_categories WHERE id = ?');
-    $stmt->execute([$id]);
+    $stmt = db()->prepare('DELETE FROM asset_categories WHERE id = ? AND segment_id = ?');
+    $stmt->execute([$id, asset_normalize_segment_id($segmentId)]);
     return true;
 }
 
-function get_asset_subcategories(?int $categoryId = null, bool $includeInactive = false): array
+function get_asset_subcategories(?int $categoryId = null, bool $includeInactive = false, ?int $segmentId = null): array
 {
-    $sql = 'SELECT s.*, c.name AS category_name FROM asset_subcategories s JOIN asset_categories c ON c.id = s.category_id WHERE s.deleted_at IS NULL';
-    $params = [];
+    $sql = 'SELECT s.*, c.name AS category_name FROM asset_subcategories s JOIN asset_categories c ON c.id = s.category_id WHERE s.deleted_at IS NULL AND s.segment_id = ? AND c.segment_id = ?';
+    $normalizedSegmentId = asset_normalize_segment_id($segmentId);
+    $params = [$normalizedSegmentId, $normalizedSegmentId];
     if ($categoryId !== null && $categoryId > 0) {
         $sql .= ' AND s.category_id = ?';
         $params[] = $categoryId;
@@ -1445,58 +1737,75 @@ function get_asset_subcategories(?int $categoryId = null, bool $includeInactive 
     return $stmt->fetchAll();
 }
 
-function get_asset_subcategory(int $id): ?array
+function get_asset_subcategory(int $id, ?int $segmentId = null): ?array
 {
-    $stmt = db()->prepare('SELECT * FROM asset_subcategories WHERE id = ? LIMIT 1');
-    $stmt->execute([$id]);
+    $stmt = db()->prepare('SELECT * FROM asset_subcategories WHERE id = ? AND segment_id = ? LIMIT 1');
+    $stmt->execute([$id, asset_normalize_segment_id($segmentId)]);
     $row = $stmt->fetch();
     return $row ?: null;
 }
 
-function create_asset_subcategory(int $categoryId, string $name): void
+function create_asset_subcategory(int $categoryId, string $name, ?int $segmentId = null): void
 {
-    $stmt = db()->prepare('INSERT INTO asset_subcategories (category_id, name, active_status, sort_order, created_at) VALUES (?, ?, 1, ?, NOW())');
-    $stmt->execute([$categoryId, $name, next_sort_order('asset_subcategories', 'category_id', $categoryId)]);
+    $segmentId = asset_normalize_segment_id($segmentId);
+    asset_assert_segment_match(get_asset_category($categoryId, $segmentId), $segmentId, 'Category');
+    $stmt = db()->prepare('INSERT INTO asset_subcategories (segment_id, category_id, name, active_status, sort_order, created_at) VALUES (?, ?, ?, 1, ?, NOW())');
+    $stmt->execute([$segmentId, $categoryId, $name, next_sort_order_for_filters('asset_subcategories', ['segment_id' => $segmentId, 'category_id' => $categoryId])]);
 }
 
-function update_asset_subcategory(int $id, int $categoryId, string $name): void
+function update_asset_subcategory(int $id, int $categoryId, string $name, ?int $segmentId = null): void
 {
-    $stmt = db()->prepare('UPDATE asset_subcategories SET category_id = ?, name = ?, updated_at = NOW() WHERE id = ?');
-    $stmt->execute([$categoryId, $name, $id]);
+    asset_assert_segment_match(get_asset_subcategory($id, $segmentId), $segmentId, 'Sub-category');
+    asset_assert_segment_match(get_asset_category($categoryId, $segmentId), $segmentId, 'Category');
+    $stmt = db()->prepare('UPDATE asset_subcategories SET category_id = ?, name = ?, updated_at = NOW() WHERE id = ? AND segment_id = ?');
+    $stmt->execute([$categoryId, $name, $id, asset_normalize_segment_id($segmentId)]);
 }
 
-function set_asset_subcategory_status(int $id, int $status): void
+function set_asset_subcategory_status(int $id, int $status, ?int $segmentId = null): void
 {
-    $stmt = db()->prepare('UPDATE asset_subcategories SET active_status = ?, updated_at = NOW() WHERE id = ?');
-    $stmt->execute([$status === 1 ? 1 : 0, $id]);
+    asset_assert_segment_match(get_asset_subcategory($id, $segmentId), $segmentId, 'Sub-category');
+    $stmt = db()->prepare('UPDATE asset_subcategories SET active_status = ?, updated_at = NOW() WHERE id = ? AND segment_id = ?');
+    $stmt->execute([$status === 1 ? 1 : 0, $id, asset_normalize_segment_id($segmentId)]);
 }
 
-function delete_asset_subcategory(int $id): bool
+function delete_asset_subcategory(int $id, ?int $segmentId = null): bool
 {
+    asset_assert_segment_match(get_asset_subcategory($id, $segmentId), $segmentId, 'Sub-category');
     $stmt = db()->prepare('SELECT COUNT(*) FROM assets WHERE subcategory_id = ?');
     $stmt->execute([$id]);
     if ((int)$stmt->fetchColumn() > 0) {
         return false;
     }
-    $stmt = db()->prepare('DELETE FROM asset_subcategories WHERE id = ?');
-    $stmt->execute([$id]);
+    $stmt = db()->prepare('DELETE FROM asset_subcategories WHERE id = ? AND segment_id = ?');
+    $stmt->execute([$id, asset_normalize_segment_id($segmentId)]);
     return true;
 }
 
-function get_asset_fields(bool $includeInactive = false): array
+function get_asset_fields(bool $includeInactive = false, ?int $segmentId = null): array
 {
-    $sql = 'SELECT * FROM asset_fields WHERE deleted_at IS NULL';
+    $sql = 'SELECT * FROM asset_fields WHERE deleted_at IS NULL AND segment_id = ?';
+    $params = [asset_normalize_segment_id($segmentId)];
     if (!$includeInactive) {
         $sql .= ' AND active_status = 1';
     }
     $sql .= ' ORDER BY sort_order ASC, id ASC';
-    return db()->query($sql)->fetchAll();
+    $stmt = db()->prepare($sql);
+    $stmt->execute($params);
+    return $stmt->fetchAll();
 }
 
-function get_asset_field(int $id): ?array
+function get_asset_field(int $id, ?int $segmentId = null): ?array
 {
-    $stmt = db()->prepare('SELECT * FROM asset_fields WHERE id = ? LIMIT 1');
-    $stmt->execute([$id]);
+    $stmt = db()->prepare('SELECT * FROM asset_fields WHERE id = ? AND segment_id = ? LIMIT 1');
+    $stmt->execute([$id, asset_normalize_segment_id($segmentId)]);
+    $row = $stmt->fetch();
+    return $row ?: null;
+}
+
+function get_asset_field_by_key(string $fieldKey, ?int $segmentId = null): ?array
+{
+    $stmt = db()->prepare('SELECT * FROM asset_fields WHERE segment_id = ? AND field_key = ? LIMIT 1');
+    $stmt->execute([asset_normalize_segment_id($segmentId), $fieldKey]);
     $row = $stmt->fetch();
     return $row ?: null;
 }
@@ -1565,11 +1874,17 @@ function delete_asset_field_file_rule(int $fieldId): void
 
 function create_asset_field(array $payload): void
 {
+    $segmentId = asset_normalize_segment_id((int)($payload['segment_id'] ?? 0));
+    $fieldSortOrder = (int)($payload['sort_order'] ?? 0);
+    if ($fieldSortOrder <= 0) {
+        $fieldSortOrder = next_sort_order_for_filters('asset_fields', ['segment_id' => $segmentId]);
+    }
     db()->beginTransaction();
     try {
         if (($payload['data_type'] ?? '') === 'conditional') {
-            $stmt = db()->prepare('INSERT INTO asset_fields (field_key, label, data_type, number_format_rule, secondary_of_field_id, conditional_map_json, is_required, is_displayed, is_import_enabled, is_unique, is_filter_enabled, active_status, sort_order, created_at) VALUES (?, ?, ?, NULL, NULL, ?, ?, ?, ?, 0, 1, 1, ?, NOW())');
+            $stmt = db()->prepare('INSERT INTO asset_fields (segment_id, field_key, label, data_type, number_format_rule, secondary_of_field_id, conditional_map_json, is_required, is_displayed, is_import_enabled, is_unique, is_filter_enabled, active_status, sort_order, created_at) VALUES (?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, 0, 1, 1, ?, NOW())');
             $stmt->execute([
+                $segmentId,
                 $payload['field_key'],
                 $payload['label'],
                 'conditional',
@@ -1577,13 +1892,14 @@ function create_asset_field(array $payload): void
                 $payload['is_required'],
                 $payload['is_displayed'],
                 $payload['is_import_enabled'],
-                $payload['sort_order'],
+                $fieldSortOrder,
             ]);
             $fieldId = (int)db()->lastInsertId();
             replace_asset_field_options($fieldId, $payload['options'] ?? []);
 
-            $childStmt = db()->prepare('INSERT INTO asset_fields (field_key, label, data_type, number_format_rule, secondary_of_field_id, conditional_map_json, is_required, is_displayed, is_import_enabled, is_unique, is_filter_enabled, active_status, sort_order, created_at) VALUES (?, ?, ?, NULL, ?, NULL, ?, ?, ?, 0, 1, 1, ?, NOW())');
+            $childStmt = db()->prepare('INSERT INTO asset_fields (segment_id, field_key, label, data_type, number_format_rule, secondary_of_field_id, conditional_map_json, is_required, is_displayed, is_import_enabled, is_unique, is_filter_enabled, active_status, sort_order, created_at) VALUES (?, ?, ?, ?, NULL, ?, NULL, ?, ?, ?, 0, 1, 1, ?, NOW())');
             $childStmt->execute([
+                $segmentId,
                 $payload['secondary_field_key'],
                 $payload['secondary_label'],
                 'dropdown',
@@ -1591,13 +1907,14 @@ function create_asset_field(array $payload): void
                 $payload['is_required'],
                 $payload['is_displayed'],
                 $payload['is_import_enabled'],
-                $payload['sort_order'] + 1,
+                $fieldSortOrder + 1,
             ]);
             $childId = (int)db()->lastInsertId();
             replace_asset_field_options($childId, $payload['secondary_options'] ?? []);
         } else {
-            $stmt = db()->prepare('INSERT INTO asset_fields (field_key, label, data_type, number_format_rule, secondary_of_field_id, conditional_map_json, is_required, is_displayed, is_import_enabled, is_unique, is_filter_enabled, active_status, sort_order, created_at) VALUES (?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, 1, ?, NOW())');
+            $stmt = db()->prepare('INSERT INTO asset_fields (segment_id, field_key, label, data_type, number_format_rule, secondary_of_field_id, conditional_map_json, is_required, is_displayed, is_import_enabled, is_unique, is_filter_enabled, active_status, sort_order, created_at) VALUES (?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, 1, ?, NOW())');
             $stmt->execute([
+                $segmentId,
                 $payload['field_key'],
                 $payload['label'],
                 $payload['data_type'],
@@ -1607,7 +1924,7 @@ function create_asset_field(array $payload): void
                 $payload['is_import_enabled'],
                 $payload['is_unique'],
                 $payload['is_filter_enabled'],
-                $payload['sort_order'],
+                $fieldSortOrder,
             ]);
             $fieldId = (int)db()->lastInsertId();
             replace_asset_field_options($fieldId, $payload['options'] ?? []);
@@ -1626,11 +1943,12 @@ function create_asset_field(array $payload): void
 
 function update_asset_field(int $id, array $payload): void
 {
-    $existing = get_asset_field($id);
+    $segmentId = asset_normalize_segment_id((int)($payload['segment_id'] ?? 0));
+    $existing = get_asset_field($id, $segmentId);
     if (!$existing) {
         throw new RuntimeException('Field not found.');
     }
-    $childField = get_asset_conditional_child_field($id, true);
+    $childField = get_asset_conditional_child_field($id, true, $segmentId);
     db()->beginTransaction();
     try {
         if (($payload['data_type'] ?? '') === 'conditional') {
@@ -1708,19 +2026,21 @@ function replace_asset_field_options(int $fieldId, array $options): void
     }
 }
 
-function set_asset_field_status(int $id, int $status): void
+function set_asset_field_status(int $id, int $status, ?int $segmentId = null): void
 {
-    $stmt = db()->prepare('UPDATE asset_fields SET active_status = ?, updated_at = NOW() WHERE id = ?');
-    $stmt->execute([$status === 1 ? 1 : 0, $id]);
-    $child = get_asset_conditional_child_field($id, true);
+    asset_assert_segment_match(get_asset_field($id, $segmentId), $segmentId, 'Field');
+    $stmt = db()->prepare('UPDATE asset_fields SET active_status = ?, updated_at = NOW() WHERE id = ? AND segment_id = ?');
+    $normalizedSegmentId = asset_normalize_segment_id($segmentId);
+    $stmt->execute([$status === 1 ? 1 : 0, $id, $normalizedSegmentId]);
+    $child = get_asset_conditional_child_field($id, true, $segmentId);
     if ($child) {
-        $stmt->execute([$status === 1 ? 1 : 0, (int)$child['id']]);
+        $stmt->execute([$status === 1 ? 1 : 0, (int)$child['id'], $normalizedSegmentId]);
     }
 }
 
-function delete_asset_field(int $id): bool
+function delete_asset_field(int $id, ?int $segmentId = null): bool
 {
-    $field = get_asset_field($id);
+    $field = get_asset_field($id, $segmentId);
     if (!$field) {
         return false;
     }
@@ -1728,7 +2048,7 @@ function delete_asset_field(int $id): bool
         return false;
     }
     $linkedFieldIds = [$id];
-    $child = get_asset_conditional_child_field($id, true);
+    $child = get_asset_conditional_child_field($id, true, $segmentId);
     if ($child) {
         $linkedFieldIds[] = (int)$child['id'];
     }
@@ -1769,8 +2089,13 @@ function next_sort_order(string $table, ?string $groupColumn = null, mixed $grou
 
 function asset_field_map(bool $includeInactive = false): array
 {
+    return asset_field_map_for_segment($includeInactive, null);
+}
+
+function asset_field_map_for_segment(bool $includeInactive = false, ?int $segmentId = null): array
+{
     $map = [];
-    foreach (get_asset_fields($includeInactive) as $field) {
+    foreach (get_asset_fields($includeInactive, $segmentId) as $field) {
         $map[$field['field_key']] = $field;
     }
     return $map;
@@ -1778,8 +2103,13 @@ function asset_field_map(bool $includeInactive = false): array
 
 function asset_category_map(bool $includeInactive = false): array
 {
+    return asset_category_map_for_segment($includeInactive, null);
+}
+
+function asset_category_map_for_segment(bool $includeInactive = false, ?int $segmentId = null): array
+{
     $map = [];
-    foreach (get_asset_categories($includeInactive) as $category) {
+    foreach (get_asset_categories($includeInactive, $segmentId) as $category) {
         $map[$category['id']] = $category;
     }
     return $map;
@@ -1787,8 +2117,13 @@ function asset_category_map(bool $includeInactive = false): array
 
 function asset_subcategory_map(bool $includeInactive = false): array
 {
+    return asset_subcategory_map_for_segment($includeInactive, null);
+}
+
+function asset_subcategory_map_for_segment(bool $includeInactive = false, ?int $segmentId = null): array
+{
     $map = [];
-    foreach (get_asset_subcategories(null, $includeInactive) as $subcategory) {
+    foreach (get_asset_subcategories(null, $includeInactive, $segmentId) as $subcategory) {
         $map[$subcategory['id']] = $subcategory;
     }
     return $map;
@@ -1796,10 +2131,11 @@ function asset_subcategory_map(bool $includeInactive = false): array
 
 function validate_asset_field_definition(array $input, ?int $fieldId = null): array
 {
+    $segmentId = asset_normalize_segment_id((int)($input['segment_id'] ?? 0));
     $label = trim((string)($input['label'] ?? ''));
     $dataType = trim((string)($input['data_type'] ?? ''));
     $keyInput = trim((string)($input['field_key'] ?? ''));
-    $existingField = $fieldId ? get_asset_field($fieldId) : null;
+    $existingField = $fieldId ? get_asset_field($fieldId, $segmentId) : null;
     $fieldKey = $keyInput !== '' ? asset_slug($keyInput) : ($existingField['field_key'] ?? asset_slug($label));
     $errors = [];
     if ($label === '') {
@@ -1819,12 +2155,10 @@ function validate_asset_field_definition(array $input, ?int $fieldId = null): ar
     }
     $sortOrder = (int)($input['sort_order'] ?? 0);
     if ($sortOrder <= 0) {
-        $sortOrder = $fieldId ? (int)($existingField['sort_order'] ?? 0) : next_sort_order('asset_fields');
+        $sortOrder = $fieldId ? (int)($existingField['sort_order'] ?? 0) : next_sort_order_for_filters('asset_fields', ['segment_id' => $segmentId]);
     }
 
-    $existing = db()->prepare('SELECT id FROM asset_fields WHERE field_key = ? LIMIT 1');
-    $existing->execute([$fieldKey]);
-    $existingId = (int)($existing->fetchColumn() ?: 0);
+    $existingId = (int)((get_asset_field_by_key($fieldKey, $segmentId)['id'] ?? 0));
     if ($existingId > 0 && $existingId !== (int)$fieldId) {
         $errors[] = 'Field key already exists.';
     }
@@ -1912,14 +2246,12 @@ function validate_asset_field_definition(array $input, ?int $fieldId = null): ar
             static fn(string $option): array => ['value' => $option, 'label' => $option],
             asset_conditional_union_options($conditionalMap)
         );
-        $existingChild = $fieldId ? get_asset_conditional_child_field($fieldId, true) : null;
+        $existingChild = $fieldId ? get_asset_conditional_child_field($fieldId, true, $segmentId) : null;
         $secondaryFieldKey = $existingChild['field_key'] ?? asset_slug(trim((string)($input['secondary_field_key'] ?? $secondaryLabel)));
         if ($secondaryFieldKey === '') {
             $secondaryFieldKey = $fieldKey . '_secondary';
         }
-        $existingSecondary = db()->prepare('SELECT id FROM asset_fields WHERE field_key = ? LIMIT 1');
-        $existingSecondary->execute([$secondaryFieldKey]);
-        $existingSecondaryId = (int)($existingSecondary->fetchColumn() ?: 0);
+        $existingSecondaryId = (int)((get_asset_field_by_key($secondaryFieldKey, $segmentId)['id'] ?? 0));
         if ($existingSecondaryId > 0 && (!$existingChild || $existingSecondaryId !== (int)$existingChild['id'])) {
             $errors[] = 'Secondary field key already exists.';
         }
@@ -1950,6 +2282,7 @@ function validate_asset_field_definition(array $input, ?int $fieldId = null): ar
     return [
         'errors' => $errors,
         'payload' => [
+            'segment_id' => $segmentId,
             'field_key' => $fieldKey,
             'label' => $label,
             'data_type' => $dataType,
@@ -1972,12 +2305,13 @@ function validate_asset_field_definition(array $input, ?int $fieldId = null): ar
 
 function validate_asset_payload(array $input, ?int $assetId = null, array $fileBag = [], bool $skipFileFields = false): array
 {
+    $segmentId = asset_normalize_segment_id(isset($input['segment_id']) ? (int)$input['segment_id'] : null);
     $errors = [];
     $categoryId = (int)($input['category_id'] ?? 0);
-    $subcategoryEnabled = asset_subcategory_enabled();
+    $subcategoryEnabled = asset_subcategory_enabled($segmentId);
     $subcategoryId = $subcategoryEnabled ? (int)($input['subcategory_id'] ?? 0) : 0;
-    $category = $categoryId > 0 ? get_asset_category($categoryId) : null;
-    $subcategory = $subcategoryEnabled && $subcategoryId > 0 ? get_asset_subcategory($subcategoryId) : null;
+    $category = $categoryId > 0 ? get_asset_category($categoryId, $segmentId) : null;
+    $subcategory = $subcategoryEnabled && $subcategoryId > 0 ? get_asset_subcategory($subcategoryId, $segmentId) : null;
     if (!$category || (!is_superadmin() && (int)$category['active_status'] !== 1)) {
         $errors['category_id'] = 'Valid category is required.';
     }
@@ -1985,7 +2319,7 @@ function validate_asset_payload(array $input, ?int $assetId = null, array $fileB
         $errors['subcategory_id'] = 'Valid sub-category is required.';
     }
 
-    $fieldMap = asset_field_map();
+    $fieldMap = asset_field_map_for_segment(false, $segmentId);
     $values = [];
     $fileOperations = [];
     foreach ($fieldMap as $fieldKey => $field) {
@@ -2034,6 +2368,7 @@ function validate_asset_payload(array $input, ?int $assetId = null, array $fileB
     return [
         'errors' => $errors,
         'payload' => [
+            'segment_id' => $segmentId,
             'category_id' => $categoryId,
             'subcategory_id' => $subcategoryId,
             'field_values' => $values,
@@ -2267,10 +2602,11 @@ function asset_normalize_unique_compare_value(array $field, mixed $raw): ?string
     };
 }
 
-function asset_unique_existing_values_map(): array
+function asset_unique_existing_values_map(?int $segmentId = null): array
 {
     $map = [];
-    foreach (get_asset_fields() as $field) {
+    $segmentId = asset_normalize_segment_id($segmentId);
+    foreach (get_asset_fields(false, $segmentId) as $field) {
         if ((int)($field['is_unique'] ?? 0) !== 1 || (int)($field['is_import_enabled'] ?? 0) !== 1 || (string)($field['data_type'] ?? '') === 'file') {
             continue;
         }
@@ -2285,10 +2621,11 @@ function asset_unique_existing_values_map(): array
             FROM asset_values v
             JOIN assets a ON a.id = v.asset_id
             WHERE v.field_id = ?
+              AND a.segment_id = ?
               AND a.deleted_at IS NULL
               AND a.active_status = 1
               AND v.{$column} IS NOT NULL");
-        $stmt->execute([(int)$field['id']]);
+        $stmt->execute([(int)$field['id'], $segmentId]);
         $values = [];
         foreach ($stmt->fetchAll() as $row) {
             $normalized = asset_normalize_unique_compare_value($field, $row['field_value'] ?? null);
@@ -2336,7 +2673,7 @@ function validate_asset_unique_values_within_batch(array $fieldMap, array $field
 function create_asset(array $validated, array $user): int
 {
     $fileCleanup = ['new_paths' => [], 'delete_paths' => []];
-    $fieldMap = asset_field_map(true);
+    $fieldMap = asset_field_map_for_segment(true, $segmentId);
     db()->beginTransaction();
     try {
         $assetId = persist_asset_record($validated, $user, $fileCleanup);
@@ -2366,8 +2703,9 @@ function persist_asset_record(array $validated, array $user, array &$fileCleanup
     if (!$ctx) {
         throw new RuntimeException('Office context not found.');
     }
-    $stmt = db()->prepare('INSERT INTO assets (asset_number, category_id, subcategory_id, office_type, office_id, active_status, created_by, created_at) VALUES (?, ?, ?, ?, ?, 1, ?, NOW())');
+    $stmt = db()->prepare('INSERT INTO assets (segment_id, asset_number, category_id, subcategory_id, office_type, office_id, active_status, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, 1, ?, NOW())');
     $stmt->execute([
+        asset_normalize_segment_id((int)($validated['segment_id'] ?? 0)),
         'PENDING',
         $validated['category_id'],
         $validated['subcategory_id'] > 0 ? $validated['subcategory_id'] : null,
@@ -2389,7 +2727,7 @@ function update_asset(int $assetId, array $validated, array $user): void
     if (!$asset) {
         throw new RuntimeException('Asset not found.');
     }
-    $fieldMap = asset_field_map(true);
+    $fieldMap = asset_field_map_for_segment(true, $segmentId);
     $logDetails = build_asset_update_log_details($asset, $validated, $fieldMap);
     $fileCleanup = ['new_paths' => [], 'delete_paths' => []];
     db()->beginTransaction();
@@ -2511,8 +2849,8 @@ function get_asset(int $assetId, bool $includeDeleted = false): ?array
 {
     $sql = 'SELECT a.*, c.name AS category_name, s.name AS subcategory_name, creator.email_id AS created_by_email, editor.email_id AS updated_by_email
             FROM assets a
-            JOIN asset_categories c ON c.id = a.category_id
-            LEFT JOIN asset_subcategories s ON s.id = a.subcategory_id
+            JOIN asset_categories c ON c.id = a.category_id AND c.segment_id = a.segment_id
+            LEFT JOIN asset_subcategories s ON s.id = a.subcategory_id AND s.segment_id = a.segment_id
             JOIN users creator ON creator.id = a.created_by
             LEFT JOIN users editor ON editor.id = a.updated_by
             WHERE a.id = ?';
@@ -2548,7 +2886,7 @@ function asset_display_value(array $row): string
         'number' => $row['value_number'] !== null ? rtrim(rtrim((string)$row['value_number'], '0'), '.') : '',
         'date' => (string)($row['value_date'] ?? ''),
         'yes_no' => $row['value_bool'] === null ? '' : ((int)$row['value_bool'] === 1 ? 'Yes' : 'No'),
-        'dropdown' => (string)($row['value_option'] ?? ''),
+        'dropdown', 'conditional' => (string)($row['value_option'] ?? ''),
         default => (string)($row['value_text'] ?? ''),
     };
 }
@@ -2711,40 +3049,31 @@ function asset_matches_dynamic_filters(array $asset, array $filters, array $fiel
     return true;
 }
 
-function asset_filter_visible_fields(array $fields, array $assets): array
+function asset_filter_visible_fields(array $fields, array $assets, ?int $segmentId = null): array
 {
-    $threshold = asset_filter_distinct_threshold();
+    $segmentId = asset_normalize_segment_id($segmentId);
     $visible = [];
     foreach ($fields as $field) {
-        if ((int)($field['active_status'] ?? 0) !== 1 || asset_is_conditional_secondary($field)) {
+        if ((int)($field['active_status'] ?? 0) !== 1) {
             continue;
         }
-        $type = (string)($field['data_type'] ?? 'text');
-        $force = (int)($field['is_filter_enabled'] ?? 0) === 1;
-        if (in_array($type, ['dropdown', 'yes_no', 'date', 'file', 'conditional'], true) || $force) {
-            $visible[$field['field_key']] = true;
+        if (asset_is_conditional_secondary($field)) {
+            $parentField = get_asset_field((int)$field['secondary_of_field_id'], $segmentId);
+            if ($parentField && (int)($parentField['is_filter_enabled'] ?? 0) === 1) {
+                $visible[$field['field_key']] = true;
+            }
             continue;
         }
-        $distinct = [];
-        foreach ($assets as $asset) {
-            $value = asset_filter_value($asset, (string)$field['field_key']);
-            if ($value === '') {
-                continue;
-            }
-            $distinct[mb_strtolower($value, 'UTF-8')] = $value;
-            if (count($distinct) > $threshold && !$force) {
-                break;
-            }
-        }
-        if ($force || count($distinct) <= $threshold) {
+        if ((int)($field['is_filter_enabled'] ?? 0) === 1) {
             $visible[$field['field_key']] = true;
         }
     }
     return $visible;
 }
 
-function build_asset_filter_catalog(array $assets, array $fields): array
+function build_asset_filter_catalog(array $assets, array $fields, ?int $segmentId = null): array
 {
+    $segmentId = asset_normalize_segment_id($segmentId);
     $catalog = [
         'categories' => [],
         'subcategories' => [],
@@ -2754,17 +3083,17 @@ function build_asset_filter_catalog(array $assets, array $fields): array
         'subdivisions' => [],
         'fields' => [],
     ];
-    foreach (get_asset_categories() as $category) {
+    foreach (get_asset_categories(false, $segmentId) as $category) {
         $catalog['categories'][(int)$category['id']] = ['id' => (int)$category['id'], 'name' => (string)$category['name']];
     }
-    foreach (get_asset_subcategories(null) as $subcategory) {
+    foreach (get_asset_subcategories(null, false, $segmentId) as $subcategory) {
         $catalog['subcategories'][(int)$subcategory['id']] = [
             'id' => (int)$subcategory['id'],
             'category_id' => (int)$subcategory['category_id'],
             'name' => (string)$subcategory['name'],
         ];
     }
-    $visibleFields = asset_filter_visible_fields($fields, $assets);
+    $visibleFields = asset_filter_visible_fields($fields, $assets, $segmentId);
     foreach ($assets as $asset) {
         $officeType = (int)($asset['office_type'] ?? 0);
         $officeId = (int)($asset['office_id'] ?? 0);
@@ -2850,14 +3179,15 @@ function get_assets(array $filters = [], ?array $user = null, bool $includeDelet
 {
     $user = $user ?: current_user();
     $viewScope = (string)($filters['office_view_scope'] ?? 'my_office');
+    $segmentId = asset_normalize_segment_id(isset($filters['segment_id']) ? (int)$filters['segment_id'] : null);
     $sql = 'SELECT a.*, c.name AS category_name, s.name AS subcategory_name, creator.email_id AS created_by_email, editor.email_id AS updated_by_email
             FROM assets a
-            JOIN asset_categories c ON c.id = a.category_id
-            LEFT JOIN asset_subcategories s ON s.id = a.subcategory_id
+            JOIN asset_categories c ON c.id = a.category_id AND c.segment_id = a.segment_id
+            LEFT JOIN asset_subcategories s ON s.id = a.subcategory_id AND s.segment_id = a.segment_id
             JOIN users creator ON creator.id = a.created_by
             LEFT JOIN users editor ON editor.id = a.updated_by
-            WHERE 1=1';
-    $params = [];
+            WHERE a.segment_id = ?';
+    $params = [$segmentId];
     if (!$includeDeleted) {
         $sql .= ' AND a.deleted_at IS NULL AND a.active_status = 1';
     }
@@ -2887,7 +3217,7 @@ function get_assets(array $filters = [], ?array $user = null, bool $includeDelet
         $sql .= ' AND a.category_id = ?';
         $params[] = $categoryId;
     }
-    $subcategoryId = asset_subcategory_enabled() ? (int)($filters['subcategory_id'] ?? 0) : 0;
+    $subcategoryId = asset_subcategory_enabled($segmentId) ? (int)($filters['subcategory_id'] ?? 0) : 0;
     if ($subcategoryId > 0) {
         $sql .= ' AND a.subcategory_id = ?';
         $params[] = $subcategoryId;
@@ -2895,7 +3225,7 @@ function get_assets(array $filters = [], ?array $user = null, bool $includeDelet
 
     $condition = trim((string)($filters['condition_value'] ?? ''));
     if ($condition !== '') {
-        $fieldMap = asset_field_map(true);
+        $fieldMap = asset_field_map_for_segment(true, $segmentId);
         if (isset($fieldMap['condition_value'])) {
             $sql .= ' AND EXISTS (SELECT 1 FROM asset_values v WHERE v.asset_id = a.id AND v.field_id = ? AND v.value_option = ?)';
             $params[] = (int)$fieldMap['condition_value']['id'];
@@ -2905,9 +3235,11 @@ function get_assets(array $filters = [], ?array $user = null, bool $includeDelet
 
     $declaredStatus = trim((string)($filters['declared_status'] ?? ''));
     if ($declaredStatus === 'declared') {
-        $sql .= ' AND EXISTS (SELECT 1 FROM office_asset_declarations d WHERE d.office_type = a.office_type AND d.office_id = a.office_id AND d.declared_status = 1)';
+        $sql .= ' AND EXISTS (SELECT 1 FROM office_asset_declarations d WHERE d.segment_id = ? AND d.office_type = a.office_type AND d.office_id = a.office_id AND d.declared_status = 1)';
+        $params[] = $segmentId;
     } elseif ($declaredStatus === 'undeclared') {
-        $sql .= ' AND NOT EXISTS (SELECT 1 FROM office_asset_declarations d WHERE d.office_type = a.office_type AND d.office_id = a.office_id AND d.declared_status = 1)';
+        $sql .= ' AND NOT EXISTS (SELECT 1 FROM office_asset_declarations d WHERE d.segment_id = ? AND d.office_type = a.office_type AND d.office_id = a.office_id AND d.declared_status = 1)';
+        $params[] = $segmentId;
     }
 
     $sql .= ' ORDER BY c.sort_order ASC, c.name ASC, a.id DESC';
@@ -2928,7 +3260,7 @@ function get_assets(array $filters = [], ?array $user = null, bool $includeDelet
     if (!is_superadmin() && $viewScope === 'office_under_me') {
         $rows = array_values(array_filter($rows, static fn(array $row): bool => user_can_view_subordinate_asset($user, $row)));
     }
-    $fieldMap = asset_field_map(true);
+    $fieldMap = asset_field_map_for_segment(true, (int)($asset['segment_id'] ?? 0));
     $rows = array_values(array_filter($rows, static function (array $row) use ($filters, $fieldMap): bool {
         if (!asset_matches_hierarchy_filters($row, $filters)) {
             return false;
@@ -3040,7 +3372,9 @@ function sync_asset_file_values(int $assetId, array $fileOperations, array &$cle
         return;
     }
     $dir = ensure_asset_file_storage_dir();
-    $fieldMap = asset_field_map(true);
+    $asset = get_asset($assetId, true);
+    $segmentId = (int)($asset['segment_id'] ?? asset_default_segment_id());
+    $fieldMap = asset_field_map_for_segment(true, $segmentId);
     foreach ($fileOperations as $fieldKey => $operation) {
         $field = $fieldMap[$fieldKey] ?? null;
         if (!$field || $field['data_type'] !== 'file') {
@@ -3095,7 +3429,8 @@ function finalize_asset_file_changes(array $cleanup, bool $committed): void
 function get_assets_grouped_by_category(array $filters = [], ?array $user = null): array
 {
     $grouped = [];
-    $categories = get_asset_categories();
+    $segmentId = asset_normalize_segment_id(isset($filters['segment_id']) ? (int)$filters['segment_id'] : null);
+    $categories = get_asset_categories(false, $segmentId);
     if (!empty($filters['category_id'])) {
         $categories = array_values(array_filter($categories, fn($category) => (int)$category['id'] === (int)$filters['category_id']));
     }
@@ -3109,26 +3444,26 @@ function get_assets_grouped_by_category(array $filters = [], ?array $user = null
     return $grouped;
 }
 
-function asset_export_active_fields(): array
+function asset_export_active_fields(?int $segmentId = null): array
 {
     return array_values(array_filter(
-        get_asset_fields(),
+        get_asset_fields(false, $segmentId),
         static fn(array $field): bool => (int)$field['active_status'] === 1 && (int)$field['is_import_enabled'] === 1
     ));
 }
 
-function asset_export_headers(bool $includeOfficeName = false): array
+function asset_export_headers(bool $includeOfficeName = false, ?int $segmentId = null): array
 {
     $headers = ['serial' => 'Serial No'];
     if ($includeOfficeName) {
         $headers['office_name'] = 'Office Name';
     }
     $headers['category'] = 'Category';
-    if (asset_subcategory_enabled()) {
+    if (asset_subcategory_enabled($segmentId)) {
         $headers['subcategory'] = 'Sub-category';
     }
 
-    foreach (asset_export_active_fields() as $field) {
+    foreach (asset_export_active_fields($segmentId) as $field) {
         $rawLabel = trim((string)($field['label'] ?? ''));
         $parts = preg_split('/\s*\/\s*/u', $rawLabel);
         $headers[$field['field_key']] = trim((string)($parts[0] ?? $rawLabel));
@@ -3140,7 +3475,8 @@ function asset_export_headers(bool $includeOfficeName = false): array
 function build_asset_export_rows(array $filters = [], ?array $user = null, bool $includeOfficeName = false): array
 {
     $rows = [];
-    $fields = asset_export_active_fields();
+    $segmentId = asset_normalize_segment_id(isset($filters['segment_id']) ? (int)$filters['segment_id'] : null);
+    $fields = asset_export_active_fields($segmentId);
     $assets = get_assets($filters, $user);
 
     foreach ($assets as $index => $asset) {
@@ -3148,7 +3484,7 @@ function build_asset_export_rows(array $filters = [], ?array $user = null, bool 
             'serial' => $index + 1,
             'category' => (string)($asset['category_name'] ?? ''),
         ];
-        if (asset_subcategory_enabled()) {
+        if (asset_subcategory_enabled($segmentId)) {
             $row['subcategory'] = (string)($asset['subcategory_name'] ?? '');
         }
         if ($includeOfficeName) {
@@ -3165,7 +3501,8 @@ function build_asset_export_rows(array $filters = [], ?array $user = null, bool 
 
 function export_asset_data_excel(array $filters = [], ?array $user = null, bool $includeOfficeName = false): void
 {
-    $headers = asset_export_headers($includeOfficeName);
+    $segmentId = asset_normalize_segment_id(isset($filters['segment_id']) ? (int)$filters['segment_id'] : null);
+    $headers = asset_export_headers($includeOfficeName, $segmentId);
     $rows = build_asset_export_rows($filters, $user, $includeOfficeName);
     $suffix = $includeOfficeName ? 'superadmin' : 'office';
     export_excel($rows, $headers, 'asset_data_' . $suffix . '.xlsx', 'Asset Data');
@@ -3214,10 +3551,10 @@ function stream_asset_file(int $fileId, ?array $user = null): void
     exit;
 }
 
-function get_asset_declaration(int $officeType, int $officeId): ?array
+function get_asset_declaration(int $officeType, int $officeId, ?int $segmentId = null): ?array
 {
-    $stmt = db()->prepare('SELECT * FROM office_asset_declarations WHERE office_type = ? AND office_id = ? LIMIT 1');
-    $stmt->execute([$officeType, $officeId]);
+    $stmt = db()->prepare('SELECT * FROM office_asset_declarations WHERE segment_id = ? AND office_type = ? AND office_id = ? LIMIT 1');
+    $stmt->execute([asset_normalize_segment_id($segmentId), $officeType, $officeId]);
     $row = $stmt->fetch();
     return $row ?: null;
 }
@@ -3268,23 +3605,23 @@ function asset_relative_age_days(?string $datetime): ?float
     return max(0, (time() - $timestamp) / 86400);
 }
 
-function get_office_last_asset_update_at(int $officeType, int $officeId): ?string
+function get_office_last_asset_update_at(int $officeType, int $officeId, ?int $segmentId = null): ?string
 {
     $stmt = db()->prepare('
         SELECT MAX(COALESCE(updated_at, created_at)) AS last_update_at
         FROM assets
-        WHERE office_type = ? AND office_id = ?
+        WHERE segment_id = ? AND office_type = ? AND office_id = ?
     ');
-    $stmt->execute([$officeType, $officeId]);
+    $stmt->execute([asset_normalize_segment_id($segmentId), $officeType, $officeId]);
     $value = $stmt->fetchColumn();
     return $value !== false && $value !== null ? (string)$value : null;
 }
 
-function get_office_activity_summary(int $officeType, int $officeId): array
+function get_office_activity_summary(int $officeType, int $officeId, ?int $segmentId = null): array
 {
-    $declaration = get_asset_declaration($officeType, $officeId);
+    $declaration = get_asset_declaration($officeType, $officeId, $segmentId);
     $lastSentAt = (string)($declaration['declared_at'] ?? '');
-    $lastUpdateAt = (string)(get_office_last_asset_update_at($officeType, $officeId) ?? '');
+    $lastUpdateAt = (string)(get_office_last_asset_update_at($officeType, $officeId, $segmentId) ?? '');
 
     return [
         'last_sent_at' => $lastSentAt,
@@ -3294,23 +3631,25 @@ function get_office_activity_summary(int $officeType, int $officeId): array
     ];
 }
 
-function declare_office_assets(int $officeType, int $officeId, int $userId): void
+function declare_office_assets(int $officeType, int $officeId, int $userId, ?int $segmentId = null): void
 {
+    $segmentId = asset_normalize_segment_id($segmentId);
     $user = current_user();
     $officerName = trim((string)($user['officer_name'] ?? ''));
     if ($officerName === '') {
         $officerName = (string)($user['email_id'] ?? '');
     }
-    $existing = get_asset_declaration($officeType, $officeId);
+    $existing = get_asset_declaration($officeType, $officeId, $segmentId);
     if ($existing) {
         db()->prepare('UPDATE office_asset_declarations SET declared_status = 1, declared_at = NOW(), declared_by = ?, declared_officer_name = ?, updated_at = NOW() WHERE id = ?')->execute([$userId, $officerName, (int)$existing['id']]);
         return;
     }
-    db()->prepare('INSERT INTO office_asset_declarations (office_type, office_id, declared_status, declared_at, declared_by, declared_officer_name, created_at) VALUES (?, ?, 1, NOW(), ?, ?, NOW())')->execute([$officeType, $officeId, $userId, $officerName]);
+    db()->prepare('INSERT INTO office_asset_declarations (segment_id, office_type, office_id, declared_status, declared_at, declared_by, declared_officer_name, created_at) VALUES (?, ?, ?, 1, NOW(), ?, ?, NOW())')->execute([$segmentId, $officeType, $officeId, $userId, $officerName]);
 }
 
-function reset_office_asset_declarations(array $pairs, int $userId): int
+function reset_office_asset_declarations(array $pairs, int $userId, ?int $segmentId = null): int
 {
+    $segmentId = asset_normalize_segment_id($segmentId);
     $count = 0;
     foreach ($pairs as $pair) {
         $officeType = (int)($pair['office_type'] ?? 0);
@@ -3318,9 +3657,9 @@ function reset_office_asset_declarations(array $pairs, int $userId): int
         if ($officeType <= 0 || $officeId <= 0) {
             continue;
         }
-        $existing = get_asset_declaration($officeType, $officeId);
+        $existing = get_asset_declaration($officeType, $officeId, $segmentId);
         if (!$existing) {
-            db()->prepare('INSERT INTO office_asset_declarations (office_type, office_id, declared_status, reset_at, reset_by, created_at) VALUES (?, ?, 0, NOW(), ?, NOW())')->execute([$officeType, $officeId, $userId]);
+            db()->prepare('INSERT INTO office_asset_declarations (segment_id, office_type, office_id, declared_status, reset_at, reset_by, created_at) VALUES (?, ?, ?, 0, NOW(), ?, NOW())')->execute([$segmentId, $officeType, $officeId, $userId]);
             $count++;
             continue;
         }
@@ -3342,6 +3681,7 @@ function get_declaration_status_tables(array $filters = []): array
 
 function get_declarations_for_office_type(int $officeType, array $filters = []): array
 {
+    $segmentId = asset_normalize_segment_id(isset($filters['segment_id']) ? (int)$filters['segment_id'] : null);
     $tableMap = [
         2 => 'zones',
         3 => 'circles',
@@ -3355,15 +3695,15 @@ function get_declarations_for_office_type(int $officeType, array $filters = []):
     $sql = "SELECT o.id AS office_id, o.office_name, o.active_status, d.declared_status, d.declared_at, d.declared_officer_name, d.reset_at
         FROM {$table} o
         LEFT JOIN office_asset_declarations d
-            ON d.office_type = ? AND d.office_id = o.id
+            ON d.segment_id = ? AND d.office_type = ? AND d.office_id = o.id
         ORDER BY o.office_name ASC";
     $stmt = db()->prepare($sql);
-    $stmt->execute([$officeType]);
+    $stmt->execute([$segmentId, $officeType]);
     $rows = [];
     foreach ($stmt->fetchAll() as $row) {
         $officeId = (int)$row['office_id'];
         $lastSentAt = (string)($row['declared_at'] ?? '');
-        $lastUpdateAt = (string)(get_office_last_asset_update_at($officeType, $officeId) ?? '');
+        $lastUpdateAt = (string)(get_office_last_asset_update_at($officeType, $officeId, $segmentId) ?? '');
         $status = !empty($row['declared_status']) ? 'declared' : 'undeclared';
 
         $sentAge = asset_relative_age_days($lastSentAt);
@@ -4185,14 +4525,14 @@ function asset_template_storage_dir(): string
     return dirname(__DIR__, 2) . '/storage/templates';
 }
 
-function asset_template_storage_path(): string
+function asset_template_storage_path(?int $segmentId = null): string
 {
-    return asset_template_storage_dir() . '/asset_import_template.xlsx';
+    return asset_template_storage_dir() . '/asset_import_template_segment_' . asset_normalize_segment_id($segmentId) . '.xlsx';
 }
 
-function asset_template_uploaded_info(): ?array
+function asset_template_uploaded_info(?int $segmentId = null): ?array
 {
-    $path = asset_template_storage_path();
+    $path = asset_template_storage_path($segmentId);
     if (!is_file($path)) {
         return null;
     }
@@ -4204,15 +4544,16 @@ function asset_template_uploaded_info(): ?array
     ];
 }
 
-function asset_template_core_columns(): array
+function asset_template_core_columns(?int $segmentId = null): array
 {
+    $segmentId = asset_normalize_segment_id($segmentId);
     $columns = [
         ['key' => 'category', 'label' => 'Category / Category'],
     ];
-    if (asset_subcategory_enabled()) {
+    if (asset_subcategory_enabled($segmentId)) {
         $columns[] = ['key' => 'subcategory', 'label' => 'Sub-category / Sub-category'];
     }
-    foreach (get_asset_fields() as $field) {
+    foreach (get_asset_fields(false, $segmentId) as $field) {
         if ((int)$field['is_import_enabled'] !== 1 || (int)$field['active_status'] !== 1) {
             continue;
         }
@@ -4221,21 +4562,21 @@ function asset_template_core_columns(): array
     return $columns;
 }
 
-function asset_template_columns(): array
+function asset_template_columns(?int $segmentId = null): array
 {
     return array_merge(
         [['key' => 'serial', 'label' => 'Serial No']],
-        asset_template_core_columns(),
+        asset_template_core_columns($segmentId),
         [['key' => 'instruction', 'label' => 'Instruction']]
     );
 }
 
-function asset_import_expected_keys(): array
+function asset_import_expected_keys(?int $segmentId = null): array
 {
-    return array_column(asset_template_core_columns(), 'key');
+    return array_column(asset_template_core_columns($segmentId), 'key');
 }
 
-function validate_uploaded_asset_template(string $tmpName): array
+function validate_uploaded_asset_template(string $tmpName, ?int $segmentId = null): array
 {
     ensure_library('PhpOffice\\PhpSpreadsheet\\IOFactory', 'PhpSpreadsheet is not installed.');
     $spreadsheet = PhpOffice\PhpSpreadsheet\IOFactory::load($tmpName);
@@ -4245,16 +4586,16 @@ function validate_uploaded_asset_template(string $tmpName): array
         return ['Template file is empty.'];
     }
     $headerRow = array_values($rows[1] ?? []);
-    $expectedCount = count(asset_template_columns());
+    $expectedCount = count(asset_template_columns($segmentId));
     if (count($headerRow) < $expectedCount) {
         return ['Template column count is less than the current required column sequence.'];
     }
     return [];
 }
 
-function find_asset_category_by_name(string $name): ?array
+function find_asset_category_by_name(string $name, ?int $segmentId = null): ?array
 {
-    foreach (get_asset_categories(true) as $category) {
+    foreach (get_asset_categories(true, asset_normalize_segment_id($segmentId)) as $category) {
         if (strcasecmp(trim((string)$category['name']), trim($name)) === 0) {
             return $category;
         }
@@ -4262,9 +4603,9 @@ function find_asset_category_by_name(string $name): ?array
     return null;
 }
 
-function find_asset_subcategory_by_name(int $categoryId, string $name): ?array
+function find_asset_subcategory_by_name(int $categoryId, string $name, ?int $segmentId = null): ?array
 {
-    foreach (get_asset_subcategories($categoryId, true) as $subcategory) {
+    foreach (get_asset_subcategories($categoryId, true, asset_normalize_segment_id($segmentId)) as $subcategory) {
         if (strcasecmp(trim((string)$subcategory['name']), trim($name)) === 0) {
             return $subcategory;
         }
@@ -4272,8 +4613,9 @@ function find_asset_subcategory_by_name(int $categoryId, string $name): ?array
     return null;
 }
 
-function sync_asset_template_info_sheet(string $tmpName): array
+function sync_asset_template_info_sheet(string $tmpName, ?int $segmentId = null): array
 {
+    $segmentId = asset_normalize_segment_id($segmentId);
     ensure_library('PhpOffice\\PhpSpreadsheet\\IOFactory', 'PhpSpreadsheet is not installed.');
     $spreadsheet = PhpOffice\PhpSpreadsheet\IOFactory::load($tmpName);
     $sheet = null;
@@ -4304,14 +4646,14 @@ function sync_asset_template_info_sheet(string $tmpName): array
                 continue;
             }
 
-            $category = find_asset_category_by_name($categoryName);
+            $category = find_asset_category_by_name($categoryName, $segmentId);
             if (!$category) {
-                create_asset_category($categoryName);
-                $category = find_asset_category_by_name($categoryName);
+                create_asset_category($categoryName, $segmentId);
+                $category = find_asset_category_by_name($categoryName, $segmentId);
                 $categoriesCreated++;
             } elseif ((int)($category['active_status'] ?? 1) !== 1) {
-                set_asset_category_status((int)$category['id'], 1);
-                $category = get_asset_category((int)$category['id']) ?? $category;
+                set_asset_category_status((int)$category['id'], 1, $segmentId);
+                $category = get_asset_category((int)$category['id'], $segmentId) ?? $category;
             }
 
             if (!$category) {
@@ -4333,12 +4675,12 @@ function sync_asset_template_info_sheet(string $tmpName): array
                 }
                 $seenSubcategories[$subKey] = true;
 
-                $subcategory = find_asset_subcategory_by_name((int)$category['id'], $subcategoryName);
+                $subcategory = find_asset_subcategory_by_name((int)$category['id'], $subcategoryName, $segmentId);
                 if (!$subcategory) {
-                    create_asset_subcategory((int)$category['id'], $subcategoryName);
+                    create_asset_subcategory((int)$category['id'], $subcategoryName, $segmentId);
                     $subcategoriesCreated++;
                 } elseif ((int)($subcategory['active_status'] ?? 1) !== 1) {
-                    set_asset_subcategory_status((int)$subcategory['id'], 1);
+                    set_asset_subcategory_status((int)$subcategory['id'], 1, $segmentId);
                 }
             }
         }
@@ -4353,8 +4695,9 @@ function sync_asset_template_info_sheet(string $tmpName): array
     return ['categories_created' => $categoriesCreated, 'subcategories_created' => $subcategoriesCreated];
 }
 
-function save_uploaded_asset_template(array $file): array
+function save_uploaded_asset_template(array $file, ?int $segmentId = null): array
 {
+    $segmentId = asset_normalize_segment_id($segmentId);
     if (empty($file['tmp_name']) || !is_uploaded_file($file['tmp_name'])) {
         throw new RuntimeException('Please choose a valid Excel template file.');
     }
@@ -4362,25 +4705,26 @@ function save_uploaded_asset_template(array $file): array
     if (!in_array($extension, ['xlsx', 'xls'], true)) {
         throw new RuntimeException('Template file must be an Excel file.');
     }
-    $errors = validate_uploaded_asset_template($file['tmp_name']);
+    $errors = validate_uploaded_asset_template($file['tmp_name'], $segmentId);
     if ($errors) {
         throw new RuntimeException(implode(' ', $errors));
     }
-    $syncSummary = sync_asset_template_info_sheet($file['tmp_name']);
+    $syncSummary = sync_asset_template_info_sheet($file['tmp_name'], $segmentId);
     $dir = asset_template_storage_dir();
     if (!is_dir($dir) && !mkdir($dir, 0777, true) && !is_dir($dir)) {
         throw new RuntimeException('Unable to create template storage directory.');
     }
-    $target = asset_template_storage_path();
+    $target = asset_template_storage_path($segmentId);
     if (!move_uploaded_file($file['tmp_name'], $target)) {
         throw new RuntimeException('Failed to save template file.');
     }
     return $syncSummary;
 }
 
-function output_asset_template_download(bool $preferUploaded = true): void
+function output_asset_template_download(bool $preferUploaded = true, ?int $segmentId = null): void
 {
-    $stored = asset_template_uploaded_info();
+    $segmentId = asset_normalize_segment_id($segmentId);
+    $stored = asset_template_uploaded_info($segmentId);
     if ($preferUploaded && $stored) {
         header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         header('Content-Disposition: attachment; filename="asset_import_template.xlsx"');
@@ -4390,7 +4734,7 @@ function output_asset_template_download(bool $preferUploaded = true): void
         exit;
     }
     $headers = [];
-    foreach (asset_template_columns() as $column) {
+    foreach (asset_template_columns($segmentId) as $column) {
         $headers[$column['key']] = $column['label'];
     }
     $rows = [[
@@ -4398,33 +4742,34 @@ function output_asset_template_download(bool $preferUploaded = true): void
         'category' => '',
         'instruction' => 'Fill data columns only. Keep heading row unchanged.',
     ]];
-    if (asset_subcategory_enabled()) {
+    if (asset_subcategory_enabled($segmentId)) {
         $rows[0]['subcategory'] = '';
     }
     export_excel($rows, $headers, 'asset_import_template.xlsx', 'Asset Template');
 }
 
-function asset_template_headers(): array
+function asset_template_headers(?int $segmentId = null): array
 {
+    $segmentId = asset_normalize_segment_id($segmentId);
     $headers = [
         'category' => 'Category / শ্রেণি',
         'subcategory' => 'Sub-category / উপ-শ্রেণি',
     ];
-    foreach (get_asset_fields() as $field) {
+    foreach (get_asset_fields(false, $segmentId) as $field) {
         if ((int)$field['is_import_enabled'] !== 1) {
             continue;
         }
         $headers[$field['field_key']] = $field['label'];
     }
-    if (!asset_subcategory_enabled()) {
+    if (!asset_subcategory_enabled($segmentId)) {
         unset($headers['subcategory']);
     }
     return $headers;
 }
 
-function build_asset_template_rows(): array
+function build_asset_template_rows(?int $segmentId = null): array
 {
-    if (!asset_subcategory_enabled()) {
+    if (!asset_subcategory_enabled($segmentId)) {
         return [[
             'category' => '',
         ]];
@@ -4435,8 +4780,9 @@ function build_asset_template_rows(): array
     ]];
 }
 
-function parse_asset_import_file(string $tmpName, string $originalName, array $user): array
+function parse_asset_import_file(string $tmpName, string $originalName, array $user, ?int $segmentId = null): array
 {
+    $segmentId = asset_normalize_segment_id($segmentId);
     ensure_library('PhpOffice\\PhpSpreadsheet\\IOFactory', 'PhpSpreadsheet is not installed.');
     $spreadsheet = PhpOffice\PhpSpreadsheet\IOFactory::load($tmpName);
     $sheet = $spreadsheet->getActiveSheet();
@@ -4445,7 +4791,7 @@ function parse_asset_import_file(string $tmpName, string $originalName, array $u
         return ['errors' => ['Uploaded file is empty.'], 'rows' => []];
     }
     array_shift($rows);
-    $expectedKeys = asset_import_expected_keys();
+    $expectedKeys = asset_import_expected_keys($segmentId);
     if (!$expectedKeys) {
         return ['errors' => ['No active import columns are configured.'], 'rows' => []];
     }
@@ -4470,7 +4816,7 @@ function parse_asset_import_file(string $tmpName, string $originalName, array $u
         if (!$hasValue) {
             continue;
         }
-        $importRows[] = stage_asset_import_row($payload, $rowIndex + 2);
+        $importRows[] = stage_asset_import_row($payload, $rowIndex + 2, $segmentId);
     }
 
     if (!$importRows) {
@@ -4479,6 +4825,7 @@ function parse_asset_import_file(string $tmpName, string $originalName, array $u
 
     $_SESSION['asset_import_review'] = [
         'filename' => $originalName,
+        'segment_id' => $segmentId,
         'rows' => $importRows,
         'created_at' => date('Y-m-d H:i:s'),
     ];
@@ -4486,31 +4833,33 @@ function parse_asset_import_file(string $tmpName, string $originalName, array $u
     return ['errors' => $topErrors, 'rows' => $importRows];
 }
 
-function validate_import_review_row(array $row): array
+function validate_import_review_row(array $row, ?int $segmentId = null): array
 {
+    $segmentId = asset_normalize_segment_id($segmentId);
     $payload = [
         'category' => trim((string)($row['category'] ?? '')),
     ];
-    if (asset_subcategory_enabled()) {
+    if (asset_subcategory_enabled($segmentId)) {
         $payload['subcategory'] = trim((string)($row['subcategory'] ?? ''));
     }
-    foreach (get_asset_fields() as $field) {
+    foreach (get_asset_fields(false, $segmentId) as $field) {
         if ((int)$field['is_import_enabled'] !== 1 || (int)$field['active_status'] !== 1) {
             continue;
         }
         $payload[$field['field_key']] = trim((string)($row['fields'][$field['field_key']] ?? ''));
     }
-    return stage_asset_import_row($payload, (int)($row['row_number'] ?? 0));
+    return stage_asset_import_row($payload, (int)($row['row_number'] ?? 0), $segmentId);
 }
 
-function stage_asset_import_row(array $input, int $rowNumber): array
+function stage_asset_import_row(array $input, int $rowNumber, ?int $segmentId = null): array
 {
+    $segmentId = asset_normalize_segment_id($segmentId);
     $categoryName = trim((string)($input['category'] ?? ''));
-    $subcategoryEnabled = asset_subcategory_enabled();
+    $subcategoryEnabled = asset_subcategory_enabled($segmentId);
     $subcategoryName = $subcategoryEnabled ? trim((string)($input['subcategory'] ?? '')) : '';
 
     $categoryId = 0;
-    foreach (get_asset_categories() as $category) {
+    foreach (get_asset_categories(false, $segmentId) as $category) {
         if (strcasecmp($category['name'], $categoryName) === 0) {
             $categoryId = (int)$category['id'];
             break;
@@ -4519,7 +4868,7 @@ function stage_asset_import_row(array $input, int $rowNumber): array
 
     $subcategoryId = 0;
     if ($subcategoryEnabled && $categoryId > 0) {
-        foreach (get_asset_subcategories($categoryId) as $subcategory) {
+        foreach (get_asset_subcategories($categoryId, false, $segmentId) as $subcategory) {
             if (strcasecmp($subcategory['name'], $subcategoryName) === 0) {
                 $subcategoryId = (int)$subcategory['id'];
                 break;
@@ -4528,7 +4877,7 @@ function stage_asset_import_row(array $input, int $rowNumber): array
     }
 
     $fieldInputs = [];
-    foreach (get_asset_fields() as $field) {
+    foreach (get_asset_fields(false, $segmentId) as $field) {
         if ((int)$field['is_import_enabled'] !== 1) {
             continue;
         }
@@ -4536,6 +4885,7 @@ function stage_asset_import_row(array $input, int $rowNumber): array
     }
 
     $validated = validate_asset_payload([
+        'segment_id' => $segmentId,
         'category_id' => $categoryId,
         'subcategory_id' => $subcategoryId,
         'fields' => $fieldInputs,
@@ -4554,10 +4904,12 @@ function stage_asset_import_row(array $input, int $rowNumber): array
 
 function restage_asset_import_rows(array $submittedRows): array
 {
+    $review = $_SESSION['asset_import_review'] ?? [];
+    $segmentId = asset_normalize_segment_id((int)($review['segment_id'] ?? 0));
     $reviewRows = [];
     foreach ($submittedRows as $index => $row) {
         $row['row_number'] = (int)($row['row_number'] ?? ($index + 1));
-        $reviewRows[] = validate_import_review_row($row);
+        $reviewRows[] = validate_import_review_row($row, $segmentId);
     }
     if ($reviewRows) {
         $_SESSION['asset_import_review']['rows'] = $reviewRows;
@@ -4573,29 +4925,32 @@ function commit_asset_import_review(array $user): array
     if (!$review || empty($review['rows'])) {
         return ['saved' => 0, 'errors' => ['No staged import rows found.']];
     }
+    $segmentId = asset_normalize_segment_id((int)($review['segment_id'] ?? 0));
+    $_SESSION['asset_active_segment_id'] = $segmentId;
 
     $saved = 0;
     $errors = [];
     $invalidRows = [];
-    $batchStmt = db()->prepare('INSERT INTO asset_import_batches (office_type, office_id, uploaded_by, original_filename, status, created_at) VALUES (?, ?, ?, ?, ?, NOW())');
+    $batchStmt = db()->prepare('INSERT INTO asset_import_batches (segment_id, office_type, office_id, uploaded_by, original_filename, status, created_at) VALUES (?, ?, ?, ?, ?, ?, NOW())');
     $ctx = current_office_context($user);
     if (!$ctx) {
         return ['saved' => 0, 'errors' => ['Office context not found.']];
     }
-    $batchStmt->execute([$ctx['office_type'], $ctx['office_id'], (int)$user['id'], (string)($review['filename'] ?? 'import.xlsx'), 'completed']);
+    $batchStmt->execute([$segmentId, $ctx['office_type'], $ctx['office_id'], (int)$user['id'], (string)($review['filename'] ?? 'import.xlsx'), 'completed']);
     $batchId = (int)db()->lastInsertId();
 
     $validRows = [];
     $seenUniqueValues = [];
-    $importFieldMap = asset_field_map();
+    $importFieldMap = asset_field_map_for_segment(false, $segmentId);
     foreach ($review['rows'] as $row) {
-        $restagedRow = validate_import_review_row($row);
+        $restagedRow = validate_import_review_row($row, $segmentId);
         if (!empty($restagedRow['errors'])) {
             $invalidRows[] = $restagedRow;
             $errors[] = 'Row ' . $row['row_number'] . ' still has validation errors.';
             continue;
         }
         $validated = validate_asset_payload([
+            'segment_id' => $segmentId,
             'category_id' => (int)$restagedRow['category_id'],
             'subcategory_id' => (int)$restagedRow['subcategory_id'],
             'fields' => $restagedRow['fields'] ?? [],

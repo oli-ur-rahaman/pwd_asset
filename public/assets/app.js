@@ -320,160 +320,377 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const assetFilters = document.getElementById('asset-filters');
     if (assetFilters) {
-        const zoneSelect = assetFilters.querySelector('select[name="zone_id"]');
-        const circleSelect = assetFilters.querySelector('select[name="circle_id"]');
-        const divisionSelect = assetFilters.querySelector('select[name="division_id"]');
-        const subdivisionSelect = assetFilters.querySelector('select[name="subdivision_id"]');
-
-        const updateDependentSelect = (select, matcher) => {
-            if (!select) {
-                return;
-            }
-            const previous = select.value;
-            const visibleOptions = [];
-            select.querySelectorAll('option').forEach((option) => {
-                if (option.value === '0' || option.value === '') {
-                    option.hidden = false;
+        const filterPickers = Array.from(assetFilters.querySelectorAll('[data-filter-picker]'));
+        const getPickerValueInput = (picker) => picker?.querySelector('[data-filter-picker-value]');
+        const getPickerTextInput = (picker) => picker?.querySelector('[data-filter-picker-input]');
+        const getPickerMenu = (picker) => picker?.querySelector('[data-filter-picker-menu]');
+        const findPickerByName = (name) => assetFilters.querySelector(`[data-filter-picker] [name="${name}"]`)?.closest('[data-filter-picker]');
+        const pickerOptionSources = new Map();
+        const getPickerSourceOptions = (picker) => pickerOptionSources.get(picker) || [];
+        const getPickerOptions = (picker) => Array.from(picker?.querySelectorAll('.filter-picker-option') || []);
+        const buildOptionSourceFromDom = (picker) => {
+            const source = [];
+            getPickerOptions(picker).forEach((option) => {
+                const value = option.getAttribute('data-option-value') || '';
+                if (value === '') {
                     return;
                 }
-                const matches = matcher(option);
-                option.hidden = !matches;
-                if (matches) {
-                    visibleOptions.push(option);
+                const meta = {};
+                Array.from(option.attributes).forEach((attribute) => {
+                    if (!attribute.name.startsWith('data-')) {
+                        return;
+                    }
+                    if (attribute.name === 'data-option-value' || attribute.name === 'data-option-label') {
+                        return;
+                    }
+                    meta[attribute.name.slice(5)] = attribute.value;
+                });
+                source.push({
+                    value,
+                    label: option.getAttribute('data-option-label') || value,
+                    meta,
+                });
+            });
+            pickerOptionSources.set(picker, source);
+            return source;
+        };
+        const setPickerSourceOptions = (picker, options) => {
+            pickerOptionSources.set(picker, options);
+        };
+        const setPickerActiveState = (picker) => {
+            if (!picker) {
+                return;
+            }
+            const value = getPickerValueInput(picker)?.value || '';
+            picker.classList.toggle('is-selected', value !== '' && value !== '0');
+        };
+        const setPickerSelection = (picker, value, label = null) => {
+            const valueInput = getPickerValueInput(picker);
+            const textInput = getPickerTextInput(picker);
+            if (!valueInput || !textInput) {
+                return;
+            }
+            const sourceMatch = getPickerSourceOptions(picker).find((option) => option.value === String(value));
+            valueInput.value = String(value ?? '');
+            textInput.value = label ?? (sourceMatch ? sourceMatch.label : '');
+            setPickerActiveState(picker);
+        };
+        const getPickerValue = (picker) => getPickerValueInput(picker)?.value || '';
+        const renderPickerMenu = (picker, query = '', matcher = null) => {
+            const menu = getPickerMenu(picker);
+            if (!menu) {
+                return [];
+            }
+            const normalizedQuery = String(query || '').trim().toLowerCase();
+            const visible = [];
+            menu.innerHTML = '';
+            const allOption = document.createElement('button');
+            allOption.type = 'button';
+            allOption.className = 'filter-picker-option';
+            allOption.setAttribute('data-option-value', '');
+            allOption.setAttribute('data-option-label', 'All');
+            allOption.textContent = 'All';
+            allOption.addEventListener('click', () => {
+                setPickerSelection(picker, '', '');
+                closePicker(picker);
+                getPickerTextInput(picker)?.dispatchEvent(new Event('change', { bubbles: true }));
+            });
+            menu.appendChild(allOption);
+            getPickerSourceOptions(picker).forEach((option) => {
+                const label = option.label.toLowerCase();
+                const queryMatch = normalizedQuery === '' || label.includes(normalizedQuery);
+                const dependencyMatch = matcher ? matcher(option) : true;
+                if (queryMatch && dependencyMatch) {
+                    const button = document.createElement('button');
+                    button.type = 'button';
+                    button.className = 'filter-picker-option';
+                    button.setAttribute('data-option-value', option.value);
+                    button.setAttribute('data-option-label', option.label);
+                    Object.entries(option.meta || {}).forEach(([metaKey, metaValue]) => {
+                        button.setAttribute(`data-${metaKey}`, metaValue);
+                    });
+                    button.textContent = option.label;
+                    button.addEventListener('click', () => {
+                        setPickerSelection(picker, option.value, option.label);
+                        closePicker(picker);
+                        getPickerTextInput(picker)?.dispatchEvent(new Event('change', { bubbles: true }));
+                    });
+                    menu.appendChild(button);
+                    visible.push(button);
                 }
             });
-            const selectedVisible = Array.from(select.selectedOptions).some((option) => !option.hidden);
-            if (!selectedVisible) {
-                if (visibleOptions.length === 1) {
-                    select.value = visibleOptions[0].value;
-                } else {
-                    select.value = select.querySelector('option')?.value || '0';
+            return visible;
+        };
+        const openPicker = (picker) => picker?.classList.add('is-open');
+        const closePicker = (picker) => picker?.classList.remove('is-open');
+
+        filterPickers.forEach((picker) => {
+            buildOptionSourceFromDom(picker);
+            const textInput = getPickerTextInput(picker);
+            const valueInput = getPickerValueInput(picker);
+            const menu = getPickerMenu(picker);
+            if (!textInput || !valueInput || !menu) {
+                return;
+            }
+            textInput.addEventListener('focus', () => {
+                renderPickerMenu(picker, '', getPickerMatcher(picker));
+                openPicker(picker);
+            });
+            textInput.addEventListener('input', () => {
+                valueInput.value = '';
+                setPickerActiveState(picker);
+                renderPickerMenu(picker, textInput.value, getPickerMatcher(picker));
+                openPicker(picker);
+            });
+            setPickerActiveState(picker);
+        });
+
+        const categoryPicker = findPickerByName('category_id');
+        const subcategoryPicker = findPickerByName('subcategory_id');
+        const zonePicker = findPickerByName('zone_id');
+        const circlePicker = findPickerByName('circle_id');
+        const divisionPicker = findPickerByName('division_id');
+        const subdivisionPicker = findPickerByName('subdivision_id');
+
+        const getPickerMatcher = (picker) => {
+            if (!picker) {
+                return null;
+            }
+            if (picker === subcategoryPicker) {
+                const selectedCategory = getPickerValue(categoryPicker);
+                return (option) => selectedCategory === '' || selectedCategory === '0' || (option.meta?.category || '') === selectedCategory;
+            }
+            if (picker === circlePicker) {
+                const currentZone = getPickerValue(zonePicker);
+                return (option) => currentZone === '' || currentZone === '0' || (option.meta?.zone || '') === currentZone;
+            }
+            if (picker === divisionPicker) {
+                const currentZone = getPickerValue(zonePicker);
+                const currentCircle = getPickerValue(circlePicker);
+                return (option) => {
+                    const zoneMatch = currentZone === '' || currentZone === '0' || (option.meta?.zone || '') === currentZone;
+                    const circleMatch = currentCircle === '' || currentCircle === '0' || (option.meta?.circle || '') === currentCircle;
+                    return zoneMatch && circleMatch;
+                };
+            }
+            if (picker === subdivisionPicker) {
+                const currentZone = getPickerValue(zonePicker);
+                const currentCircle = getPickerValue(circlePicker);
+                const currentDivision = getPickerValue(divisionPicker);
+                return (option) => {
+                    const zoneMatch = currentZone === '' || currentZone === '0' || (option.meta?.zone || '') === currentZone;
+                    const circleMatch = currentCircle === '' || currentCircle === '0' || (option.meta?.circle || '') === currentCircle;
+                    const divisionMatch = currentDivision === '' || currentDivision === '0' || (option.meta?.division || '') === currentDivision;
+                    return zoneMatch && circleMatch && divisionMatch;
+                };
+            }
+            if (picker?.getAttribute('data-filter-conditional-secondary')) {
+                const primaryKey = picker.getAttribute('data-filter-conditional-secondary') || '';
+                const primaryPicker = findPickerByName(`field_filter_${primaryKey}`);
+                const selectedPrimary = getPickerValue(primaryPicker);
+                if (selectedPrimary === '' || selectedPrimary === '0') {
+                    return null;
+                }
+                return (option) => (option.meta?.primary || '') === selectedPrimary;
+            }
+            return null;
+        };
+
+        document.addEventListener('click', (event) => {
+            filterPickers.forEach((picker) => {
+                if (!picker.contains(event.target)) {
+                    closePicker(picker);
+                }
+            });
+        });
+        const syncSubcategoryPicker = (source = null) => {
+            if (!subcategoryPicker) {
+                return;
+            }
+            if (source === subcategoryPicker && getPickerValue(subcategoryPicker) !== '') {
+                const selected = getPickerSourceOptions(subcategoryPicker).find((option) => option.value === getPickerValue(subcategoryPicker));
+                if (selected && categoryPicker) {
+                    const selectedCategory = selected.meta?.category || '';
+                    const categoryOption = getPickerSourceOptions(categoryPicker).find((option) => option.value === selectedCategory);
+                    setPickerSelection(categoryPicker, selectedCategory, categoryOption?.label || '');
                 }
             }
-            return previous !== select.value;
+            const visible = renderPickerMenu(subcategoryPicker, '', getPickerMatcher(subcategoryPicker));
+            const currentValue = getPickerValue(subcategoryPicker);
+            const stillVisible = visible.some((option) => option.getAttribute('data-option-value') === currentValue);
+            if (!stillVisible) {
+                if (visible.length === 1) {
+                    setPickerSelection(subcategoryPicker, visible[0].getAttribute('data-option-value') || '', visible[0].getAttribute('data-option-label') || '');
+                } else {
+                    setPickerSelection(subcategoryPicker, '', '');
+                }
+            }
         };
 
         const syncOfficeFilters = (source = null) => {
-            if (source === circleSelect && circleSelect?.value !== '0') {
-                const selected = circleSelect.selectedOptions[0];
-                if (zoneSelect && selected) {
-                    zoneSelect.value = selected.getAttribute('data-zone') || '0';
+            if (source === circlePicker && getPickerValue(circlePicker) !== '') {
+                const selected = getPickerSourceOptions(circlePicker).find((option) => option.value === getPickerValue(circlePicker));
+                if (zonePicker && selected) {
+                    const zoneValue = selected.meta?.zone || '';
+                    const zoneOption = getPickerSourceOptions(zonePicker).find((option) => option.value === zoneValue);
+                    setPickerSelection(zonePicker, zoneValue, zoneOption?.label || '');
                 }
             }
-            if (source === divisionSelect && divisionSelect?.value !== '0') {
-                const selected = divisionSelect.selectedOptions[0];
-                if (zoneSelect && selected) {
-                    zoneSelect.value = selected.getAttribute('data-zone') || '0';
+            if (source === divisionPicker && getPickerValue(divisionPicker) !== '') {
+                const selected = getPickerSourceOptions(divisionPicker).find((option) => option.value === getPickerValue(divisionPicker));
+                if (zonePicker && selected) {
+                    const zoneValue = selected.meta?.zone || '';
+                    const zoneOption = getPickerSourceOptions(zonePicker).find((option) => option.value === zoneValue);
+                    setPickerSelection(zonePicker, zoneValue, zoneOption?.label || '');
                 }
-                if (circleSelect && selected) {
-                    circleSelect.value = selected.getAttribute('data-circle') || '0';
+                if (circlePicker && selected) {
+                    const circleValue = selected.meta?.circle || '';
+                    const circleOption = getPickerSourceOptions(circlePicker).find((option) => option.value === circleValue);
+                    setPickerSelection(circlePicker, circleValue, circleOption?.label || '');
                 }
             }
-            if (source === subdivisionSelect && subdivisionSelect?.value !== '0') {
-                const selected = subdivisionSelect.selectedOptions[0];
-                if (zoneSelect && selected) {
-                    zoneSelect.value = selected.getAttribute('data-zone') || '0';
+            if (source === subdivisionPicker && getPickerValue(subdivisionPicker) !== '') {
+                const selected = getPickerSourceOptions(subdivisionPicker).find((option) => option.value === getPickerValue(subdivisionPicker));
+                if (zonePicker && selected) {
+                    const zoneValue = selected.meta?.zone || '';
+                    const zoneOption = getPickerSourceOptions(zonePicker).find((option) => option.value === zoneValue);
+                    setPickerSelection(zonePicker, zoneValue, zoneOption?.label || '');
                 }
-                if (circleSelect && selected) {
-                    circleSelect.value = selected.getAttribute('data-circle') || '0';
+                if (circlePicker && selected) {
+                    const circleValue = selected.meta?.circle || '';
+                    const circleOption = getPickerSourceOptions(circlePicker).find((option) => option.value === circleValue);
+                    setPickerSelection(circlePicker, circleValue, circleOption?.label || '');
                 }
-                if (divisionSelect && selected) {
-                    divisionSelect.value = selected.getAttribute('data-division') || '0';
+                if (divisionPicker && selected) {
+                    const divisionValue = selected.meta?.division || '';
+                    const divisionOption = getPickerSourceOptions(divisionPicker).find((option) => option.value === divisionValue);
+                    setPickerSelection(divisionPicker, divisionValue, divisionOption?.label || '');
                 }
             }
 
-            const currentZone = zoneSelect?.value || '0';
-            const currentCircle = circleSelect?.value || '0';
-            const currentDivision = divisionSelect?.value || '0';
+            const syncPicker = (picker, matcher) => {
+                if (!picker) {
+                    return;
+                }
+                const visible = renderPickerMenu(picker, '', matcher);
+                const currentValue = getPickerValue(picker);
+                const stillVisible = visible.some((option) => option.getAttribute('data-option-value') === currentValue);
+                if (!stillVisible) {
+                    if (visible.length === 1) {
+                        setPickerSelection(picker, visible[0].getAttribute('data-option-value') || '', visible[0].getAttribute('data-option-label') || '');
+                    } else {
+                        setPickerSelection(picker, '', '');
+                    }
+                }
+            };
 
-            updateDependentSelect(circleSelect, (option) => currentZone === '0' || option.getAttribute('data-zone') === currentZone);
-            updateDependentSelect(divisionSelect, (option) => {
-                const zoneMatch = currentZone === '0' || option.getAttribute('data-zone') === currentZone;
-                const circleMatch = currentCircle === '0' || option.getAttribute('data-circle') === currentCircle;
-                return zoneMatch && circleMatch;
-            });
-            updateDependentSelect(subdivisionSelect, (option) => {
-                const zoneMatch = currentZone === '0' || option.getAttribute('data-zone') === currentZone;
-                const circleMatch = currentCircle === '0' || option.getAttribute('data-circle') === currentCircle;
-                const divisionMatch = currentDivision === '0' || option.getAttribute('data-division') === currentDivision;
-                return zoneMatch && circleMatch && divisionMatch;
-            });
+            syncPicker(circlePicker, getPickerMatcher(circlePicker));
+            syncPicker(divisionPicker, getPickerMatcher(divisionPicker));
+            syncPicker(subdivisionPicker, getPickerMatcher(subdivisionPicker));
         };
 
-        [zoneSelect, circleSelect, divisionSelect, subdivisionSelect].forEach((select) => {
-            if (!select) {
+        [zonePicker, circlePicker, divisionPicker, subdivisionPicker].forEach((picker) => {
+            const textInput = getPickerTextInput(picker);
+            if (!textInput) {
                 return;
             }
-            select.addEventListener('change', () => syncOfficeFilters(select));
+            textInput.addEventListener('change', () => syncOfficeFilters(picker));
         });
         syncOfficeFilters();
+        if (categoryPicker) {
+            getPickerTextInput(categoryPicker)?.addEventListener('change', () => syncSubcategoryPicker(categoryPicker));
+        }
+        if (subcategoryPicker) {
+            getPickerTextInput(subcategoryPicker)?.addEventListener('change', () => syncSubcategoryPicker(subcategoryPicker));
+            syncSubcategoryPicker();
+        }
 
         const syncConditionalFilter = (primarySelect) => {
-            const childKey = primarySelect.getAttribute('data-filter-conditional-child') || '';
+            const primaryPicker = primarySelect.closest('[data-filter-picker]');
+            const childKey = primaryPicker?.getAttribute('data-filter-conditional-child') || '';
             if (!childKey) {
                 return;
             }
             const primaryKey = primarySelect.name.replace('field_filter_', '');
-            const childSelect = assetFilters.querySelector(`[data-filter-conditional-secondary="${primaryKey}"], select[name="field_filter_${childKey}"]`);
-            if (!childSelect) {
+            const childPicker = assetFilters.querySelector(`[data-filter-picker][data-filter-conditional-secondary="${primaryKey}"]`);
+            if (!childPicker) {
                 return;
             }
             let map = {};
             try {
-                map = JSON.parse(primarySelect.getAttribute('data-filter-conditional-map') || '{}');
+                map = JSON.parse(primaryPicker?.getAttribute('data-filter-conditional-map') || '{}');
             } catch (error) {
                 map = {};
             }
-            const previous = childSelect.value || '';
-            const selectedPrimary = primarySelect.value || '';
-            let allowed = [];
-            if (selectedPrimary !== '' && Array.isArray(map[selectedPrimary])) {
-                allowed = map[selectedPrimary];
-            } else {
-                Object.values(map).forEach((items) => {
-                    (items || []).forEach((item) => {
-                        if (!allowed.includes(item)) {
-                            allowed.push(item);
-                        }
-                    });
+            const allChildOptions = [];
+            Object.entries(map).forEach(([primaryValue, items]) => {
+                (items || []).forEach((item) => {
+                    if (!allChildOptions.some((option) => option.value === item && (option.meta?.primary || '') === primaryValue)) {
+                        allChildOptions.push({
+                            value: item,
+                            label: item,
+                            meta: { primary: primaryValue },
+                        });
+                    }
                 });
-            }
-            childSelect.innerHTML = '<option value="">All</option>';
-            allowed.forEach((optionValue) => {
-                const option = document.createElement('option');
-                option.value = optionValue;
-                option.textContent = optionValue;
-                childSelect.appendChild(option);
             });
-            childSelect.value = allowed.includes(previous) ? previous : '';
+            setPickerSourceOptions(childPicker, allChildOptions);
+            const previous = getPickerValue(childPicker) || '';
+            const visible = renderPickerMenu(childPicker, '', getPickerMatcher(childPicker));
+            const stillVisible = visible.some((option) => option.getAttribute('data-option-value') === previous);
+            if (stillVisible) {
+                setPickerSelection(childPicker, previous, previous);
+            } else if (visible.length === 1) {
+                setPickerSelection(childPicker, visible[0].getAttribute('data-option-value') || '', visible[0].getAttribute('data-option-label') || '');
+            } else if (getPickerValue(primaryPicker) === '' || getPickerValue(primaryPicker) === '0') {
+                setPickerSelection(childPicker, '', '');
+            } else {
+                setPickerSelection(childPicker, '', '');
+            }
         };
 
-        assetFilters.querySelectorAll('[data-filter-conditional-primary="1"]').forEach((primarySelect) => {
-            primarySelect.addEventListener('change', () => syncConditionalFilter(primarySelect));
-            syncConditionalFilter(primarySelect);
+        assetFilters.querySelectorAll('[data-filter-picker][data-filter-conditional-primary="1"]').forEach((primaryPicker) => {
+            const primaryInput = getPickerTextInput(primaryPicker);
+            const primaryValueInput = getPickerValueInput(primaryPicker);
+            if (!primaryInput || !primaryValueInput) {
+                return;
+            }
+            primaryInput.addEventListener('change', () => syncConditionalFilter(primaryValueInput));
+            syncConditionalFilter(primaryValueInput);
         });
-        assetFilters.querySelectorAll('[data-filter-conditional-secondary]').forEach((childSelect) => {
-            childSelect.addEventListener('change', () => {
-                const primaryKey = childSelect.getAttribute('data-filter-conditional-secondary') || '';
-                const primarySelect = assetFilters.querySelector(`[name="field_filter_${primaryKey}"]`);
-                if (!primarySelect || childSelect.value === '') {
+        assetFilters.querySelectorAll('[data-filter-picker][data-filter-conditional-secondary]').forEach((childPicker) => {
+            const childInput = getPickerTextInput(childPicker);
+            if (!childInput) {
+                return;
+            }
+            childInput.addEventListener('change', () => {
+                const primaryKey = childPicker.getAttribute('data-filter-conditional-secondary') || '';
+                const primaryPicker = findPickerByName(`field_filter_${primaryKey}`);
+                const primaryValueInput = getPickerValueInput(primaryPicker);
+                if (!primaryPicker || !primaryValueInput || getPickerValue(childPicker) === '') {
                     return;
                 }
-                let map = {};
-                try {
-                    map = JSON.parse(primarySelect.getAttribute('data-filter-conditional-map') || '{}');
-                } catch (error) {
-                    map = {};
-                }
-                const matches = Object.entries(map)
-                    .filter(([, options]) => Array.isArray(options) && options.includes(childSelect.value))
-                    .map(([primary]) => primary);
-                if (matches.length === 1) {
-                    primarySelect.value = matches[0];
-                    syncConditionalFilter(primarySelect);
-                    childSelect.value = childSelect.value;
+                const selectedChild = getPickerSourceOptions(childPicker).find((option) => option.value === getPickerValue(childPicker));
+                if (selectedChild && selectedChild.meta?.primary) {
+                    const primaryOption = getPickerSourceOptions(primaryPicker).find((option) => option.value === selectedChild.meta.primary);
+                    setPickerSelection(primaryPicker, selectedChild.meta.primary, primaryOption?.label || selectedChild.meta.primary);
+                    syncConditionalFilter(primaryValueInput);
+                    setPickerSelection(childPicker, getPickerValue(childPicker), getPickerTextInput(childPicker)?.value || getPickerValue(childPicker));
                 }
             });
+        });
+
+        filterPickers.forEach((picker) => {
+            renderPickerMenu(picker, '', getPickerMatcher(picker));
+            const currentValue = getPickerValue(picker);
+            if (currentValue !== '' && currentValue !== '0') {
+                const selected = getPickerSourceOptions(picker).find((option) => option.value === currentValue);
+                if (selected) {
+                    setPickerSelection(picker, selected.value, selected.label);
+                }
+            } else {
+                setPickerActiveState(picker);
+            }
         });
     }
 

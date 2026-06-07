@@ -251,19 +251,33 @@ CREATE TABLE IF NOT EXISTS ministries (
     updated_at DATETIME DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS segments (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    segment_name VARCHAR(255) NOT NULL,
+    active_status TINYINT NOT NULL DEFAULT 1,
+    asset_subcategory_enabled TINYINT NOT NULL DEFAULT 1,
+    sort_order INT NOT NULL DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT NULL,
+    UNIQUE KEY uniq_segments_name (segment_name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS asset_categories (
     id INT AUTO_INCREMENT PRIMARY KEY,
+    segment_id INT DEFAULT NULL,
     name VARCHAR(255) NOT NULL,
     active_status TINYINT NOT NULL DEFAULT 1,
     sort_order INT NOT NULL DEFAULT 0,
     deleted_at DATETIME DEFAULT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT NULL,
-    UNIQUE KEY uniq_asset_categories_name (name)
+    UNIQUE KEY uniq_asset_categories_segment_name (segment_id, name),
+    KEY idx_asset_categories_segment (segment_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS asset_subcategories (
     id INT AUTO_INCREMENT PRIMARY KEY,
+    segment_id INT DEFAULT NULL,
     category_id INT NOT NULL,
     name VARCHAR(255) NOT NULL,
     active_status TINYINT NOT NULL DEFAULT 1,
@@ -271,12 +285,14 @@ CREATE TABLE IF NOT EXISTS asset_subcategories (
     deleted_at DATETIME DEFAULT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT NULL,
+    KEY idx_asset_subcategories_segment (segment_id),
     KEY idx_asset_subcategories_category (category_id),
     UNIQUE KEY uniq_asset_subcategories_name (category_id, name)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS asset_fields (
     id INT AUTO_INCREMENT PRIMARY KEY,
+    segment_id INT DEFAULT NULL,
     field_key VARCHAR(100) NOT NULL,
     label VARCHAR(255) NOT NULL,
     data_type VARCHAR(20) NOT NULL,
@@ -292,7 +308,8 @@ CREATE TABLE IF NOT EXISTS asset_fields (
     deleted_at DATETIME DEFAULT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT NULL,
-    UNIQUE KEY uniq_asset_fields_key (field_key)
+    UNIQUE KEY uniq_asset_fields_segment_key (segment_id, field_key),
+    KEY idx_asset_fields_segment (segment_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS asset_field_options (
@@ -309,6 +326,7 @@ CREATE TABLE IF NOT EXISTS asset_field_options (
 
 CREATE TABLE IF NOT EXISTS assets (
     id INT AUTO_INCREMENT PRIMARY KEY,
+    segment_id INT DEFAULT NULL,
     asset_number VARCHAR(50) NOT NULL,
     category_id INT NOT NULL,
     subcategory_id INT DEFAULT NULL,
@@ -321,6 +339,7 @@ CREATE TABLE IF NOT EXISTS assets (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT NULL,
     UNIQUE KEY uniq_assets_number (asset_number),
+    KEY idx_assets_segment (segment_id),
     KEY idx_assets_category (category_id),
     KEY idx_assets_subcategory (subcategory_id),
     KEY idx_assets_office (office_type, office_id),
@@ -370,6 +389,7 @@ CREATE TABLE IF NOT EXISTS asset_file_values (
 
 CREATE TABLE IF NOT EXISTS office_asset_declarations (
     id INT AUTO_INCREMENT PRIMARY KEY,
+    segment_id INT DEFAULT NULL,
     office_type TINYINT NOT NULL,
     office_id INT NOT NULL,
     declared_status TINYINT NOT NULL DEFAULT 0,
@@ -380,11 +400,13 @@ CREATE TABLE IF NOT EXISTS office_asset_declarations (
     reset_by INT DEFAULT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT NULL,
-    UNIQUE KEY uniq_asset_declaration (office_type, office_id)
+    UNIQUE KEY uniq_asset_declaration_segment (segment_id, office_type, office_id),
+    KEY idx_asset_declaration_segment (segment_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS asset_import_batches (
     id INT AUTO_INCREMENT PRIMARY KEY,
+    segment_id INT DEFAULT NULL,
     office_type TINYINT NOT NULL,
     office_id INT NOT NULL,
     uploaded_by INT NOT NULL,
@@ -393,17 +415,20 @@ CREATE TABLE IF NOT EXISTS asset_import_batches (
     skipped_count INT NOT NULL DEFAULT 0,
     status VARCHAR(20) NOT NULL DEFAULT 'pending',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT NULL
+    updated_at DATETIME DEFAULT NULL,
+    KEY idx_asset_import_batches_segment (segment_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS asset_activity_logs (
     id INT AUTO_INCREMENT PRIMARY KEY,
+    segment_id INT DEFAULT NULL,
     asset_id INT NOT NULL,
     user_id INT NOT NULL,
     action_type VARCHAR(50) NOT NULL,
     summary VARCHAR(255) NOT NULL,
     details LONGTEXT DEFAULT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_asset_activity_logs_segment (segment_id),
     KEY idx_asset_activity_logs_asset (asset_id),
     KEY idx_asset_activity_logs_user (user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -411,13 +436,15 @@ CREATE TABLE IF NOT EXISTS asset_activity_logs (
 CREATE TABLE IF NOT EXISTS asset_table_column_preferences (
     id INT AUTO_INCREMENT PRIMARY KEY,
     user_id INT NOT NULL,
+    segment_id INT DEFAULT NULL,
     category_id INT NOT NULL,
     column_key VARCHAR(100) NOT NULL,
     is_visible TINYINT NOT NULL DEFAULT 1,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE KEY uniq_asset_table_column_pref (user_id, category_id, column_key),
+    UNIQUE KEY uniq_asset_table_column_pref_segment (user_id, segment_id, category_id, column_key),
     KEY idx_asset_table_column_pref_user (user_id),
+    KEY idx_asset_table_column_pref_segment (segment_id),
     KEY idx_asset_table_column_pref_category (category_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

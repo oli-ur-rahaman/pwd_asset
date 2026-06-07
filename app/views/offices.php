@@ -1,5 +1,6 @@
 <?php
 require __DIR__ . '/header.php';
+$canManageSuperadmin = can_manage_superadmin_scope();
 $overview = get_offices_overview();
 $zones = $overview['zones'];
 $circles = $overview['circles'];
@@ -145,6 +146,29 @@ $renderManageUsersModal = static function (string $officeKind, int $officeType, 
     <?php
 };
 ?>
+<?php if (!$canManageSuperadmin): ?>
+    <style>
+        .superadmin-readonly-page button[type="submit"],
+        .superadmin-readonly-page [data-modal],
+        .superadmin-readonly-page .btn-danger,
+        .superadmin-readonly-page .office-save-button {
+            display: none !important;
+        }
+        .superadmin-readonly-page input:not([type="hidden"]),
+        .superadmin-readonly-page select,
+        .superadmin-readonly-page textarea {
+            pointer-events: none;
+            background: #f4f6f8;
+            color: #425466;
+        }
+    </style>
+<?php endif; ?>
+<div class="<?= !$canManageSuperadmin ? 'superadmin-readonly-page' : ''; ?>">
+<?php if (!$canManageSuperadmin): ?>
+    <section class="card">
+        <p class="hint">View-only superadmin users can review office data and template links here, but cannot change offices, import CSV, or manage office users.</p>
+    </section>
+<?php endif; ?>
 <section class="card hero-card">
     <div class="hero-row office-page-head">
         <div>
@@ -578,6 +602,8 @@ $renderManageUsersModal = static function (string $officeKind, int $officeType, 
             </div>
         </form>
     </div>
+</div>
+
 </div>
 
 <?php require __DIR__ . '/footer.php'; ?>

@@ -5,6 +5,10 @@ $user = current_user();
 $info = get_info_row();
 $canModifyAssets = can_modify_office_assets($user);
 $canManageSuperadmin = can_manage_superadmin_scope($user);
+$activeSegmentId = asset_active_segment_id((int)request_str('segment_id', '0'));
+$activeSegment = asset_active_segment($activeSegmentId, true);
+$segments = get_asset_segments();
+$showSegmentSelector = count($segments) > 1;
 $currentOfficeViewScope = request_str('office_view_scope', 'my_office');
 $hasUnderMeScope = office_user_has_under_me_scope($user);
 if (!$hasUnderMeScope) {
@@ -13,12 +17,12 @@ if (!$hasUnderMeScope) {
 $isUnderMeView = !is_superadmin() && $currentOfficeViewScope === 'office_under_me';
 $showAssetNumber = is_superadmin() || asset_number_visible_to_users();
 $showActionColumn = !is_superadmin() && $canModifyAssets && !$isUnderMeView;
-$fieldMap = asset_field_map();
-$fields = get_asset_fields();
-$categories = get_asset_categories();
-$subcategoryEnabled = asset_subcategory_enabled();
-$subcategories = $subcategoryEnabled ? get_asset_subcategories(null, true) : [];
-$importReviewSubcategories = $subcategoryEnabled ? get_asset_subcategories() : [];
+$fieldMap = asset_field_map_for_segment(false, $activeSegmentId);
+$fields = get_asset_fields(false, $activeSegmentId);
+$categories = get_asset_categories(false, $activeSegmentId);
+$subcategoryEnabled = asset_subcategory_enabled($activeSegmentId);
+$subcategories = $subcategoryEnabled ? get_asset_subcategories(null, true, $activeSegmentId) : [];
+$importReviewSubcategories = $subcategoryEnabled ? get_asset_subcategories(null, false, $activeSegmentId) : [];
 $subcategoryByCategory = [];
 foreach ($subcategories as $subcategory) {
     $subcategoryByCategory[(int)$subcategory['category_id']][] = $subcategory;
@@ -29,6 +33,7 @@ $selectedCircle = (int)request_str('circle_id', '0');
 $selectedDivision = (int)request_str('division_id', '0');
 $selectedSubdivision = (int)request_str('subdivision_id', '0');
 $filters = [
+    'segment_id' => $activeSegmentId,
     'zone_id' => $selectedZone,
     'circle_id' => $selectedCircle,
     'division_id' => $selectedDivision,
@@ -58,19 +63,20 @@ $sortColumn = request_str('sort_col', '');
 $sortDirection = strtolower(request_str('sort_dir', 'asc')) === 'desc' ? 'desc' : 'asc';
 $filters['sort_col'] = $sortColumn;
 $filters['sort_dir'] = $sortDirection;
-$baseScopeAssets = get_assets(['office_view_scope' => $currentOfficeViewScope], $user);
+$baseScopeAssets = get_assets(['office_view_scope' => $currentOfficeViewScope, 'segment_id' => $activeSegmentId], $user);
 $declaration = null;
 $officeSummary = null;
 if (!is_superadmin()) {
     $ctx = current_office_context($user);
     if ($ctx) {
-        $declaration = get_asset_declaration($ctx['office_type'], $ctx['office_id']);
-        $officeSummary = get_office_activity_summary($ctx['office_type'], $ctx['office_id']);
+        $declaration = get_asset_declaration($ctx['office_type'], $ctx['office_id'], $activeSegmentId);
+        $officeSummary = get_office_activity_summary($ctx['office_type'], $ctx['office_id'], $activeSegmentId);
     }
 }
 
 $editAssetId = (int)request_str('edit_asset', '0');
 $editingAsset = $editAssetId > 0 ? get_asset($editAssetId, true) : null;
+$editingAsset = ($editingAsset && (int)($editingAsset['segment_id'] ?? 0) === $activeSegmentId) ? $editingAsset : null;
 $editValues = $editingAsset['values'] ?? [];
 $editFiles = $editingAsset['files'] ?? [];
 $review = $_SESSION['asset_import_review'] ?? null;
@@ -85,9 +91,9 @@ foreach ($fields as $field) {
     $parts = preg_split('/\s*\/\s*/u', $rawLabel);
     $uiFieldLabels[$field['field_key']] = trim((string)($parts[0] ?? $rawLabel));
 }
-$availableTableColumns = asset_table_available_columns($fields, $uiFieldLabels, $currentOfficeViewScope);
-$columnPreferenceMap = get_asset_table_column_preferences((int)$user['id']);
-$filterCatalog = build_asset_filter_catalog($baseScopeAssets, $fields);
+$availableTableColumns = asset_table_available_columns($fields, $uiFieldLabels, $currentOfficeViewScope, $activeSegmentId);
+$columnPreferenceMap = get_asset_table_column_preferences((int)$user['id'], $activeSegmentId);
+$filterCatalog = build_asset_filter_catalog($baseScopeAssets, $fields, $activeSegmentId);
 $visibleFilterFields = asset_filter_visible_fields($fields, $baseScopeAssets);
 $showCategoryFilter = count($filterCatalog['categories']) > 1;
 $showSubcategoryFilter = $subcategoryEnabled && count($filterCatalog['subcategories']) > 0;
@@ -115,7 +121,7 @@ foreach ($categories as $category) {
     $categoryNameById[(int)$category['id']] = (string)$category['name'];
 }
 $importFieldDefs = [];
-$uniqueValueMap = asset_unique_existing_values_map();
+$uniqueValueMap = asset_unique_existing_values_map($activeSegmentId);
 foreach ($fields as $field) {
     if ((int)$field['is_import_enabled'] !== 1 || (int)$field['active_status'] !== 1) {
         continue;
@@ -147,6 +153,7 @@ foreach ($fields as $field) {
     }
 }
 $downloadFilters = [
+    'segment_id' => $activeSegmentId,
     'office_type' => $selectedOfficeType,
     'office_id' => $selectedOfficeId,
     'category_id' => (int)($filters['category_id'] ?? 0),
@@ -163,6 +170,7 @@ $downloadFilters = array_merge($downloadFilters, $fieldFilterSelections);
 $defaultCategoryId = !$editingAsset && count($categories) === 1 ? (int)$categories[0]['id'] : 0;
 $historyAssetId = (int)request_str('asset_history', '0');
 $historyAsset = $historyAssetId > 0 ? get_asset($historyAssetId, true) : null;
+$historyAsset = ($historyAsset && (int)($historyAsset['segment_id'] ?? 0) === $activeSegmentId) ? $historyAsset : null;
 $historyLogs = [];
 if ($historyAsset && user_can_view_asset($user, $historyAsset, $currentOfficeViewScope)) {
     $historyLogs = get_asset_activity_logs($historyAssetId);
@@ -191,6 +199,49 @@ $fileIconMeta = static function (string $originalName): array {
     }
     return ['class' => $chipClass, 'icon' => $iconText];
 };
+$filterPickerValue = static function (array $options, string|int $selectedValue): string {
+    $lookupKey = (string)$selectedValue;
+    foreach ($options as $option) {
+        if ((string)($option['value'] ?? '') === $lookupKey) {
+            return (string)($option['label'] ?? '');
+        }
+    }
+    return '';
+};
+$renderFilterPicker = static function (string $name, string $label, array $options, string|int $selectedValue = '', array $attributes = []) use ($filterPickerValue): void {
+    $normalizedSelectedValue = ((string)$selectedValue === '0') ? '' : (string)$selectedValue;
+    $selectedText = $filterPickerValue($options, $normalizedSelectedValue);
+    $pickerId = 'filter-picker-' . preg_replace('/[^a-zA-Z0-9_-]+/', '-', $name);
+    $wrapperAttrs = '';
+    foreach ($attributes as $attrName => $attrValue) {
+        if ($attrValue === null || $attrValue === '') {
+            continue;
+        }
+        $wrapperAttrs .= ' ' . $attrName . '="' . e((string)$attrValue) . '"';
+    }
+    ?>
+    <label><?= e($label); ?>
+        <div class="filter-picker" id="<?= e($pickerId); ?>" data-filter-picker<?= $wrapperAttrs; ?>>
+            <input type="hidden" name="<?= e($name); ?>" value="<?= e($normalizedSelectedValue); ?>" data-filter-picker-value>
+            <input type="text" value="<?= e($selectedText); ?>" placeholder="All" autocomplete="off" data-filter-picker-input>
+            <div class="filter-picker-menu" data-filter-picker-menu>
+                <button type="button" class="filter-picker-option" data-option-value="" data-option-label="All">All</button>
+                <?php foreach ($options as $option): ?>
+                    <button
+                        type="button"
+                        class="filter-picker-option"
+                        data-option-value="<?= e((string)($option['value'] ?? '')); ?>"
+                        data-option-label="<?= e((string)($option['label'] ?? '')); ?>"
+                        <?php foreach (($option['meta'] ?? []) as $metaKey => $metaValue): ?>
+                            data-<?= e((string)$metaKey); ?>="<?= e((string)$metaValue); ?>"
+                        <?php endforeach; ?>
+                    ><?= e((string)($option['label'] ?? '')); ?></button>
+                <?php endforeach; ?>
+            </div>
+        </div>
+    </label>
+    <?php
+};
 ?>
 <section class="card hero-card">
     <div class="hero-row">
@@ -210,6 +261,7 @@ $fileIconMeta = static function (string $originalName): array {
                     <form method="post" action="index.php" class="inline-form">
                         <?= csrf_input(); ?>
                         <input type="hidden" name="action" value="asset_declare">
+                        <input type="hidden" name="segment_id" value="<?= e((string)$activeSegmentId); ?>">
                         <button type="submit" class="hero-declare-button" <?= !empty($declaration['declared_status']) ? 'disabled' : ''; ?>>Declare as Completed</button>
                     </form>
                 <?php else: ?>
@@ -223,12 +275,30 @@ $fileIconMeta = static function (string $originalName): array {
     <?php endif; ?>
 </section>
 
+<?php if ($showSegmentSelector): ?>
+<section class="card">
+    <div class="toolbar-row scope-switch-row">
+        <?php foreach ($segments as $segment): ?>
+            <?php
+                $segmentParams = ['page' => 'board', 'segment_id' => (int)$segment['id']];
+                if (!is_superadmin()) {
+                    $segmentParams['office_view_scope'] = $currentOfficeViewScope;
+                }
+            ?>
+            <a href="index.php?<?= e(http_build_query($segmentParams)); ?>" class="button-link<?= $activeSegmentId === (int)$segment['id'] ? ' is-active' : ''; ?>">
+                <?= e((string)$segment['segment_name']); ?>
+            </a>
+        <?php endforeach; ?>
+    </div>
+</section>
+<?php endif; ?>
+
 <?php if (!is_superadmin()): ?>
 <section class="card">
     <div class="toolbar-row scope-switch-row">
-        <a href="index.php?page=board&office_view_scope=my_office" class="button-link<?= !$isUnderMeView ? ' is-active' : ''; ?>">My Office</a>
+        <a href="index.php?<?= e(http_build_query(['page' => 'board', 'office_view_scope' => 'my_office', 'segment_id' => $activeSegmentId])); ?>" class="button-link<?= !$isUnderMeView ? ' is-active' : ''; ?>">My Office</a>
         <?php if ($hasUnderMeScope): ?>
-            <a href="index.php?page=board&office_view_scope=office_under_me" class="button-link<?= $isUnderMeView ? ' is-active' : ''; ?>">Office Under Me</a>
+            <a href="index.php?<?= e(http_build_query(['page' => 'board', 'office_view_scope' => 'office_under_me', 'segment_id' => $activeSegmentId])); ?>" class="button-link<?= $isUnderMeView ? ' is-active' : ''; ?>">Office Under Me</a>
         <?php endif; ?>
     </div>
 </section>
@@ -313,66 +383,77 @@ $fileIconMeta = static function (string $originalName): array {
     <h2>Filters</h2>
     <form method="get" action="index.php" id="asset-filters" class="grid board-filters-grid">
         <input type="hidden" name="page" value="board">
+        <input type="hidden" name="segment_id" value="<?= e((string)$activeSegmentId); ?>">
         <?php if (!is_superadmin()): ?><input type="hidden" name="office_view_scope" value="<?= e($currentOfficeViewScope); ?>"><?php endif; ?>
         <?php if ($showCategoryFilter): ?>
-        <label>Category
-            <select name="category_id" id="filter-category-select">
-                <option value="0">All</option>
-                <?php foreach ($filterCatalog['categories'] as $category): ?>
-                    <option value="<?= e((string)$category['id']); ?>" <?= (int)($filters['category_id'] ?? 0) === (int)$category['id'] ? 'selected' : ''; ?>><?= e($category['name']); ?></option>
-                <?php endforeach; ?>
-            </select>
-        </label>
+            <?php
+                $categoryPickerOptions = array_map(
+                    static fn(array $category): array => ['value' => (string)$category['id'], 'label' => (string)$category['name']],
+                    array_values($filterCatalog['categories'])
+                );
+                $renderFilterPicker('category_id', 'Category', $categoryPickerOptions, (string)($filters['category_id'] ?? '0'));
+            ?>
         <?php endif; ?>
         <?php if ($showSubcategoryFilter): ?>
-        <label>Sub-category
-            <select name="subcategory_id" id="filter-subcategory-select">
-                <option value="0">All</option>
-                <?php foreach ($filterCatalog['subcategories'] as $subcategory): ?>
-                    <option value="<?= e((string)$subcategory['id']); ?>" data-category="<?= e((string)$subcategory['category_id']); ?>" <?= (int)($filters['subcategory_id'] ?? 0) === (int)$subcategory['id'] ? 'selected' : ''; ?>><?= e($subcategory['name']); ?></option>
-                <?php endforeach; ?>
-            </select>
-        </label>
+            <?php
+                $subcategoryPickerOptions = array_map(
+                    static fn(array $subcategory): array => [
+                        'value' => (string)$subcategory['id'],
+                        'label' => (string)$subcategory['name'],
+                        'meta' => ['category' => (string)$subcategory['category_id']],
+                    ],
+                    array_values($filterCatalog['subcategories'])
+                );
+                $renderFilterPicker('subcategory_id', 'Sub-category', $subcategoryPickerOptions, (string)($filters['subcategory_id'] ?? '0'));
+            ?>
         <?php endif; ?>
         <?php if ($showZoneFilter): ?>
-        <label>Zone
-            <select name="zone_id" id="filter-zone-select">
-                <option value="0">All</option>
-                <?php foreach ($filterCatalog['zones'] as $zone): ?>
-                    <option value="<?= e((string)$zone['id']); ?>" <?= $selectedZone === (int)$zone['id'] ? 'selected' : ''; ?>><?= e($zone['name']); ?></option>
-                <?php endforeach; ?>
-            </select>
-        </label>
+            <?php
+                $zonePickerOptions = array_map(
+                    static fn(array $zone): array => ['value' => (string)$zone['id'], 'label' => (string)$zone['name']],
+                    array_values($filterCatalog['zones'])
+                );
+                $renderFilterPicker('zone_id', 'Zone', $zonePickerOptions, (string)$selectedZone);
+            ?>
         <?php endif; ?>
         <?php if ($showCircleFilter): ?>
-        <label>Circle
-            <select name="circle_id" id="filter-circle-select">
-                <option value="0">All</option>
-                <?php foreach ($filterCatalog['circles'] as $circle): ?>
-                    <option value="<?= e((string)$circle['id']); ?>" data-zone="<?= e((string)$circle['zone_id']); ?>" <?= $selectedCircle === (int)$circle['id'] ? 'selected' : ''; ?>><?= e($circle['name']); ?></option>
-                <?php endforeach; ?>
-            </select>
-        </label>
+            <?php
+                $circlePickerOptions = array_map(
+                    static fn(array $circle): array => [
+                        'value' => (string)$circle['id'],
+                        'label' => (string)$circle['name'],
+                        'meta' => ['zone' => (string)$circle['zone_id']],
+                    ],
+                    array_values($filterCatalog['circles'])
+                );
+                $renderFilterPicker('circle_id', 'Circle', $circlePickerOptions, (string)$selectedCircle);
+            ?>
         <?php endif; ?>
         <?php if ($showDivisionFilter): ?>
-        <label>Division
-            <select name="division_id" id="filter-division-select">
-                <option value="0">All</option>
-                <?php foreach ($filterCatalog['divisions'] as $division): ?>
-                    <option value="<?= e((string)$division['id']); ?>" data-zone="<?= e((string)$division['zone_id']); ?>" data-circle="<?= e((string)$division['circle_id']); ?>" <?= $selectedDivision === (int)$division['id'] ? 'selected' : ''; ?>><?= e($division['name']); ?></option>
-                <?php endforeach; ?>
-            </select>
-        </label>
+            <?php
+                $divisionPickerOptions = array_map(
+                    static fn(array $division): array => [
+                        'value' => (string)$division['id'],
+                        'label' => (string)$division['name'],
+                        'meta' => ['zone' => (string)$division['zone_id'], 'circle' => (string)$division['circle_id']],
+                    ],
+                    array_values($filterCatalog['divisions'])
+                );
+                $renderFilterPicker('division_id', 'Division', $divisionPickerOptions, (string)$selectedDivision);
+            ?>
         <?php endif; ?>
         <?php if ($showSubdivisionFilter): ?>
-        <label>Sub-division
-            <select name="subdivision_id" id="filter-subdivision-select">
-                <option value="0">All</option>
-                <?php foreach ($filterCatalog['subdivisions'] as $subdivision): ?>
-                    <option value="<?= e((string)$subdivision['id']); ?>" data-zone="<?= e((string)$subdivision['zone_id']); ?>" data-circle="<?= e((string)$subdivision['circle_id']); ?>" data-division="<?= e((string)$subdivision['division_id']); ?>" <?= $selectedSubdivision === (int)$subdivision['id'] ? 'selected' : ''; ?>><?= e($subdivision['name']); ?></option>
-                <?php endforeach; ?>
-            </select>
-        </label>
+            <?php
+                $subdivisionPickerOptions = array_map(
+                    static fn(array $subdivision): array => [
+                        'value' => (string)$subdivision['id'],
+                        'label' => (string)$subdivision['name'],
+                        'meta' => ['zone' => (string)$subdivision['zone_id'], 'circle' => (string)$subdivision['circle_id'], 'division' => (string)$subdivision['division_id']],
+                    ],
+                    array_values($filterCatalog['subdivisions'])
+                );
+                $renderFilterPicker('subdivision_id', 'Sub-division', $subdivisionPickerOptions, (string)$selectedSubdivision);
+            ?>
         <?php endif; ?>
         <?php foreach ($fields as $field): ?>
             <?php
@@ -394,35 +475,51 @@ $fileIconMeta = static function (string $originalName): array {
                 </label>
             <?php elseif ($fieldType === 'conditional'): ?>
                 <?php $childField = get_asset_conditional_child_field((int)$field['id']); ?>
-                <label><?= e($fieldLabel); ?>
-                    <select name="<?= e($filterKey); ?>" data-filter-conditional-primary="1" data-filter-conditional-child="<?= e((string)($childField['field_key'] ?? '')); ?>" data-filter-conditional-map='<?= e(json_encode($catalogField['secondary_options_map'] ?? [], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)); ?>'>
-                        <option value="">All</option>
-                        <?php foreach (($catalogField['options'] ?? []) as $optionValue => $optionLabel): ?>
-                            <option value="<?= e((string)$optionValue); ?>" <?= ($filters[$filterKey] ?? '') === (string)$optionValue ? 'selected' : ''; ?>><?= e((string)$optionLabel); ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                </label>
+                <?php
+                    $conditionalPrimaryOptions = [];
+                    foreach (($catalogField['options'] ?? []) as $optionValue => $optionLabel) {
+                        $conditionalPrimaryOptions[] = ['value' => (string)$optionValue, 'label' => (string)$optionLabel];
+                    }
+                    $renderFilterPicker(
+                        $filterKey,
+                        $fieldLabel,
+                        $conditionalPrimaryOptions,
+                        (string)($filters[$filterKey] ?? ''),
+                        [
+                            'data-filter-conditional-primary' => '1',
+                            'data-filter-conditional-child' => (string)($childField['field_key'] ?? ''),
+                            'data-filter-conditional-map' => json_encode($catalogField['secondary_options_map'] ?? [], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                        ]
+                    );
+                ?>
                 <?php if ($childField): ?>
                     <?php $childFilterKey = 'field_filter_' . $childField['field_key']; ?>
-                    <label><?= e((string)($uiFieldLabels[$childField['field_key']] ?? $childField['label'])); ?>
-                        <select name="<?= e($childFilterKey); ?>" data-filter-conditional-secondary="<?= e($fieldKey); ?>">
-                            <option value="">All</option>
-                        </select>
-                    </label>
+                    <?php
+                        $renderFilterPicker(
+                            $childFilterKey,
+                            (string)($uiFieldLabels[$childField['field_key']] ?? $childField['label']),
+                            [],
+                            (string)($filters[$childFilterKey] ?? ''),
+                            ['data-filter-conditional-secondary' => (string)$fieldKey]
+                        );
+                    ?>
                 <?php endif; ?>
             <?php elseif (!empty($catalogField['options'])): ?>
-                <label><?= e($fieldLabel); ?>
-                    <select name="<?= e($filterKey); ?>">
-                        <option value="">All</option>
-                        <?php foreach ($catalogField['options'] as $optionValue => $optionLabel): ?>
-                            <option value="<?= e((string)$optionValue); ?>" <?= ($filters[$filterKey] ?? '') === (string)$optionValue ? 'selected' : ''; ?>><?= e((string)$optionLabel); ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                </label>
+                <?php
+                    $fieldPickerOptions = [];
+                    foreach ($catalogField['options'] as $optionValue => $optionLabel) {
+                        $fieldPickerOptions[] = ['value' => (string)$optionValue, 'label' => (string)$optionLabel];
+                    }
+                    $renderFilterPicker($filterKey, $fieldLabel, $fieldPickerOptions, (string)($filters[$filterKey] ?? ''));
+                ?>
             <?php endif; ?>
         <?php endforeach; ?>
         <button type="submit">Apply</button>
-        <a href="index.php?page=board<?= !is_superadmin() ? '&office_view_scope=' . urlencode($currentOfficeViewScope) : ''; ?>" class="button-link">Reset</a>
+        <a href="index.php?<?= e(http_build_query(array_filter([
+            'page' => 'board',
+            'segment_id' => $activeSegmentId,
+            'office_view_scope' => !is_superadmin() ? $currentOfficeViewScope : null,
+        ], static fn($value) => $value !== null && $value !== ''))); ?>" class="button-link">Reset</a>
     </form>
 </section>
 
@@ -434,12 +531,13 @@ $fileIconMeta = static function (string $originalName): array {
             <button type="button" data-modal="import-modal">Bulk Entry</button>
         <?php endif; ?>
         <?php if (!$isUnderMeView): ?>
-            <a href="asset_template.php" class="button-link">Excel Template</a>
+            <a href="asset_template.php?<?= e(http_build_query(['segment_id' => $activeSegmentId])); ?>" class="button-link">Excel Template</a>
         <?php endif; ?>
         <form method="post" action="index.php" class="inline-form">
             <?= csrf_input(); ?>
             <input type="hidden" name="action" value="asset_download_data">
             <input type="hidden" name="office_view_scope" value="<?= e($currentOfficeViewScope); ?>">
+            <input type="hidden" name="segment_id" value="<?= e((string)$activeSegmentId); ?>">
             <button type="submit" class="btn-secondary">Download Data</button>
         </form>
     </div>
@@ -447,18 +545,19 @@ $fileIconMeta = static function (string $originalName): array {
 <?php else: ?>
 <section class="card">
     <div class="toolbar-row">
-        <a href="asset_template.php" class="button-link">Excel Template</a>
-        <?php if ($canManageSuperadmin): ?>
-            <button type="button" data-modal="superadmin-download-modal" class="btn-secondary">Download Data</button>
-        <?php endif; ?>
+        <a href="asset_template.php?<?= e(http_build_query(['segment_id' => $activeSegmentId])); ?>" class="button-link">Excel Template</a>
+        <button type="button" data-modal="superadmin-download-modal" class="btn-secondary">Download Data</button>
     </div>
 </section>
 <?php endif; ?>
 
 <?php if (!is_superadmin() && $canModifyAssets && !$isUnderMeView): ?>
-<form method="post" action="index.php" class="asset-delete-form">
+<form method="post" action="index.php" class="asset-delete-form" id="asset-delete-form">
     <?= csrf_input(); ?>
     <input type="hidden" name="action" value="asset_bulk_delete">
+    <input type="hidden" name="segment_id" value="<?= e((string)$activeSegmentId); ?>">
+    <input type="hidden" name="office_view_scope" value="<?= e($currentOfficeViewScope); ?>">
+</form>
 <?php endif; ?>
     <section class="board-grid asset-category-grid">
         <?php foreach ($groupedAssets as $group): ?>
@@ -479,7 +578,7 @@ $fileIconMeta = static function (string $originalName): array {
                     <h2><?= e($category['name']); ?></h2>
                     <div class="card-head-actions">
                         <div class="muted"><?= count($assets); ?> asset(s)</div>
-                        <a href="index.php?<?= e(http_build_query(array_diff_key(array_merge($_GET, ['page' => 'board', 'office_view_scope' => $currentOfficeViewScope]), ['sort_col' => true, 'sort_dir' => true]))); ?>" class="btn-small button-link">Refresh</a>
+                        <a href="index.php?<?= e(http_build_query(array_diff_key(array_merge($_GET, ['page' => 'board', 'office_view_scope' => $currentOfficeViewScope, 'segment_id' => $activeSegmentId]), ['sort_col' => true, 'sort_dir' => true]))); ?>" class="btn-small button-link">Refresh</a>
                         <button type="button" class="btn-small" data-modal="columns-modal-<?= (int)$category['id']; ?>">Columns</button>
                     </div>
                 </div>
@@ -492,6 +591,7 @@ $fileIconMeta = static function (string $originalName): array {
                                     $sortParams = $_GET;
                                     $sortParams['page'] = 'board';
                                     $sortParams['office_view_scope'] = $currentOfficeViewScope;
+                                    $sortParams['segment_id'] = $activeSegmentId;
                                     $headerSortUrl = static function (string $columnKey) use ($sortParams, $sortColumn, $sortDirection): string {
                                         $params = $sortParams;
                                         $params['sort_col'] = $columnKey;
@@ -539,7 +639,7 @@ $fileIconMeta = static function (string $originalName): array {
                             <?php foreach ($assets as $index => $asset): ?>
                                 <tr>
                                     <?php if (!is_superadmin() && $canModifyAssets && !$isUnderMeView): ?>
-                                        <td><input type="checkbox" name="asset_ids[]" value="<?= e((string)$asset['id']); ?>"></td>
+                                        <td><input type="checkbox" name="asset_ids[]" value="<?= e((string)$asset['id']); ?>" form="asset-delete-form"></td>
                                     <?php endif; ?>
                                     <td><?= e((string)($index + 1)); ?></td>
                                     <?php if ($showAssetNumber && !empty($visibleColumnKeys['asset_number'])): ?><td><?= e($asset['asset_number']); ?></td><?php endif; ?>
@@ -602,8 +702,8 @@ $fileIconMeta = static function (string $originalName): array {
                                     <?php if ($showActionColumn): ?>
                                         <td>
                                             <div class="action-icon-row">
-                                                <a href="index.php?page=board&asset_history=<?= e((string)$asset['id']); ?>" class="icon-only-button table-action-icon" title="See update history" aria-label="See update history">&#x1F553;</a>
-                                                <a href="index.php?page=board&edit_asset=<?= e((string)$asset['id']); ?>" class="icon-only-button table-action-icon" title="Edit asset" aria-label="Edit asset">&#x270E;</a>
+                                                <a href="index.php?<?= e(http_build_query(['page' => 'board', 'segment_id' => $activeSegmentId, 'office_view_scope' => $currentOfficeViewScope, 'asset_history' => (int)$asset['id']])); ?>" class="icon-only-button table-action-icon" title="See update history" aria-label="See update history">&#x1F553;</a>
+                                                <a href="index.php?<?= e(http_build_query(['page' => 'board', 'segment_id' => $activeSegmentId, 'office_view_scope' => $currentOfficeViewScope, 'edit_asset' => (int)$asset['id']])); ?>" class="icon-only-button table-action-icon" title="Edit asset" aria-label="Edit asset">&#x270E;</a>
                                             </div>
                                         </td>
                                     <?php endif; ?>
@@ -621,6 +721,7 @@ $fileIconMeta = static function (string $originalName): array {
                         <input type="hidden" name="action" value="save_asset_table_visibility">
                         <input type="hidden" name="category_id" value="<?= (int)$category['id']; ?>">
                         <input type="hidden" name="table_scope" value="<?= e($currentOfficeViewScope); ?>">
+                        <input type="hidden" name="segment_id" value="<?= e((string)$activeSegmentId); ?>">
                         <div class="column-visibility-grid">
                             <?php foreach ($availableTableColumns as $column): ?>
                                 <label class="inline-check">
@@ -642,12 +743,9 @@ $fileIconMeta = static function (string $originalName): array {
     </section>
     <?php if (!is_superadmin() && $canModifyAssets && !$isUnderMeView): ?>
         <div class="bulk-actions">
-            <button type="submit" class="btn-danger">Soft Delete Selected</button>
+            <button type="submit" class="btn-danger" form="asset-delete-form">Soft Delete Selected</button>
         </div>
     <?php endif; ?>
-<?php if (!is_superadmin() && $canModifyAssets && !$isUnderMeView): ?>
-</form>
-<?php endif; ?>
 
 <?php if (!is_superadmin() && $canModifyAssets && !$isUnderMeView): ?>
 <div class="modal-backdrop<?= $editingAsset ? ' open' : ''; ?>" id="asset-modal" aria-hidden="<?= $editingAsset ? 'false' : 'true'; ?>">
@@ -657,6 +755,7 @@ $fileIconMeta = static function (string $originalName): array {
             <?= csrf_input(); ?>
             <input type="hidden" name="action" value="asset_save">
             <input type="hidden" name="asset_id" value="<?= e((string)($editingAsset['id'] ?? '0')); ?>">
+            <input type="hidden" name="segment_id" value="<?= e((string)$activeSegmentId); ?>">
             <label>Category *
                 <select name="category_id" id="asset-category-select" required>
                     <option value="">Select</option>
@@ -781,6 +880,7 @@ $fileIconMeta = static function (string $originalName): array {
         <form method="post" action="index.php" enctype="multipart/form-data" class="grid">
             <?= csrf_input(); ?>
             <input type="hidden" name="action" value="asset_import_upload">
+            <input type="hidden" name="segment_id" value="<?= e((string)$activeSegmentId); ?>">
             <label>Excel File
                 <input type="file" name="asset_file" accept=".xlsx,.xls" required>
             </label>
@@ -801,7 +901,7 @@ $fileIconMeta = static function (string $originalName): array {
             'categories' => array_map(static fn(array $category): array => [
                 'id' => (int)$category['id'],
                 'name' => (string)$category['name'],
-            ], get_asset_categories()),
+            ], get_asset_categories(false, $activeSegmentId)),
             'subcategories' => $subcategoryEnabled ? array_map(static fn(array $subcategory): array => [
                 'id' => (int)$subcategory['id'],
                 'category_id' => (int)$subcategory['category_id'],
@@ -812,6 +912,7 @@ $fileIconMeta = static function (string $originalName): array {
         <form method="post" action="index.php" class="grid">
             <?= csrf_input(); ?>
             <input type="hidden" name="action" value="asset_import_save">
+            <input type="hidden" name="segment_id" value="<?= e((string)$activeSegmentId); ?>">
             <div class="modal-actions">
                 <button type="button" id="import-review-add-row">+Add Row</button>
                 <button type="submit">Save Validated Rows</button>
@@ -952,13 +1053,14 @@ $fileIconMeta = static function (string $originalName): array {
         <form method="post" action="index.php" class="inline-form">
             <?= csrf_input(); ?>
             <input type="hidden" name="action" value="asset_import_cancel">
+            <input type="hidden" name="segment_id" value="<?= e((string)$activeSegmentId); ?>">
             <button type="submit" class="btn-small">Cancel Review</button>
         </form>
 </div>
 </div>
 <?php endif; ?>
 
-<?php if (is_superadmin() && $canManageSuperadmin): ?>
+<?php if (is_superadmin()): ?>
 <div class="modal-backdrop" id="superadmin-download-modal" aria-hidden="true">
     <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="superadmin-download-title">
         <h3 id="superadmin-download-title">Download Asset Data</h3>
@@ -975,6 +1077,7 @@ $fileIconMeta = static function (string $originalName): array {
         <form method="post" action="index.php" class="grid" id="superadmin-download-form">
             <?= csrf_input(); ?>
             <input type="hidden" name="action" value="asset_download_data">
+            <input type="hidden" name="segment_id" value="<?= e((string)$activeSegmentId); ?>">
             <input type="hidden" name="office_scope" id="download-office-scope" value="<?= e($downloadScope); ?>">
             <div class="download-modal-scope-row">
                 <div class="segmented-control" id="download-scope-toggle" role="tablist" aria-label="Office Level">
