@@ -257,6 +257,40 @@ if ($action === 'save_subcategory_visibility') {
     $adminRedirect();
 }
 
+if ($action === 'save_asset_scope_switch_visibility') {
+    if (!can_manage_superadmin_scope()) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
+    set_asset_scope_switch_enabled(!empty($_POST['show_office_scope_switch']) ? 1 : 0, input_int('segment_id'));
+    flash('success', 'Office scope card visibility updated.');
+    $adminRedirect();
+}
+
+if ($action === 'save_asset_filter_card_visibility') {
+    if (!can_manage_superadmin_scope()) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
+    set_asset_filter_card_visibility(
+        !empty($_POST['show_filter_card_superadmin']) ? 1 : 0,
+        !empty($_POST['show_filter_card_users']) ? 1 : 0,
+        input_int('segment_id')
+    );
+    flash('success', 'Filter card visibility updated.');
+    $adminRedirect();
+}
+
+if ($action === 'save_asset_bulk_import_visibility') {
+    if (!can_manage_superadmin_scope()) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
+    set_asset_bulk_import_enabled(!empty($_POST['allow_bulk_import']) ? 1 : 0, input_int('segment_id'));
+    flash('success', 'Bulk upload visibility updated.');
+    $adminRedirect();
+}
+
 if ($action === 'save_asset_number_visibility') {
     if (!can_manage_superadmin_scope()) {
         http_response_code(403);
@@ -264,16 +298,6 @@ if ($action === 'save_asset_number_visibility') {
     }
     set_asset_number_visible_to_users(!empty($_POST['asset_number_visible_to_users']) ? 1 : 0);
     flash('success', 'Asset number visibility updated.');
-    $adminRedirect();
-}
-
-if ($action === 'save_asset_filter_threshold') {
-    if (!can_manage_superadmin_scope()) {
-        http_response_code(403);
-        exit('Not allowed.');
-    }
-    set_asset_filter_distinct_threshold(input_int('asset_filter_distinct_threshold', 20));
-    flash('success', 'Filter threshold updated.');
     $adminRedirect();
 }
 
@@ -651,6 +675,10 @@ if ($action === 'asset_import_upload') {
         http_response_code(403);
         exit('Not allowed.');
     }
+    if (!asset_bulk_import_enabled(input_int('segment_id'))) {
+        http_response_code(403);
+        exit('Bulk upload is disabled for this segment.');
+    }
     if (empty($_FILES['asset_file']['tmp_name'])) {
         flash('error', 'Please choose an Excel file.');
         $boardRedirect();
@@ -668,6 +696,10 @@ if ($action === 'asset_import_save') {
     if (!can_modify_office_assets(current_user())) {
         http_response_code(403);
         exit('Not allowed.');
+    }
+    if (!asset_bulk_import_enabled(input_int('segment_id'))) {
+        http_response_code(403);
+        exit('Bulk upload is disabled for this segment.');
     }
     $rows = $_POST['rows'] ?? [];
     if (!is_array($rows)) {

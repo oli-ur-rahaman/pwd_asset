@@ -10,7 +10,13 @@ $fields = get_asset_management_fields(true, $activeSegmentId);
 $templateColumns = asset_template_columns($activeSegmentId);
 $uploadedTemplate = asset_template_uploaded_info($activeSegmentId);
 $subcategoryEnabled = asset_subcategory_enabled($activeSegmentId);
+$categorySelectionEnabled = asset_category_selection_enabled($activeSegmentId);
 $assetNumberVisibleToUsers = asset_number_visible_to_users();
+$scopeSwitchEnabled = asset_scope_switch_enabled($activeSegmentId);
+$filterCardEnabledForSuperadmin = asset_filter_card_enabled_for_superadmin($activeSegmentId);
+$filterCardEnabledForUsers = asset_filter_card_enabled_for_users($activeSegmentId);
+$bulkImportEnabled = asset_bulk_import_enabled($activeSegmentId);
+$filterScopeOptions = asset_filter_scope_options();
 ?>
 <?php if (!$canManageSuperadmin): ?>
     <style>
@@ -127,12 +133,39 @@ $assetNumberVisibleToUsers = asset_number_visible_to_users();
 
 <section class="card">
     <h2>Sub-category Visibility</h2>
-    <p class="hint">Hide sub-category everywhere when your current workflow does not need it.</p>
+    <p class="hint">Hide sub-category everywhere when your current workflow does not need it. If a segment has no active sub-category, it stays hidden automatically.</p>
     <form method="post" action="index.php" class="inline-form">
         <?= csrf_input(); ?>
         <input type="hidden" name="action" value="save_subcategory_visibility">
         <input type="hidden" name="segment_id" value="<?= e((string)$activeSegmentId); ?>">
         <label><input type="checkbox" name="asset_subcategory_enabled" value="1" <?= $subcategoryEnabled ? 'checked' : ''; ?>> Show Sub-category</label>
+        <button type="submit">Save</button>
+    </form>
+</section>
+
+<section class="card">
+    <h2>Board Cards</h2>
+    <p class="hint">These controls are segment specific.</p>
+    <form method="post" action="index.php" class="inline-form">
+        <?= csrf_input(); ?>
+        <input type="hidden" name="action" value="save_asset_scope_switch_visibility">
+        <input type="hidden" name="segment_id" value="<?= e((string)$activeSegmentId); ?>">
+        <label><input type="checkbox" name="show_office_scope_switch" value="1" <?= $scopeSwitchEnabled ? 'checked' : ''; ?>> Show My Office / Office Under Me card</label>
+        <button type="submit">Save</button>
+    </form>
+    <form method="post" action="index.php" class="inline-form">
+        <?= csrf_input(); ?>
+        <input type="hidden" name="action" value="save_asset_filter_card_visibility">
+        <input type="hidden" name="segment_id" value="<?= e((string)$activeSegmentId); ?>">
+        <label><input type="checkbox" name="show_filter_card_superadmin" value="1" <?= $filterCardEnabledForSuperadmin ? 'checked' : ''; ?>> Show Filter card for superadmin</label>
+        <label><input type="checkbox" name="show_filter_card_users" value="1" <?= $filterCardEnabledForUsers ? 'checked' : ''; ?>> Show Filter card for users</label>
+        <button type="submit">Save</button>
+    </form>
+    <form method="post" action="index.php" class="inline-form">
+        <?= csrf_input(); ?>
+        <input type="hidden" name="action" value="save_asset_bulk_import_visibility">
+        <input type="hidden" name="segment_id" value="<?= e((string)$activeSegmentId); ?>">
+        <label><input type="checkbox" name="allow_bulk_import" value="1" <?= $bulkImportEnabled ? 'checked' : ''; ?>> Show Bulk Entry for users</label>
         <button type="submit">Save</button>
     </form>
 </section>
@@ -353,7 +386,13 @@ $assetNumberVisibleToUsers = asset_number_visible_to_users();
         <label><input type="checkbox" name="is_displayed" value="1" checked> Show in tables</label>
         <label><input type="checkbox" name="is_import_enabled" value="1" checked> Allow in import</label>
         <label><input type="checkbox" name="is_unique" value="1"> Unique value</label>
-        <label><input type="checkbox" name="is_filter_enabled" value="1"> Set as filter</label>
+        <label>Filter Scope
+            <select name="filter_scope">
+                <?php foreach ($filterScopeOptions as $scopeValue => $scopeLabel): ?>
+                    <option value="<?= e((string)$scopeValue); ?>" <?= (int)$scopeValue === asset_filter_scope_none() ? 'selected' : ''; ?>><?= e($scopeLabel); ?></option>
+                <?php endforeach; ?>
+            </select>
+        </label>
         <button type="submit">Add Field</button>
     </form>
     <div class="table-wrap">
@@ -447,7 +486,13 @@ $assetNumberVisibleToUsers = asset_number_visible_to_users();
                                     <label class="inline-check"><input form="<?= e($formId); ?>" type="checkbox" name="is_displayed" value="1" <?= (int)$field['is_displayed'] === 1 ? 'checked' : ''; ?>> Display</label>
                                     <label class="inline-check"><input form="<?= e($formId); ?>" type="checkbox" name="is_import_enabled" value="1" <?= (int)$field['is_import_enabled'] === 1 ? 'checked' : ''; ?> <?= in_array($field['data_type'], ['file'], true) ? 'disabled' : ''; ?>> Import</label>
                                     <label class="inline-check"><input form="<?= e($formId); ?>" type="checkbox" name="is_unique" value="1" <?= (int)($field['is_unique'] ?? 0) === 1 ? 'checked' : ''; ?> <?= in_array($field['data_type'], ['file', 'conditional'], true) ? 'disabled' : ''; ?>> Unique</label>
-                                    <label class="inline-check"><input form="<?= e($formId); ?>" type="checkbox" name="is_filter_enabled" value="1" <?= (int)($field['is_filter_enabled'] ?? 0) === 1 ? 'checked' : ''; ?>> Filter</label>
+                                    <label>Filter Scope
+                                        <select form="<?= e($formId); ?>" class="inline-edit" name="filter_scope">
+                                            <?php foreach ($filterScopeOptions as $scopeValue => $scopeLabel): ?>
+                                                <option value="<?= e((string)$scopeValue); ?>" <?= asset_normalize_filter_scope($field['filter_scope'] ?? (($field['is_filter_enabled'] ?? 0) ? asset_filter_scope_all() : asset_filter_scope_none())) === (int)$scopeValue ? 'selected' : ''; ?>><?= e($scopeLabel); ?></option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </label>
                                     <button type="submit" class="btn-small office-save-button">Save</button>
                                 </form>
                                 <form method="post" action="index.php" class="inline-form">

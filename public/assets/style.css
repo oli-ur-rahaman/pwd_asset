@@ -59,8 +59,23 @@ button:disabled { opacity: .6; cursor: not-allowed; }
 .toolbar-row > button,
 .toolbar-row > .button-link,
 .toolbar-row > form > button { min-width: 140px; }
+.scope-switch-row {
+  justify-content: center;
+}
+.scope-switch-row .button-link {
+  background: #e3e8ef;
+  color: #0f4c81;
+}
 .scope-switch-row .button-link.is-active {
-  background: #17624c;
+  background: #0f4c81;
+  color: #fff;
+}
+.segment-switch-card {
+  background: transparent;
+  box-shadow: none;
+  border: 0;
+  padding-top: 4px;
+  padding-bottom: 4px;
 }
 .sortable-head {
   color: inherit;
@@ -165,8 +180,8 @@ textarea { resize: vertical; }
   gap: 6px;
 }
 .segment {
-  background: transparent;
-  color: #17324d;
+  background: #e3e8ef;
+  color: #0f4c81;
   border-radius: 999px;
 }
 .segment.is-active {

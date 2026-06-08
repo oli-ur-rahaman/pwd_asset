@@ -14,12 +14,21 @@ $hasUnderMeScope = office_user_has_under_me_scope($user);
 if (!$hasUnderMeScope) {
     $currentOfficeViewScope = 'my_office';
 }
+if (!is_superadmin() && !asset_scope_switch_enabled($activeSegmentId)) {
+    $currentOfficeViewScope = 'my_office';
+}
 $isUnderMeView = !is_superadmin() && $currentOfficeViewScope === 'office_under_me';
+$showScopeSwitchCard = !is_superadmin() && $hasUnderMeScope && asset_scope_switch_enabled($activeSegmentId);
+$showFilterCard = is_superadmin()
+    ? asset_filter_card_enabled_for_superadmin($activeSegmentId)
+    : asset_filter_card_enabled_for_users($activeSegmentId);
+$bulkImportEnabled = asset_bulk_import_enabled($activeSegmentId);
 $showAssetNumber = is_superadmin() || asset_number_visible_to_users();
 $showActionColumn = !is_superadmin() && $canModifyAssets && !$isUnderMeView;
 $fieldMap = asset_field_map_for_segment(false, $activeSegmentId);
 $fields = get_asset_fields(false, $activeSegmentId);
 $categories = get_asset_categories(false, $activeSegmentId);
+$categorySelectionEnabled = asset_category_selection_enabled($activeSegmentId);
 $subcategoryEnabled = asset_subcategory_enabled($activeSegmentId);
 $subcategories = $subcategoryEnabled ? get_asset_subcategories(null, true, $activeSegmentId) : [];
 $importReviewSubcategories = $subcategoryEnabled ? get_asset_subcategories(null, false, $activeSegmentId) : [];
@@ -94,8 +103,8 @@ foreach ($fields as $field) {
 $availableTableColumns = asset_table_available_columns($fields, $uiFieldLabels, $currentOfficeViewScope, $activeSegmentId);
 $columnPreferenceMap = get_asset_table_column_preferences((int)$user['id'], $activeSegmentId);
 $filterCatalog = build_asset_filter_catalog($baseScopeAssets, $fields, $activeSegmentId);
-$visibleFilterFields = asset_filter_visible_fields($fields, $baseScopeAssets);
-$showCategoryFilter = count($filterCatalog['categories']) > 1;
+$visibleFilterFields = asset_filter_visible_fields($fields, $baseScopeAssets, $activeSegmentId);
+$showCategoryFilter = $categorySelectionEnabled && count($filterCatalog['categories']) > 1;
 $showSubcategoryFilter = $subcategoryEnabled && count($filterCatalog['subcategories']) > 0;
 $showZoneFilter = is_superadmin();
 $showCircleFilter = is_superadmin() || ($isUnderMeView && (int)($user['office_type'] ?? 0) === 2);
@@ -276,7 +285,7 @@ $renderFilterPicker = static function (string $name, string $label, array $optio
 </section>
 
 <?php if ($showSegmentSelector): ?>
-<section class="card">
+<section class="card segment-switch-card">
     <div class="toolbar-row scope-switch-row">
         <?php foreach ($segments as $segment): ?>
             <?php
@@ -293,18 +302,17 @@ $renderFilterPicker = static function (string $name, string $label, array $optio
 </section>
 <?php endif; ?>
 
-<?php if (!is_superadmin()): ?>
+<?php if ($showScopeSwitchCard): ?>
 <section class="card">
     <div class="toolbar-row scope-switch-row">
         <a href="index.php?<?= e(http_build_query(['page' => 'board', 'office_view_scope' => 'my_office', 'segment_id' => $activeSegmentId])); ?>" class="button-link<?= !$isUnderMeView ? ' is-active' : ''; ?>">My Office</a>
-        <?php if ($hasUnderMeScope): ?>
-            <a href="index.php?<?= e(http_build_query(['page' => 'board', 'office_view_scope' => 'office_under_me', 'segment_id' => $activeSegmentId])); ?>" class="button-link<?= $isUnderMeView ? ' is-active' : ''; ?>">Office Under Me</a>
-        <?php endif; ?>
+        <a href="index.php?<?= e(http_build_query(['page' => 'board', 'office_view_scope' => 'office_under_me', 'segment_id' => $activeSegmentId])); ?>" class="button-link<?= $isUnderMeView ? ' is-active' : ''; ?>">Office Under Me</a>
     </div>
 </section>
 <?php endif; ?>
 
 <?php if (false && is_superadmin()): ?>
+<?php if ($showFilterCard): ?>
 <section class="card">
     <h2>Master Filters</h2>
     <form method="get" action="index.php" id="asset-filters" class="grid board-filters-grid">
@@ -378,7 +386,9 @@ $renderFilterPicker = static function (string $name, string $label, array $optio
     </form>
 </section>
 <?php endif; ?>
+<?php endif; ?>
 
+<?php if ($showFilterCard): ?>
 <section class="card">
     <h2>Filters</h2>
     <form method="get" action="index.php" id="asset-filters" class="grid board-filters-grid">
@@ -522,15 +532,16 @@ $renderFilterPicker = static function (string $name, string $label, array $optio
         ], static fn($value) => $value !== null && $value !== ''))); ?>" class="button-link">Reset</a>
     </form>
 </section>
+<?php endif; ?>
 
 <?php if (!is_superadmin()): ?>
 <section class="card">
     <div class="toolbar-row">
         <?php if ($canModifyAssets && !$isUnderMeView): ?>
             <button type="button" data-modal="asset-modal">+Add Asset</button>
-            <button type="button" data-modal="import-modal">Bulk Entry</button>
+            <?php if ($bulkImportEnabled): ?><button type="button" data-modal="import-modal">Bulk Entry</button><?php endif; ?>
         <?php endif; ?>
-        <?php if (!$isUnderMeView): ?>
+        <?php if (!$isUnderMeView && $bulkImportEnabled): ?>
             <a href="asset_template.php?<?= e(http_build_query(['segment_id' => $activeSegmentId])); ?>" class="button-link">Excel Template</a>
         <?php endif; ?>
         <form method="post" action="index.php" class="inline-form">
@@ -756,6 +767,10 @@ $renderFilterPicker = static function (string $name, string $label, array $optio
             <input type="hidden" name="action" value="asset_save">
             <input type="hidden" name="asset_id" value="<?= e((string)($editingAsset['id'] ?? '0')); ?>">
             <input type="hidden" name="segment_id" value="<?= e((string)$activeSegmentId); ?>">
+            <?php if (!$categorySelectionEnabled && $defaultCategoryId > 0): ?>
+                <input type="hidden" name="category_id" value="<?= e((string)$defaultCategoryId); ?>">
+            <?php endif; ?>
+            <?php if ($categorySelectionEnabled): ?>
             <label>Category *
                 <select name="category_id" id="asset-category-select" required>
                     <option value="">Select</option>
@@ -764,6 +779,7 @@ $renderFilterPicker = static function (string $name, string $label, array $optio
                     <?php endforeach; ?>
                 </select>
             </label>
+            <?php endif; ?>
             <?php if ($subcategoryEnabled): ?>
                 <label>Sub-category *
                     <select name="subcategory_id" id="asset-subcategory-select" required>
@@ -874,6 +890,7 @@ $renderFilterPicker = static function (string $name, string $label, array $optio
     </div>
 </div>
 
+<?php if ($bulkImportEnabled): ?>
 <div class="modal-backdrop" id="import-modal" aria-hidden="true">
     <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="import-modal-title">
         <h3 id="import-modal-title">Bulk Entry</h3>
@@ -891,6 +908,7 @@ $renderFilterPicker = static function (string $name, string $label, array $optio
         </form>
     </div>
 </div>
+<?php endif; ?>
 <?php endif; ?>
 
 <?php if ($review && !empty($review['rows'])): ?>
@@ -923,7 +941,7 @@ $renderFilterPicker = static function (string $name, string $label, array $optio
                     <thead>
                         <tr>
                             <th>Row</th>
-                            <th>Category</th>
+                            <?php if ($categorySelectionEnabled): ?><th>Category</th><?php endif; ?>
                             <?php if ($subcategoryEnabled): ?><th>Sub-category</th><?php endif; ?>
                             <?php foreach ($fields as $field): ?>
                                 <?php if ((int)$field['is_import_enabled'] === 1 && (int)$field['active_status'] === 1): ?>
@@ -941,6 +959,7 @@ $renderFilterPicker = static function (string $name, string $label, array $optio
                                     <?= e((string)$row['row_number']); ?>
                                     <input type="hidden" name="rows[<?= $rowIndex; ?>][row_number]" value="<?= e((string)$row['row_number']); ?>">
                                 </td>
+                                <?php if ($categorySelectionEnabled): ?>
                                 <td class="<?= !empty($row['errors']['category_id']) ? 'cell-error' : 'cell-valid'; ?>">
                                     <select class="review-input" data-review-role="category" name="rows[<?= $rowIndex; ?>][category]">
                                         <option value="">Select</option>
@@ -949,6 +968,7 @@ $renderFilterPicker = static function (string $name, string $label, array $optio
                                         <?php endforeach; ?>
                                     </select>
                                 </td>
+                                <?php endif; ?>
                                 <?php if ($subcategoryEnabled): ?>
                                     <td class="<?= !empty($row['errors']['subcategory_id']) ? 'cell-error' : 'cell-valid'; ?>">
                                         <select class="review-input" data-review-role="subcategory" name="rows[<?= $rowIndex; ?>][subcategory]">

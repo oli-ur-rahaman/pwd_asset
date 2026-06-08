@@ -889,6 +889,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const meta = JSON.parse(importReviewMeta.textContent || '{}');
         const categories = meta.categories || [];
         const subcategories = meta.subcategories || [];
+        const hasCategory = !!importReviewBody.querySelector('[data-review-role="category"]');
         const hasSubcategory = subcategories.length > 0;
         const fields = meta.fields || [];
         const categoryMap = new Map(categories.map((item) => [String(item.name || '').trim().toLowerCase(), item]));
@@ -914,13 +915,17 @@ document.addEventListener('DOMContentLoaded', () => {
         const syncSubcategoryOptions = (row) => {
             const categoryInput = row.querySelector('[data-review-role="category"]');
             const subcategoryInput = row.querySelector('[data-review-role="subcategory"]');
-            if (!categoryInput || !subcategoryInput) {
+            if (!subcategoryInput) {
                 return;
             }
 
-            const selectedCategory = categoryMap.get(String(categoryInput.value || '').trim().toLowerCase()) || null;
+            const selectedCategory = categoryInput
+                ? (categoryMap.get(String(categoryInput.value || '').trim().toLowerCase()) || null)
+                : null;
             const previousValue = subcategoryInput.value;
-            const allowed = selectedCategory ? (subcategoriesByCategory.get(String(selectedCategory.id)) || []) : [];
+            const allowed = selectedCategory
+                ? (subcategoriesByCategory.get(String(selectedCategory.id)) || [])
+                : (hasCategory ? [] : subcategories);
 
             subcategoryInput.innerHTML = '<option value="">Select</option>';
             allowed.forEach((item) => {
@@ -1063,18 +1068,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 cell.classList.toggle('cell-valid', isValid);
             };
 
-            if (!category) {
-                errors.push('Valid category is required.');
-                setCellState(categoryInput, false);
-            } else {
-                categoryInput.value = category.name;
-                setCellState(categoryInput, true);
+            if (hasCategory) {
+                if (!category) {
+                    errors.push('Valid category is required.');
+                    setCellState(categoryInput, false);
+                } else {
+                    categoryInput.value = category.name;
+                    setCellState(categoryInput, true);
+                }
             }
 
             let subcategoryValid = !hasSubcategory;
             if (hasSubcategory) {
-                if (category) {
-                    const allowed = subcategoriesByCategory.get(String(category.id)) || [];
+                const allowed = category ? (subcategoriesByCategory.get(String(category.id)) || []) : (hasCategory ? [] : subcategories);
+                if (allowed.length > 0) {
                     const match = allowed.find((item) => String(item.name || '').trim().toLowerCase() === subcategoryValue.toLowerCase());
                     if (match) {
                         subcategoryInput.value = match.name;
@@ -1280,21 +1287,23 @@ document.addEventListener('DOMContentLoaded', () => {
                 rowCell.innerHTML = `${rowNumber}<input type="hidden" name="rows[${rowIndex}][row_number]" value="${rowNumber}">`;
                 tr.appendChild(rowCell);
 
-                const categoryCell = document.createElement('td');
-                categoryCell.className = 'cell-valid';
-                const categorySelect = document.createElement('select');
-                categorySelect.className = 'review-input';
-                categorySelect.name = `rows[${rowIndex}][category]`;
-                categorySelect.setAttribute('data-review-role', 'category');
-                categorySelect.innerHTML = '<option value="">Select</option>';
-                categories.forEach((category) => {
-                    const option = document.createElement('option');
-                    option.value = category.name;
-                    option.textContent = category.name;
-                    categorySelect.appendChild(option);
-                });
-                categoryCell.appendChild(categorySelect);
-                tr.appendChild(categoryCell);
+                if (hasCategory) {
+                    const categoryCell = document.createElement('td');
+                    categoryCell.className = 'cell-valid';
+                    const categorySelect = document.createElement('select');
+                    categorySelect.className = 'review-input';
+                    categorySelect.name = `rows[${rowIndex}][category]`;
+                    categorySelect.setAttribute('data-review-role', 'category');
+                    categorySelect.innerHTML = '<option value="">Select</option>';
+                    categories.forEach((category) => {
+                        const option = document.createElement('option');
+                        option.value = category.name;
+                        option.textContent = category.name;
+                        categorySelect.appendChild(option);
+                    });
+                    categoryCell.appendChild(categorySelect);
+                    tr.appendChild(categoryCell);
+                }
 
                 if (hasSubcategory) {
                     const subcategoryCell = document.createElement('td');
