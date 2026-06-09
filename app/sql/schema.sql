@@ -186,6 +186,7 @@ CREATE TABLE IF NOT EXISTS info (
     video_tutorial_url VARCHAR(255) DEFAULT NULL,
     login_message TEXT DEFAULT NULL,
     welcome_message LONGTEXT DEFAULT NULL,
+    ui_theme_key VARCHAR(50) DEFAULT NULL,
     asset_subcategory_enabled TINYINT NOT NULL DEFAULT 1,
     asset_number_visible_to_users TINYINT NOT NULL DEFAULT 1,
     i_opr_repair TEXT DEFAULT NULL,
@@ -256,6 +257,8 @@ CREATE TABLE IF NOT EXISTS segments (
     segment_name VARCHAR(255) NOT NULL,
     active_status TINYINT NOT NULL DEFAULT 1,
     asset_subcategory_enabled TINYINT NOT NULL DEFAULT 1,
+    asset_number_visible_to_users TINYINT NOT NULL DEFAULT 1,
+    show_data_provider_superadmin TINYINT NOT NULL DEFAULT 1,
     show_filter_card_superadmin TINYINT NOT NULL DEFAULT 1,
     show_filter_card_users TINYINT NOT NULL DEFAULT 1,
     show_office_scope_switch TINYINT NOT NULL DEFAULT 1,
@@ -301,6 +304,8 @@ CREATE TABLE IF NOT EXISTS asset_fields (
     field_key VARCHAR(100) NOT NULL,
     label VARCHAR(255) NOT NULL,
     data_type VARCHAR(20) NOT NULL,
+    field_information LONGTEXT DEFAULT NULL,
+    video_tutorial_url VARCHAR(1000) DEFAULT NULL,
     number_format_rule VARCHAR(30) DEFAULT NULL,
     secondary_of_field_id INT DEFAULT NULL,
     conditional_map_json LONGTEXT DEFAULT NULL,
@@ -453,6 +458,17 @@ CREATE TABLE IF NOT EXISTS asset_table_column_preferences (
     KEY idx_asset_table_column_pref_user (user_id),
     KEY idx_asset_table_column_pref_segment (segment_id),
     KEY idx_asset_table_column_pref_category (category_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS segment_office_scope_visibility (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    segment_id INT NOT NULL,
+    office_type TINYINT NOT NULL,
+    show_my_office TINYINT NOT NULL DEFAULT 1,
+    show_office_under_me TINYINT NOT NULL DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT NULL,
+    UNIQUE KEY uniq_segment_office_scope_visibility (segment_id, office_type)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS office_orders (

@@ -11,19 +11,29 @@ $segments = get_asset_segments();
 $showSegmentSelector = count($segments) > 1;
 $currentOfficeViewScope = request_str('office_view_scope', 'my_office');
 $hasUnderMeScope = office_user_has_under_me_scope($user);
+$scopeVisibility = is_superadmin()
+    ? ['show_my_office' => true, 'show_office_under_me' => false]
+    : asset_scope_visibility_for_office_type((int)($user['office_type'] ?? 0), $activeSegmentId);
+$canUseMyOfficeScope = is_superadmin() || !empty($scopeVisibility['show_my_office']);
+$canUseUnderMeScope = !is_superadmin() && $hasUnderMeScope && !empty($scopeVisibility['show_office_under_me']);
+$scopeAccessAvailable = is_superadmin() || $canUseMyOfficeScope || $canUseUnderMeScope;
+if (!$canUseUnderMeScope && $currentOfficeViewScope === 'office_under_me') {
+    $currentOfficeViewScope = $canUseMyOfficeScope ? 'my_office' : 'office_under_me';
+}
+if (!$canUseMyOfficeScope && $canUseUnderMeScope) {
+    $currentOfficeViewScope = 'office_under_me';
+}
 if (!$hasUnderMeScope) {
     $currentOfficeViewScope = 'my_office';
 }
-if (!is_superadmin() && !asset_scope_switch_enabled($activeSegmentId)) {
-    $currentOfficeViewScope = 'my_office';
-}
-$isUnderMeView = !is_superadmin() && $currentOfficeViewScope === 'office_under_me';
-$showScopeSwitchCard = !is_superadmin() && $hasUnderMeScope && asset_scope_switch_enabled($activeSegmentId);
-$showFilterCard = is_superadmin()
+$isUnderMeView = !is_superadmin() && $canUseUnderMeScope && $currentOfficeViewScope === 'office_under_me';
+$showScopeSwitchCard = !is_superadmin() && $canUseMyOfficeScope && $canUseUnderMeScope;
+$showBoardContent = is_superadmin() || $scopeAccessAvailable;
+$showFilterCard = $showBoardContent && (is_superadmin()
     ? asset_filter_card_enabled_for_superadmin($activeSegmentId)
-    : asset_filter_card_enabled_for_users($activeSegmentId);
+    : asset_filter_card_enabled_for_users($activeSegmentId));
 $bulkImportEnabled = asset_bulk_import_enabled($activeSegmentId);
-$showAssetNumber = is_superadmin() || asset_number_visible_to_users();
+$showAssetNumber = is_superadmin() || asset_number_visible_to_users($activeSegmentId);
 $showActionColumn = !is_superadmin() && $canModifyAssets && !$isUnderMeView;
 $fieldMap = asset_field_map_for_segment(false, $activeSegmentId);
 $fields = get_asset_fields(false, $activeSegmentId);
@@ -72,7 +82,9 @@ $sortColumn = request_str('sort_col', '');
 $sortDirection = strtolower(request_str('sort_dir', 'asc')) === 'desc' ? 'desc' : 'asc';
 $filters['sort_col'] = $sortColumn;
 $filters['sort_dir'] = $sortDirection;
-$baseScopeAssets = get_assets(['office_view_scope' => $currentOfficeViewScope, 'segment_id' => $activeSegmentId], $user);
+$baseScopeAssets = $scopeAccessAvailable
+    ? get_assets(['office_view_scope' => $currentOfficeViewScope, 'segment_id' => $activeSegmentId], $user)
+    : [];
 $declaration = null;
 $officeSummary = null;
 if (!is_superadmin()) {
@@ -95,10 +107,18 @@ $circles = db()->query('SELECT id, office_name, zone_id FROM circles ORDER BY of
 $divisions = db()->query('SELECT id, office_name, zone_id, circle_id FROM divisions ORDER BY office_name')->fetchAll();
 $subdivisions = db()->query('SELECT id, office_name, zone_id, circle_id, division_id FROM subdivisions ORDER BY office_name')->fetchAll();
 $uiFieldLabels = [];
+$fieldHelpMeta = [];
 foreach ($fields as $field) {
     $rawLabel = trim((string)($field['label'] ?? ''));
     $parts = preg_split('/\s*\/\s*/u', $rawLabel);
     $uiFieldLabels[$field['field_key']] = trim((string)($parts[0] ?? $rawLabel));
+    $fieldHelpMeta[$field['field_key']] = [
+        'label' => trim((string)($parts[0] ?? $rawLabel)),
+        'information' => (string)($field['field_information'] ?? ''),
+        'tutorial_url' => (string)($field['video_tutorial_url'] ?? ''),
+        'tutorial_embed_url' => (string)(asset_youtube_embed_url((string)($field['video_tutorial_url'] ?? '')) ?? ''),
+        'has_help' => asset_field_has_help($field),
+    ];
 }
 $availableTableColumns = asset_table_available_columns($fields, $uiFieldLabels, $currentOfficeViewScope, $activeSegmentId);
 $columnPreferenceMap = get_asset_table_column_preferences((int)$user['id'], $activeSegmentId);
@@ -124,7 +144,7 @@ foreach ($fields as $field) {
         $filters[$filterKey . '_to'] = request_str($filterKey . '_to', '');
     }
 }
-$groupedAssets = get_assets_grouped_by_category($filters, $user);
+$groupedAssets = $scopeAccessAvailable ? get_assets_grouped_by_category($filters, $user) : [];
 $categoryNameById = [];
 foreach ($categories as $category) {
     $categoryNameById[(int)$category['id']] = (string)$category['name'];
@@ -217,7 +237,25 @@ $filterPickerValue = static function (array $options, string|int $selectedValue)
     }
     return '';
 };
-$renderFilterPicker = static function (string $name, string $label, array $options, string|int $selectedValue = '', array $attributes = []) use ($filterPickerValue): void {
+$renderFieldHelpButton = static function (?array $meta, string $buttonClass = 'field-help-button', string $title = 'Field information'): void {
+    if (!$meta || empty($meta['has_help'])) {
+        return;
+    }
+    ?>
+    <button
+        type="button"
+        class="<?= e($buttonClass); ?>"
+        data-field-help
+        data-help-label="<?= e((string)($meta['label'] ?? 'Field')); ?>"
+        data-help-information="<?= e((string)($meta['information'] ?? '')); ?>"
+        data-help-url="<?= e((string)($meta['tutorial_url'] ?? '')); ?>"
+        data-help-embed-url="<?= e((string)($meta['tutorial_embed_url'] ?? '')); ?>"
+        title="<?= e($title); ?>"
+        aria-label="<?= e($title); ?>"
+    >i</button>
+    <?php
+};
+$renderFilterPicker = static function (string $name, string $label, array $options, string|int $selectedValue = '', array $attributes = [], ?array $helpMeta = null) use ($filterPickerValue, $renderFieldHelpButton): void {
     $normalizedSelectedValue = ((string)$selectedValue === '0') ? '' : (string)$selectedValue;
     $selectedText = $filterPickerValue($options, $normalizedSelectedValue);
     $pickerId = 'filter-picker-' . preg_replace('/[^a-zA-Z0-9_-]+/', '-', $name);
@@ -229,7 +267,11 @@ $renderFilterPicker = static function (string $name, string $label, array $optio
         $wrapperAttrs .= ' ' . $attrName . '="' . e((string)$attrValue) . '"';
     }
     ?>
-    <label><?= e($label); ?>
+    <label>
+        <span class="field-label-row">
+            <span><?= e($label); ?></span>
+            <?php $renderFieldHelpButton($helpMeta, 'field-help-button field-help-inline', 'Field information'); ?>
+        </span>
         <div class="filter-picker" id="<?= e($pickerId); ?>" data-filter-picker<?= $wrapperAttrs; ?>>
             <input type="hidden" name="<?= e($name); ?>" value="<?= e($normalizedSelectedValue); ?>" data-filter-picker-value>
             <input type="text" value="<?= e($selectedText); ?>" placeholder="All" autocomplete="off" data-filter-picker-input>
@@ -266,13 +308,14 @@ $renderFilterPicker = static function (string $name, string $label, array $optio
                         <div class="hero-summary-item"><strong>Last Update</strong><br><span class="muted"><?= e($officeSummary['last_update_label']); ?></span></div>
                     </div>
                 <?php endif; ?>
-                <?php if ($canModifyAssets): ?>
+                <?php if ($canModifyAssets && $canUseMyOfficeScope): ?>
                     <form method="post" action="index.php" class="inline-form">
                         <?= csrf_input(); ?>
                         <input type="hidden" name="action" value="asset_declare">
                         <input type="hidden" name="segment_id" value="<?= e((string)$activeSegmentId); ?>">
                         <button type="submit" class="hero-declare-button" <?= !empty($declaration['declared_status']) ? 'disabled' : ''; ?>>Declare as Completed</button>
                     </form>
+                <?php elseif (!$canUseMyOfficeScope): ?>
                 <?php else: ?>
                     <span class="muted">View-only access</span>
                 <?php endif; ?>
@@ -308,6 +351,12 @@ $renderFilterPicker = static function (string $name, string $label, array $optio
         <a href="index.php?<?= e(http_build_query(['page' => 'board', 'office_view_scope' => 'my_office', 'segment_id' => $activeSegmentId])); ?>" class="button-link<?= !$isUnderMeView ? ' is-active' : ''; ?>">My Office</a>
         <a href="index.php?<?= e(http_build_query(['page' => 'board', 'office_view_scope' => 'office_under_me', 'segment_id' => $activeSegmentId])); ?>" class="button-link<?= $isUnderMeView ? ' is-active' : ''; ?>">Office Under Me</a>
     </div>
+</section>
+<?php endif; ?>
+
+<?php if (!is_superadmin() && !$scopeAccessAvailable): ?>
+<section class="card">
+    <p class="hint">This segment is currently hidden for your office type by superadmin settings.</p>
 </section>
 <?php endif; ?>
 
@@ -477,10 +526,18 @@ $renderFilterPicker = static function (string $name, string $label, array $optio
                 $catalogField = $filterCatalog['fields'][$fieldKey] ?? null;
             ?>
             <?php if ($fieldType === 'date'): ?>
-                <label><?= e($fieldLabel); ?> From
+                <label>
+                    <span class="field-label-row">
+                        <span><?= e($fieldLabel); ?> From</span>
+                        <?php $renderFieldHelpButton($fieldHelpMeta[$fieldKey] ?? null, 'field-help-button field-help-inline', 'Field information'); ?>
+                    </span>
                     <input type="date" name="<?= e($filterKey . '_from'); ?>" value="<?= e((string)($filters[$filterKey . '_from'] ?? '')); ?>">
                 </label>
-                <label><?= e($fieldLabel); ?> To
+                <label>
+                    <span class="field-label-row">
+                        <span><?= e($fieldLabel); ?> To</span>
+                        <?php $renderFieldHelpButton($fieldHelpMeta[$fieldKey] ?? null, 'field-help-button field-help-inline', 'Field information'); ?>
+                    </span>
                     <input type="date" name="<?= e($filterKey . '_to'); ?>" value="<?= e((string)($filters[$filterKey . '_to'] ?? '')); ?>">
                 </label>
             <?php elseif ($fieldType === 'conditional'): ?>
@@ -499,7 +556,8 @@ $renderFilterPicker = static function (string $name, string $label, array $optio
                             'data-filter-conditional-primary' => '1',
                             'data-filter-conditional-child' => (string)($childField['field_key'] ?? ''),
                             'data-filter-conditional-map' => json_encode($catalogField['secondary_options_map'] ?? [], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
-                        ]
+                        ],
+                        $fieldHelpMeta[$fieldKey] ?? null
                     );
                 ?>
                 <?php if ($childField): ?>
@@ -510,7 +568,8 @@ $renderFilterPicker = static function (string $name, string $label, array $optio
                             (string)($uiFieldLabels[$childField['field_key']] ?? $childField['label']),
                             [],
                             (string)($filters[$childFilterKey] ?? ''),
-                            ['data-filter-conditional-secondary' => (string)$fieldKey]
+                            ['data-filter-conditional-secondary' => (string)$fieldKey],
+                            $fieldHelpMeta[$childField['field_key']] ?? null
                         );
                     ?>
                 <?php endif; ?>
@@ -520,7 +579,7 @@ $renderFilterPicker = static function (string $name, string $label, array $optio
                     foreach ($catalogField['options'] as $optionValue => $optionLabel) {
                         $fieldPickerOptions[] = ['value' => (string)$optionValue, 'label' => (string)$optionLabel];
                     }
-                    $renderFilterPicker($filterKey, $fieldLabel, $fieldPickerOptions, (string)($filters[$filterKey] ?? ''));
+                    $renderFilterPicker($filterKey, $fieldLabel, $fieldPickerOptions, (string)($filters[$filterKey] ?? ''), [], $fieldHelpMeta[$fieldKey] ?? null);
                 ?>
             <?php endif; ?>
         <?php endforeach; ?>
@@ -534,7 +593,7 @@ $renderFilterPicker = static function (string $name, string $label, array $optio
 </section>
 <?php endif; ?>
 
-<?php if (!is_superadmin()): ?>
+<?php if (!is_superadmin() && $showBoardContent): ?>
 <section class="card">
     <div class="toolbar-row">
         <?php if ($canModifyAssets && !$isUnderMeView): ?>
@@ -562,7 +621,7 @@ $renderFilterPicker = static function (string $name, string $label, array $optio
 </section>
 <?php endif; ?>
 
-<?php if (!is_superadmin() && $canModifyAssets && !$isUnderMeView): ?>
+<?php if (!is_superadmin() && $showBoardContent && $canModifyAssets && !$isUnderMeView): ?>
 <form method="post" action="index.php" class="asset-delete-form" id="asset-delete-form">
     <?= csrf_input(); ?>
     <input type="hidden" name="action" value="asset_bulk_delete">
@@ -570,6 +629,7 @@ $renderFilterPicker = static function (string $name, string $label, array $optio
     <input type="hidden" name="office_view_scope" value="<?= e($currentOfficeViewScope); ?>">
 </form>
 <?php endif; ?>
+<?php if ($showBoardContent): ?>
     <section class="board-grid asset-category-grid">
         <?php foreach ($groupedAssets as $group): ?>
             <?php
@@ -627,7 +687,12 @@ $renderFilterPicker = static function (string $name, string $label, array $optio
                                 <?php foreach ($fields as $field): ?>
                                     <?php if ((int)$field['is_displayed'] === 1 && (int)$field['active_status'] === 1 && !empty($visibleColumnKeys[$field['field_key']])): ?>
                                         <?php $fieldSortKey = (string)$field['field_key']; ?>
-                                        <th class="<?= $sortColumn === $fieldSortKey ? 'sort-active' : ''; ?>"><a href="<?= e($headerSortUrl($fieldSortKey)); ?>" class="<?= trim($sortClass($fieldSortKey)); ?>"><?= e((string)($uiFieldLabels[$field['field_key']] ?? $field['label'])); ?><?= e($sortIndicator($fieldSortKey)); ?></a></th>
+                                        <th class="<?= $sortColumn === $fieldSortKey ? 'sort-active' : ''; ?>">
+                                            <div class="field-head-row">
+                                                <a href="<?= e($headerSortUrl($fieldSortKey)); ?>" class="<?= trim($sortClass($fieldSortKey)); ?>"><?= e((string)($uiFieldLabels[$field['field_key']] ?? $field['label'])); ?><?= e($sortIndicator($fieldSortKey)); ?></a>
+                                                <?php $renderFieldHelpButton($fieldHelpMeta[$field['field_key']] ?? null, 'field-help-button field-help-table', 'Field information'); ?>
+                                            </div>
+                                        </th>
                                     <?php endif; ?>
                                 <?php endforeach; ?>
                                 <?php if ($showActionColumn): ?><th>Action</th><?php endif; ?>
@@ -744,7 +809,9 @@ $renderFilterPicker = static function (string $name, string $label, array $optio
                         <div class="modal-actions">
                             <button type="button" class="btn-small" data-show-all-columns="columns-form-<?= (int)$category['id']; ?>">Show All</button>
                             <button type="submit">Save</button>
-                            <button type="submit" name="apply_to_all" value="1" class="btn-secondary">Apply Visibility to All Tables</button>
+                            <?php if (count($categories) > 1): ?>
+                                <button type="submit" name="apply_to_all" value="1" class="btn-secondary">Apply Visibility to All Tables</button>
+                            <?php endif; ?>
                             <button type="button" class="modal-close" data-close="columns-modal-<?= (int)$category['id']; ?>">Cancel</button>
                         </div>
                     </form>
@@ -752,13 +819,26 @@ $renderFilterPicker = static function (string $name, string $label, array $optio
             </div>
         <?php endforeach; ?>
     </section>
-    <?php if (!is_superadmin() && $canModifyAssets && !$isUnderMeView): ?>
+<?php endif; ?>
+<?php if (!is_superadmin() && $showBoardContent && $canModifyAssets && !$isUnderMeView): ?>
         <div class="bulk-actions">
-            <button type="submit" class="btn-danger" form="asset-delete-form">Soft Delete Selected</button>
+            <button type="button" class="btn-danger" data-modal="asset-delete-confirm-modal">Soft Delete Selected</button>
         </div>
     <?php endif; ?>
 
-<?php if (!is_superadmin() && $canModifyAssets && !$isUnderMeView): ?>
+<?php if (!is_superadmin() && $showBoardContent && $canModifyAssets && !$isUnderMeView): ?>
+<div class="modal-backdrop" id="asset-delete-confirm-modal" aria-hidden="true">
+    <div class="modal-card asset-delete-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="asset-delete-confirm-title">
+        <h3 id="asset-delete-confirm-title">Confirm Soft Delete</h3>
+        <p>Selected row/rows are going to be deleted. If you accidentally delete anything, contact developer to reinstate the rows.</p>
+        <p>Now will I proceed to deletion?</p>
+        <div class="modal-actions">
+            <button type="button" class="btn-danger" id="asset-delete-confirm-proceed">Proceed</button>
+            <button type="button" class="modal-close" data-close="asset-delete-confirm-modal">Cancel</button>
+        </div>
+    </div>
+</div>
+
 <div class="modal-backdrop<?= $editingAsset ? ' open' : ''; ?>" id="asset-modal" aria-hidden="<?= $editingAsset ? 'false' : 'true'; ?>">
     <div class="modal-card asset-entry-modal" role="dialog" aria-modal="true" aria-labelledby="asset-modal-title">
         <h3 id="asset-modal-title"><?= $editingAsset ? 'Edit Asset' : 'Add Asset'; ?></h3>
@@ -792,7 +872,11 @@ $renderFilterPicker = static function (string $name, string $label, array $optio
             <?php endif; ?>
             <?php foreach ($fields as $field): ?>
                 <?php if ((int)$field['active_status'] !== 1) { continue; } ?>
-                <label><?= e((string)($uiFieldLabels[$field['field_key']] ?? $field['label'])); ?><?= (int)$field['is_required'] === 1 ? ' *' : ''; ?>
+                <label>
+                    <span class="field-label-row">
+                        <span><?= e((string)($uiFieldLabels[$field['field_key']] ?? $field['label'])); ?><?= (int)$field['is_required'] === 1 ? ' *' : ''; ?></span>
+                        <?php $renderFieldHelpButton($fieldHelpMeta[$field['field_key']] ?? null, 'field-help-button field-help-inline', 'Field information'); ?>
+                    </span>
                     <?php $value = (string)($editValues[$field['field_key']] ?? ''); ?>
                     <?php if ($field['data_type'] === 'file'): ?>
                         <?php
@@ -945,7 +1029,12 @@ $renderFilterPicker = static function (string $name, string $label, array $optio
                             <?php if ($subcategoryEnabled): ?><th>Sub-category</th><?php endif; ?>
                             <?php foreach ($fields as $field): ?>
                                 <?php if ((int)$field['is_import_enabled'] === 1 && (int)$field['active_status'] === 1): ?>
-                                    <th><?= e((string)($uiFieldLabels[$field['field_key']] ?? $field['label'])); ?></th>
+                                    <th>
+                                        <div class="field-head-row">
+                                            <span><?= e((string)($uiFieldLabels[$field['field_key']] ?? $field['label'])); ?></span>
+                                            <?php $renderFieldHelpButton($fieldHelpMeta[$field['field_key']] ?? null, 'field-help-button field-help-table', 'Field information'); ?>
+                                        </div>
+                                    </th>
                                 <?php endif; ?>
                             <?php endforeach; ?>
                             <th>Audit</th>
@@ -1180,6 +1269,33 @@ $renderFilterPicker = static function (string $name, string $label, array $optio
     </div>
 </div>
 <?php endif; ?>
+
+<div class="modal-backdrop" id="field-help-modal" aria-hidden="true">
+    <div class="modal-card field-help-modal-card" role="dialog" aria-modal="true" aria-labelledby="field-help-title">
+        <div class="flash-modal-head">
+            <h3 id="field-help-title">Field Information</h3>
+            <button type="button" class="welcome-modal-close modal-close" data-close="field-help-modal" aria-label="Close">×</button>
+        </div>
+        <div class="field-help-content">
+            <p class="field-help-label" id="field-help-label"></p>
+            <div class="field-help-body" id="field-help-body"></div>
+            <div class="field-help-video hidden" id="field-help-video">
+                <iframe
+                    id="field-help-iframe"
+                    src=""
+                    title="Field tutorial"
+                    loading="lazy"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                    allowfullscreen
+                ></iframe>
+                <p><a href="#" target="_blank" rel="noopener" id="field-help-link">Open tutorial</a></p>
+            </div>
+        </div>
+        <div class="modal-actions">
+            <button type="button" class="modal-close" data-close="field-help-modal">Close</button>
+        </div>
+    </div>
+</div>
 
 <?php if ($historyAsset): ?>
 <div class="modal-backdrop open" id="asset-history-modal" aria-hidden="false">

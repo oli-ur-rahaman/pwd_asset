@@ -5,10 +5,11 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <?php $info = get_info_row(); ?>
+    <?php $themeKey = asset_normalize_theme_key((string)($info['ui_theme_key'] ?? '')); ?>
     <title><?= e((string)($info['site_name'] ?? 'PWD Asset Management System')); ?></title>
     <link rel="stylesheet" href="public/assets/style.css">
 </head>
-<body>
+<body class="theme-<?= e($themeKey); ?>">
 <nav class="nav">
     <div class="nav-title"><?= e((string)($info['site_name'] ?? 'PWD Asset Management System')); ?></div>
     <div class="nav-links">

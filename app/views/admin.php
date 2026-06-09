@@ -11,8 +11,9 @@ $templateColumns = asset_template_columns($activeSegmentId);
 $uploadedTemplate = asset_template_uploaded_info($activeSegmentId);
 $subcategoryEnabled = asset_subcategory_enabled($activeSegmentId);
 $categorySelectionEnabled = asset_category_selection_enabled($activeSegmentId);
-$assetNumberVisibleToUsers = asset_number_visible_to_users();
-$scopeSwitchEnabled = asset_scope_switch_enabled($activeSegmentId);
+$assetNumberVisibleToUsers = asset_number_visible_to_users($activeSegmentId);
+$dataProviderVisibleToSuperadmin = asset_data_provider_visible($activeSegmentId);
+$scopeVisibilitySettings = asset_scope_visibility_settings($activeSegmentId);
 $filterCardEnabledForSuperadmin = asset_filter_card_enabled_for_superadmin($activeSegmentId);
 $filterCardEnabledForUsers = asset_filter_card_enabled_for_users($activeSegmentId);
 $bulkImportEnabled = asset_bulk_import_enabled($activeSegmentId);
@@ -53,18 +54,20 @@ $filterScopeOptions = asset_filter_scope_options();
         <?= csrf_input(); ?>
         <input type="hidden" name="action" value="create_asset_segment">
         <input type="text" name="segment_name" placeholder="New segment name" required>
+        <input type="number" name="sort_order" min="1" step="1" placeholder="Order (optional)">
         <button type="submit">Add Segment</button>
     </form>
     <div class="table-wrap">
         <table>
             <thead>
-                <tr><th>Name</th><th>Status</th><th>Action</th></tr>
+                <tr><th>Name</th><th>Order</th><th>Status</th><th>Action</th></tr>
             </thead>
             <tbody>
                 <?php foreach ($segments as $segment): ?>
                     <?php $segmentFormId = 'segment-' . (int)$segment['id']; $segmentActive = (int)($segment['active_status'] ?? 0) === 1; ?>
                     <tr>
                         <td><input form="<?= e($segmentFormId); ?>" class="inline-edit" type="text" name="segment_name" value="<?= e((string)$segment['segment_name']); ?>" required></td>
+                        <td><input form="<?= e($segmentFormId); ?>" class="inline-edit" type="number" name="sort_order" min="1" step="1" value="<?= e((string)($segment['sort_order'] ?? 0)); ?>" required></td>
                         <td><span class="<?= $segmentActive ? 'status-active' : 'status-inactive'; ?>"><?= $segmentActive ? 'Active' : 'Disabled'; ?></span></td>
                         <td>
                             <div class="action-row">
@@ -146,11 +149,27 @@ $filterScopeOptions = asset_filter_scope_options();
 <section class="card">
     <h2>Board Cards</h2>
     <p class="hint">These controls are segment specific.</p>
-    <form method="post" action="index.php" class="inline-form">
+    <form method="post" action="index.php" class="grid">
         <?= csrf_input(); ?>
-        <input type="hidden" name="action" value="save_asset_scope_switch_visibility">
+        <input type="hidden" name="action" value="save_asset_scope_visibility_settings">
         <input type="hidden" name="segment_id" value="<?= e((string)$activeSegmentId); ?>">
-        <label><input type="checkbox" name="show_office_scope_switch" value="1" <?= $scopeSwitchEnabled ? 'checked' : ''; ?>> Show My Office / Office Under Me card</label>
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr><th>Office Type</th><th>My Office</th><th>Office Under Me</th></tr>
+                </thead>
+                <tbody>
+                    <?php foreach ([2, 3, 4, 5] as $officeType): ?>
+                        <?php $row = $scopeVisibilitySettings[$officeType] ?? ['show_my_office' => true, 'show_office_under_me' => $officeType !== 5]; ?>
+                        <tr>
+                            <td><?= e(asset_office_type_label($officeType)); ?></td>
+                            <td><label class="inline-check"><input type="checkbox" name="scope_visibility[<?= e((string)$officeType); ?>][show_my_office]" value="1" <?= !empty($row['show_my_office']) ? 'checked' : ''; ?>> Visible</label></td>
+                            <td><label class="inline-check"><input type="checkbox" name="scope_visibility[<?= e((string)$officeType); ?>][show_office_under_me]" value="1" <?= !empty($row['show_office_under_me']) ? 'checked' : ''; ?>> Visible</label></td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
         <button type="submit">Save</button>
     </form>
     <form method="post" action="index.php" class="inline-form">
@@ -172,12 +191,24 @@ $filterScopeOptions = asset_filter_scope_options();
 
 <section class="card">
     <h2>Asset Number Visibility</h2>
-    <p class="hint">Control whether office-side users see the Asset Number column in asset tables.</p>
+    <p class="hint">This control is segment specific and decides whether office-side users see the Asset Number column in asset tables.</p>
     <form method="post" action="index.php" class="inline-form">
         <?= csrf_input(); ?>
         <input type="hidden" name="action" value="save_asset_number_visibility">
         <input type="hidden" name="segment_id" value="<?= e((string)$activeSegmentId); ?>">
         <label><input type="checkbox" name="asset_number_visible_to_users" value="1" <?= $assetNumberVisibleToUsers ? 'checked' : ''; ?>> Show Asset Number for office users</label>
+        <button type="submit">Save</button>
+    </form>
+</section>
+
+<section class="card">
+    <h2>Data Provider Visibility</h2>
+    <p class="hint">This control is segment specific and applies to all asset tables in that segment.</p>
+    <form method="post" action="index.php" class="inline-form">
+        <?= csrf_input(); ?>
+        <input type="hidden" name="action" value="save_asset_data_provider_visibility">
+        <input type="hidden" name="segment_id" value="<?= e((string)$activeSegmentId); ?>">
+        <label><input type="checkbox" name="show_data_provider_superadmin" value="1" <?= $dataProviderVisibleToSuperadmin ? 'checked' : ''; ?>> Show Data Provider column</label>
         <button type="submit">Save</button>
     </form>
 </section>
@@ -323,6 +354,12 @@ $filterScopeOptions = asset_filter_scope_options();
                 <?php endforeach; ?>
             </select>
         </label>
+        <label>Field Information
+            <textarea name="field_information" rows="3" placeholder="Explain this field for users"></textarea>
+        </label>
+        <label>Tutorial URL
+            <input type="url" name="video_tutorial_url" placeholder="https://www.youtube.com/watch?v=...">
+        </label>
         <div class="field-config-group" data-field-config="dropdown">
             <label>Dropdown Options
                 <textarea name="options_text" rows="3" placeholder="One option per line"></textarea>
@@ -341,6 +378,16 @@ $filterScopeOptions = asset_filter_scope_options();
         <div class="field-config-group" data-field-config="conditional">
             <label>Secondary Label
                 <input type="text" name="secondary_label" placeholder="Secondary dropdown label">
+            </label>
+        </div>
+        <div class="field-config-group" data-field-config="conditional">
+            <label>Secondary Information
+                <textarea name="secondary_field_information" rows="3" placeholder="Explain the secondary field"></textarea>
+            </label>
+        </div>
+        <div class="field-config-group" data-field-config="conditional">
+            <label>Secondary Tutorial URL
+                <input type="url" name="secondary_video_tutorial_url" placeholder="https://www.youtube.com/watch?v=...">
             </label>
         </div>
         <div class="field-config-group" data-field-config="conditional">
@@ -432,6 +479,14 @@ $filterScopeOptions = asset_filter_scope_options();
                             <div class="field-config-group" data-field-config="dropdown">
                                 <textarea form="<?= e($formId); ?>" class="inline-edit field-options-box" name="options_text" rows="3" placeholder="One option per line"><?= e(implode("\n", $optionLines)); ?></textarea>
                             </div>
+                            <div class="field-config-group">
+                                <label>Field Information
+                                    <textarea form="<?= e($formId); ?>" class="inline-edit field-options-box" name="field_information" rows="3" placeholder="Explain this field"><?= e((string)($field['field_information'] ?? '')); ?></textarea>
+                                </label>
+                                <label>Tutorial URL
+                                    <input form="<?= e($formId); ?>" class="inline-edit" type="url" name="video_tutorial_url" value="<?= e((string)($field['video_tutorial_url'] ?? '')); ?>" placeholder="https://www.youtube.com/watch?v=...">
+                                </label>
+                            </div>
                             <div class="field-config-group" data-field-config="number">
                                 <input form="<?= e($formId); ?>" class="inline-edit" type="text" name="number_format_rule" value="<?= e((string)($field['number_format_rule'] ?? '')); ?>" placeholder="8.2 or -*8.*2">
                                 <div class="hint">
@@ -443,6 +498,12 @@ $filterScopeOptions = asset_filter_scope_options();
                             <div class="field-config-group" data-field-config="conditional">
                                 <label>Secondary Label
                                     <input form="<?= e($formId); ?>" class="inline-edit" type="text" name="secondary_label" value="<?= e((string)($conditionalChild['label'] ?? '')); ?>" placeholder="Secondary dropdown label">
+                                </label>
+                                <label>Secondary Information
+                                    <textarea form="<?= e($formId); ?>" class="inline-edit field-options-box" name="secondary_field_information" rows="3" placeholder="Explain the secondary field"><?= e((string)($conditionalChild['field_information'] ?? '')); ?></textarea>
+                                </label>
+                                <label>Secondary Tutorial URL
+                                    <input form="<?= e($formId); ?>" class="inline-edit" type="url" name="secondary_video_tutorial_url" value="<?= e((string)($conditionalChild['video_tutorial_url'] ?? '')); ?>" placeholder="https://www.youtube.com/watch?v=...">
                                 </label>
                                 <label>Primary Dropdown Options
                                     <textarea form="<?= e($formId); ?>" class="inline-edit field-options-box" name="conditional_primary_options_text" rows="3" placeholder="One primary option per line"><?= e(implode("\n", $optionLines)); ?></textarea>

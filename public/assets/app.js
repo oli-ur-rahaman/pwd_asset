@@ -89,6 +89,56 @@ document.addEventListener('DOMContentLoaded', () => {
             if (modalId === 'asset-history-modal' && window.location.search.includes('asset_history=')) {
                 window.location.href = 'index.php?page=board';
             }
+            if (modalId === 'field-help-modal') {
+                const iframe = document.getElementById('field-help-iframe');
+                if (iframe) {
+                    iframe.src = '';
+                }
+            }
+        });
+    });
+
+    document.querySelectorAll('[data-field-help]').forEach((button) => {
+        button.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            const modal = document.getElementById('field-help-modal');
+            if (!modal) {
+                return;
+            }
+            const title = document.getElementById('field-help-title');
+            const label = document.getElementById('field-help-label');
+            const body = document.getElementById('field-help-body');
+            const videoBlock = document.getElementById('field-help-video');
+            const iframe = document.getElementById('field-help-iframe');
+            const link = document.getElementById('field-help-link');
+            const helpLabel = button.getAttribute('data-help-label') || 'Field';
+            const information = button.getAttribute('data-help-information') || '';
+            const tutorialUrl = button.getAttribute('data-help-url') || '';
+            const embedUrl = button.getAttribute('data-help-embed-url') || '';
+            if (title) {
+                title.textContent = 'Field Information';
+            }
+            if (label) {
+                label.textContent = helpLabel;
+            }
+            if (body) {
+                const lines = information.trim() === '' ? ['No additional information provided.'] : information.split(/\r\n|\r|\n/);
+                body.innerHTML = lines.map((line) => `<p>${line.replace(/[&<>"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[char]))}</p>`).join('');
+            }
+            if (videoBlock && iframe && link) {
+                if (tutorialUrl) {
+                    videoBlock.classList.remove('hidden');
+                    iframe.src = embedUrl || '';
+                    link.href = tutorialUrl;
+                } else {
+                    videoBlock.classList.add('hidden');
+                    iframe.src = '';
+                    link.href = '#';
+                }
+            }
+            modal.classList.add('open');
+            modal.setAttribute('aria-hidden', 'false');
         });
     });
 
@@ -104,6 +154,22 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
     });
+
+    const assetDeleteModal = document.getElementById('asset-delete-confirm-modal');
+    const assetDeleteForm = document.getElementById('asset-delete-form');
+    const assetDeleteProceed = document.getElementById('asset-delete-confirm-proceed');
+    if (assetDeleteModal && assetDeleteForm && assetDeleteProceed) {
+        assetDeleteProceed.addEventListener('click', () => {
+            const selectedRows = assetDeleteForm.querySelectorAll('input[name="asset_ids[]"]:checked');
+            if (!selectedRows.length) {
+                window.alert('Please select at least one row before deletion.');
+                return;
+            }
+            assetDeleteModal.classList.remove('open');
+            assetDeleteModal.setAttribute('aria-hidden', 'true');
+            assetDeleteForm.submit();
+        });
+    }
 
     const renumberManagedUserRows = (container) => {
         const body = container?.querySelector('[data-managed-user-body]');

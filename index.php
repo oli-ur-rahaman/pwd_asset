@@ -67,7 +67,7 @@ if ($action === 'create_asset_segment') {
         exit('Not allowed.');
     }
     try {
-        $segmentId = create_asset_segment(input_str('segment_name'));
+        $segmentId = create_asset_segment(input_str('segment_name'), max(0, input_int('sort_order')));
         flash('success', 'Segment created.');
         redirect('index.php?' . http_build_query(['page' => 'admin', 'segment_id' => $segmentId]));
     } catch (Throwable $e) {
@@ -83,7 +83,7 @@ if ($action === 'update_asset_segment') {
     }
     try {
         $segmentId = input_int('segment_id');
-        update_asset_segment($segmentId, input_str('segment_name'));
+        update_asset_segment($segmentId, input_str('segment_name'), max(0, input_int('sort_order')));
         flash('success', 'Segment updated.');
     } catch (Throwable $e) {
         flash('error', $e->getMessage());
@@ -257,13 +257,13 @@ if ($action === 'save_subcategory_visibility') {
     $adminRedirect();
 }
 
-if ($action === 'save_asset_scope_switch_visibility') {
+if ($action === 'save_asset_scope_visibility_settings') {
     if (!can_manage_superadmin_scope()) {
         http_response_code(403);
         exit('Not allowed.');
     }
-    set_asset_scope_switch_enabled(!empty($_POST['show_office_scope_switch']) ? 1 : 0, input_int('segment_id'));
-    flash('success', 'Office scope card visibility updated.');
+    save_asset_scope_visibility_settings($_POST['scope_visibility'] ?? [], input_int('segment_id'));
+    flash('success', 'Office scope visibility updated.');
     $adminRedirect();
 }
 
@@ -296,8 +296,18 @@ if ($action === 'save_asset_number_visibility') {
         http_response_code(403);
         exit('Not allowed.');
     }
-    set_asset_number_visible_to_users(!empty($_POST['asset_number_visible_to_users']) ? 1 : 0);
+    set_asset_number_visible_to_users(!empty($_POST['asset_number_visible_to_users']) ? 1 : 0, input_int('segment_id'));
     flash('success', 'Asset number visibility updated.');
+    $adminRedirect();
+}
+
+if ($action === 'save_asset_data_provider_visibility') {
+    if (!can_manage_superadmin_scope()) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
+    set_asset_data_provider_visible(!empty($_POST['show_data_provider_superadmin']) ? 1 : 0, input_int('segment_id'));
+    flash('success', 'Data provider visibility updated.');
     $adminRedirect();
 }
 
@@ -447,9 +457,14 @@ if ($action === 'asset_declare') {
     if (!$ctx) {
         flash('error', 'Office declaration is not available for this user.');
     } else {
+        $segment = asset_active_segment(input_int('segment_id'));
+        $segmentName = trim((string)($segment['segment_name'] ?? ''));
         declare_office_assets($ctx['office_type'], $ctx['office_id'], (int)current_user()['id'], input_int('segment_id'));
         add_log((int)current_user()['id'], 'office_asset_declarations', $ctx['office_id'], 'Office asset data declared up to date.');
-        flash('success', 'Declaration saved.');
+        flash(
+            'success',
+            'This ' . ($segmentName !== '' ? $segmentName : 'segment') . ' table has been sent to admin. However you can still edit or add new information in the table.'
+        );
     }
     $boardRedirect();
 }
@@ -1025,6 +1040,9 @@ if ($action === 'save_interface') {
     }
     if (array_key_exists('welcome_message', $_POST)) {
         $extras['welcome_message'] = input_str('welcome_message');
+    }
+    if (array_key_exists('ui_theme_key', $_POST)) {
+        $extras['ui_theme_key'] = input_str('ui_theme_key');
     }
     save_info_row(
         array_key_exists('video_tutorial_url', $_POST) ? input_str('video_tutorial_url') : ($existing['video_tutorial_url'] ?? null),

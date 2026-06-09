@@ -35,6 +35,22 @@ $info = get_info_row();
 </section>
 
 <section class="card">
+    <h2>Theme</h2>
+    <form method="post" action="index.php" class="grid">
+        <?= csrf_input(); ?>
+        <input type="hidden" name="action" value="save_interface">
+        <label>Global Theme
+            <select name="ui_theme_key">
+                <?php foreach (asset_theme_options() as $themeKey => $themeLabel): ?>
+                    <option value="<?= e($themeKey); ?>" <?= asset_normalize_theme_key((string)($info['ui_theme_key'] ?? '')) === $themeKey ? 'selected' : ''; ?>><?= e($themeLabel); ?></option>
+                <?php endforeach; ?>
+            </select>
+        </label>
+        <button type="submit">Save</button>
+    </form>
+</section>
+
+<section class="card">
     <h2>Video Tutorial URL</h2>
     <form method="post" action="index.php" class="grid">
         <?= csrf_input(); ?>

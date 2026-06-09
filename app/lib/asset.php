@@ -57,6 +57,8 @@ function ensure_asset_schema(): void
             field_key VARCHAR(100) NOT NULL,
             label VARCHAR(255) NOT NULL,
             data_type VARCHAR(20) NOT NULL,
+            field_information LONGTEXT DEFAULT NULL,
+            video_tutorial_url VARCHAR(1000) DEFAULT NULL,
             number_format_rule VARCHAR(30) DEFAULT NULL,
             secondary_of_field_id INT DEFAULT NULL,
             conditional_map_json LONGTEXT DEFAULT NULL,
@@ -241,6 +243,19 @@ function ensure_asset_schema(): void
     );
 
     db()->exec(
+        "CREATE TABLE IF NOT EXISTS segment_office_scope_visibility (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            segment_id INT NOT NULL,
+            office_type TINYINT NOT NULL,
+            show_my_office TINYINT NOT NULL DEFAULT 1,
+            show_office_under_me TINYINT NOT NULL DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT NULL,
+            UNIQUE KEY uniq_segment_office_scope_visibility (segment_id, office_type)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    );
+
+    db()->exec(
         "CREATE TABLE IF NOT EXISTS office_orders (
             id INT AUTO_INCREMENT PRIMARY KEY,
             subject VARCHAR(255) NOT NULL,
@@ -275,6 +290,7 @@ function ensure_asset_schema(): void
     asset_ensure_column('users', 'office_access_level', 'TINYINT NOT NULL DEFAULT 2');
     asset_ensure_column('office_asset_declarations', 'declared_officer_name', 'VARCHAR(255) DEFAULT NULL');
     asset_ensure_column('info', 'welcome_message', 'LONGTEXT DEFAULT NULL');
+    asset_ensure_column('info', 'ui_theme_key', 'VARCHAR(50) DEFAULT NULL');
     asset_ensure_column('info', 'asset_subcategory_enabled', 'TINYINT NOT NULL DEFAULT 1');
     asset_ensure_column('info', 'asset_number_visible_to_users', 'TINYINT NOT NULL DEFAULT 1');
     asset_ensure_column('info', 'asset_filter_distinct_threshold', 'INT NOT NULL DEFAULT 20');
@@ -284,9 +300,13 @@ function ensure_asset_schema(): void
     asset_ensure_column('segments', 'show_filter_card_superadmin', 'TINYINT NOT NULL DEFAULT 1');
     asset_ensure_column('segments', 'show_filter_card_users', 'TINYINT NOT NULL DEFAULT 1');
     asset_ensure_column('segments', 'allow_bulk_import', 'TINYINT NOT NULL DEFAULT 1');
+    asset_ensure_column('segments', 'asset_number_visible_to_users', 'TINYINT NOT NULL DEFAULT 1');
+    asset_ensure_column('segments', 'show_data_provider_superadmin', 'TINYINT NOT NULL DEFAULT 1');
     asset_ensure_column('asset_fields', 'is_unique', 'TINYINT NOT NULL DEFAULT 0');
     asset_ensure_column('asset_fields', 'is_filter_enabled', 'TINYINT NOT NULL DEFAULT 0');
     asset_ensure_column('asset_fields', 'filter_scope', 'TINYINT NOT NULL DEFAULT 0');
+    asset_ensure_column('asset_fields', 'field_information', 'LONGTEXT DEFAULT NULL');
+    asset_ensure_column('asset_fields', 'video_tutorial_url', 'VARCHAR(1000) DEFAULT NULL');
     asset_ensure_column('asset_fields', 'number_format_rule', 'VARCHAR(30) DEFAULT NULL');
     asset_ensure_column('asset_fields', 'secondary_of_field_id', 'INT DEFAULT NULL');
     asset_ensure_column('asset_fields', 'conditional_map_json', 'LONGTEXT DEFAULT NULL');
@@ -397,7 +417,7 @@ function get_asset_segments(bool $includeInactive = false): array
     return $rows;
 }
 
-function create_asset_segment(string $segmentName): int
+function create_asset_segment(string $segmentName, ?int $sortOrder = null): int
 {
     $segmentName = trim($segmentName);
     if ($segmentName === '') {
@@ -408,13 +428,15 @@ function create_asset_segment(string $segmentName): int
     if ($stmt->fetchColumn()) {
         throw new RuntimeException('Segment name already exists.');
     }
-    $sortOrder = ((int)db()->query('SELECT COALESCE(MAX(sort_order), 0) FROM segments')->fetchColumn()) + 10;
+    $sortOrder = $sortOrder !== null && $sortOrder > 0
+        ? $sortOrder
+        : ((int)db()->query('SELECT COALESCE(MAX(sort_order), 0) FROM segments')->fetchColumn()) + 10;
     $insert = db()->prepare('INSERT INTO segments (segment_name, active_status, sort_order, created_at) VALUES (?, 1, ?, NOW())');
     $insert->execute([$segmentName, $sortOrder]);
     return (int)db()->lastInsertId();
 }
 
-function update_asset_segment(int $segmentId, string $segmentName): void
+function update_asset_segment(int $segmentId, string $segmentName, ?int $sortOrder = null): void
 {
     $segmentName = trim($segmentName);
     if ($segmentId <= 0 || $segmentName === '') {
@@ -425,7 +447,10 @@ function update_asset_segment(int $segmentId, string $segmentName): void
     if ($stmt->fetchColumn()) {
         throw new RuntimeException('Segment name already exists.');
     }
-    db()->prepare('UPDATE segments SET segment_name = ?, updated_at = NOW() WHERE id = ?')->execute([$segmentName, $segmentId]);
+    $normalizedSortOrder = $sortOrder !== null && $sortOrder > 0
+        ? $sortOrder
+        : (int)((get_asset_segment($segmentId)['sort_order'] ?? 0) ?: next_sort_order_for_filters('segments'));
+    db()->prepare('UPDATE segments SET segment_name = ?, sort_order = ?, updated_at = NOW() WHERE id = ?')->execute([$segmentName, $normalizedSortOrder, $segmentId]);
 }
 
 function set_asset_segment_status(int $segmentId, int $status): void
@@ -706,6 +731,81 @@ function asset_seed_default_fields(): void
 function asset_supported_data_types(): array
 {
     return ['text', 'number', 'date', 'dropdown', 'yes_no', 'file', 'conditional'];
+}
+
+function asset_theme_options(): array
+{
+    return [
+        'ocean_blue' => 'Ocean Blue',
+        'slate' => 'Slate',
+        'emerald' => 'Emerald',
+        'teal' => 'Teal',
+        'indigo' => 'Indigo',
+        'amber' => 'Amber',
+        'crimson' => 'Crimson',
+        'graphite' => 'Graphite',
+    ];
+}
+
+function asset_default_theme_key(): string
+{
+    return 'ocean_blue';
+}
+
+function asset_normalize_theme_key(?string $value): string
+{
+    $key = trim((string)$value);
+    $options = asset_theme_options();
+    return array_key_exists($key, $options) ? $key : asset_default_theme_key();
+}
+
+function asset_normalize_help_text(?string $value): string
+{
+    return trim((string)$value);
+}
+
+function asset_normalize_tutorial_url(?string $value): string
+{
+    return trim((string)$value);
+}
+
+function asset_is_valid_tutorial_url(?string $value): bool
+{
+    $url = asset_normalize_tutorial_url($value);
+    return $url === '' || filter_var($url, FILTER_VALIDATE_URL) !== false;
+}
+
+function asset_youtube_embed_url(?string $value): ?string
+{
+    $url = asset_normalize_tutorial_url($value);
+    if ($url === '') {
+        return null;
+    }
+    $parts = parse_url($url);
+    if (!$parts || empty($parts['host'])) {
+        return null;
+    }
+    $host = strtolower((string)$parts['host']);
+    $videoId = '';
+    if (str_contains($host, 'youtu.be')) {
+        $videoId = trim((string)($parts['path'] ?? ''), '/');
+    } elseif (str_contains($host, 'youtube.com')) {
+        parse_str((string)($parts['query'] ?? ''), $query);
+        $videoId = trim((string)($query['v'] ?? ''));
+        if ($videoId === '' && !empty($parts['path']) && preg_match('#/embed/([^/?]+)#', (string)$parts['path'], $matches)) {
+            $videoId = trim((string)($matches[1] ?? ''));
+        }
+    }
+    if ($videoId === '') {
+        return null;
+    }
+    return 'https://www.youtube.com/embed/' . rawurlencode($videoId);
+}
+
+function asset_field_has_help(array $field): bool
+{
+    return asset_normalize_help_text((string)($field['field_information'] ?? '')) !== ''
+        || asset_normalize_tutorial_url((string)($field['video_tutorial_url'] ?? '')) !== '';
 }
 
 function asset_number_format_rule_examples(): array
@@ -1076,6 +1176,101 @@ function set_asset_scope_switch_enabled(int $status, ?int $segmentId = null): vo
     ]);
 }
 
+function asset_scope_visibility_default_for_office_type(int $officeType): array
+{
+    return [
+        'show_my_office' => 1,
+        'show_office_under_me' => in_array($officeType, [2, 3, 4], true) ? 1 : 0,
+    ];
+}
+
+function asset_scope_visibility_office_types(): array
+{
+    return [2, 3, 4, 5];
+}
+
+function asset_ensure_scope_visibility_rows(?int $segmentId = null): void
+{
+    $normalizedSegmentId = asset_normalize_segment_id($segmentId);
+    $stmt = db()->prepare(
+        'INSERT INTO segment_office_scope_visibility (segment_id, office_type, show_my_office, show_office_under_me, created_at)
+         VALUES (?, ?, ?, ?, NOW())
+         ON DUPLICATE KEY UPDATE updated_at = updated_at'
+    );
+    foreach (asset_scope_visibility_office_types() as $officeType) {
+        $defaults = asset_scope_visibility_default_for_office_type($officeType);
+        $stmt->execute([
+            $normalizedSegmentId,
+            $officeType,
+            $defaults['show_my_office'],
+            $defaults['show_office_under_me'],
+        ]);
+    }
+}
+
+function asset_scope_visibility_settings(?int $segmentId = null): array
+{
+    $normalizedSegmentId = asset_normalize_segment_id($segmentId);
+    asset_ensure_scope_visibility_rows($normalizedSegmentId);
+    $stmt = db()->prepare('SELECT * FROM segment_office_scope_visibility WHERE segment_id = ? ORDER BY office_type ASC');
+    $stmt->execute([$normalizedSegmentId]);
+    $settings = [];
+    foreach ($stmt->fetchAll() as $row) {
+        $settings[(int)$row['office_type']] = [
+            'office_type' => (int)$row['office_type'],
+            'show_my_office' => (int)($row['show_my_office'] ?? 0) === 1,
+            'show_office_under_me' => (int)($row['show_office_under_me'] ?? 0) === 1,
+        ];
+    }
+    foreach (asset_scope_visibility_office_types() as $officeType) {
+        if (isset($settings[$officeType])) {
+            continue;
+        }
+        $defaults = asset_scope_visibility_default_for_office_type($officeType);
+        $settings[$officeType] = [
+            'office_type' => $officeType,
+            'show_my_office' => (bool)$defaults['show_my_office'],
+            'show_office_under_me' => (bool)$defaults['show_office_under_me'],
+        ];
+    }
+    ksort($settings);
+    return $settings;
+}
+
+function asset_scope_visibility_for_office_type(int $officeType, ?int $segmentId = null): array
+{
+    $settings = asset_scope_visibility_settings($segmentId);
+    if (isset($settings[$officeType])) {
+        return $settings[$officeType];
+    }
+    $defaults = asset_scope_visibility_default_for_office_type($officeType);
+    return [
+        'office_type' => $officeType,
+        'show_my_office' => (bool)$defaults['show_my_office'],
+        'show_office_under_me' => (bool)$defaults['show_office_under_me'],
+    ];
+}
+
+function save_asset_scope_visibility_settings(array $settings, ?int $segmentId = null): void
+{
+    $normalizedSegmentId = asset_normalize_segment_id($segmentId);
+    asset_ensure_scope_visibility_rows($normalizedSegmentId);
+    $stmt = db()->prepare(
+        'INSERT INTO segment_office_scope_visibility (segment_id, office_type, show_my_office, show_office_under_me, created_at, updated_at)
+         VALUES (?, ?, ?, ?, NOW(), NOW())
+         ON DUPLICATE KEY UPDATE show_my_office = VALUES(show_my_office), show_office_under_me = VALUES(show_office_under_me), updated_at = NOW()'
+    );
+    foreach (asset_scope_visibility_office_types() as $officeType) {
+        $row = $settings[$officeType] ?? [];
+        $stmt->execute([
+            $normalizedSegmentId,
+            $officeType,
+            !empty($row['show_my_office']) ? 1 : 0,
+            !empty($row['show_office_under_me']) ? 1 : 0,
+        ]);
+    }
+}
+
 function asset_filter_card_enabled(?int $segmentId = null): bool
 {
     $segment = get_asset_segment(asset_normalize_segment_id($segmentId));
@@ -1138,8 +1333,13 @@ function set_asset_bulk_import_enabled(int $status, ?int $segmentId = null): voi
     ]);
 }
 
-function asset_number_visible_to_users(): bool
+function asset_number_visible_to_users(?int $segmentId = null): bool
 {
+    $normalizedSegmentId = asset_normalize_segment_id($segmentId);
+    $segment = get_asset_segment($normalizedSegmentId);
+    if ($segment && array_key_exists('asset_number_visible_to_users', $segment)) {
+        return (int)($segment['asset_number_visible_to_users'] ?? 1) === 1;
+    }
     $info = get_info_row();
     $value = $info['asset_number_visible_to_users'] ?? null;
     if ($value === null || $value === '') {
@@ -1148,27 +1348,26 @@ function asset_number_visible_to_users(): bool
     return (int)$value === 1;
 }
 
-function set_asset_number_visible_to_users(int $status): void
+function set_asset_number_visible_to_users(int $status, ?int $segmentId = null): void
 {
-    $existing = get_info_row();
-    save_info_row(
-        $existing['video_tutorial_url'] ?? null,
-        $existing['login_message'] ?? null,
-        [
-            'site_name' => $existing['site_name'] ?? null,
-            'welcome_message' => $existing['welcome_message'] ?? null,
-            'asset_subcategory_enabled' => $existing['asset_subcategory_enabled'] ?? 1,
-            'asset_number_visible_to_users' => $status === 1 ? 1 : 0,
-            'asset_filter_distinct_threshold' => $existing['asset_filter_distinct_threshold'] ?? 20,
-            'i_opr_repair' => $existing['i_opr_repair'] ?? null,
-            'i_opr_other' => $existing['i_opr_other'] ?? null,
-            'i_dev_pw' => $existing['i_dev_pw'] ?? null,
-            'i_opr_min' => $existing['i_opr_min'] ?? null,
-            'i_dev_min' => $existing['i_dev_min'] ?? null,
-            'i_opr' => $existing['i_opr'] ?? null,
-            'i_dev' => $existing['i_dev'] ?? null,
-        ]
-    );
+    db()->prepare('UPDATE segments SET asset_number_visible_to_users = ?, updated_at = NOW() WHERE id = ?')->execute([
+        $status === 1 ? 1 : 0,
+        asset_normalize_segment_id($segmentId),
+    ]);
+}
+
+function asset_data_provider_visible(?int $segmentId = null): bool
+{
+    $segment = get_asset_segment(asset_normalize_segment_id($segmentId));
+    return (int)($segment['show_data_provider_superadmin'] ?? 1) === 1;
+}
+
+function set_asset_data_provider_visible(int $status, ?int $segmentId = null): void
+{
+    db()->prepare('UPDATE segments SET show_data_provider_superadmin = ?, updated_at = NOW() WHERE id = ?')->execute([
+        $status === 1 ? 1 : 0,
+        asset_normalize_segment_id($segmentId),
+    ]);
 }
 
 function asset_filter_scope_none(): int
@@ -1212,7 +1411,7 @@ function asset_table_preference_category_id(int $categoryId, string $tableScope 
 function asset_table_available_columns(array $fields, array $uiFieldLabels, string $tableScope = 'my_office', ?int $segmentId = null): array
 {
     $columns = [];
-    if (is_superadmin() || asset_number_visible_to_users()) {
+    if (is_superadmin() || asset_number_visible_to_users($segmentId)) {
         $columns[] = ['key' => 'asset_number', 'label' => 'Asset Number', 'type' => 'fixed'];
     }
     if (is_superadmin() || $tableScope === 'office_under_me') {
@@ -1221,7 +1420,9 @@ function asset_table_available_columns(array $fields, array $uiFieldLabels, stri
     if (asset_subcategory_enabled($segmentId)) {
         $columns[] = ['key' => 'subcategory_name', 'label' => 'Sub-category', 'type' => 'fixed'];
     }
-    $columns[] = ['key' => 'data_provider', 'label' => 'Data Provider', 'type' => 'fixed'];
+    if (asset_data_provider_visible($segmentId)) {
+        $columns[] = ['key' => 'data_provider', 'label' => 'Data Provider', 'type' => 'fixed'];
+    }
     foreach ($fields as $field) {
         if ((int)$field['is_displayed'] !== 1 || (int)$field['active_status'] !== 1) {
             continue;
@@ -2013,12 +2214,14 @@ function create_asset_field(array $payload): void
     db()->beginTransaction();
     try {
         if (($payload['data_type'] ?? '') === 'conditional') {
-            $stmt = db()->prepare('INSERT INTO asset_fields (segment_id, field_key, label, data_type, number_format_rule, secondary_of_field_id, conditional_map_json, is_required, is_displayed, is_import_enabled, is_unique, is_filter_enabled, filter_scope, active_status, sort_order, created_at) VALUES (?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, 0, ?, ?, 1, ?, NOW())');
+            $stmt = db()->prepare('INSERT INTO asset_fields (segment_id, field_key, label, data_type, field_information, video_tutorial_url, number_format_rule, secondary_of_field_id, conditional_map_json, is_required, is_displayed, is_import_enabled, is_unique, is_filter_enabled, filter_scope, active_status, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, 0, ?, ?, 1, ?, NOW())');
             $stmt->execute([
                 $segmentId,
                 $payload['field_key'],
                 $payload['label'],
                 'conditional',
+                $payload['field_information'] ?: null,
+                $payload['video_tutorial_url'] ?: null,
                 json_encode($payload['conditional_map'] ?? [], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
                 $payload['is_required'],
                 $payload['is_displayed'],
@@ -2030,12 +2233,14 @@ function create_asset_field(array $payload): void
             $fieldId = (int)db()->lastInsertId();
             replace_asset_field_options($fieldId, $payload['options'] ?? []);
 
-            $childStmt = db()->prepare('INSERT INTO asset_fields (segment_id, field_key, label, data_type, number_format_rule, secondary_of_field_id, conditional_map_json, is_required, is_displayed, is_import_enabled, is_unique, is_filter_enabled, filter_scope, active_status, sort_order, created_at) VALUES (?, ?, ?, ?, NULL, ?, NULL, ?, ?, ?, 0, ?, ?, 1, ?, NOW())');
+            $childStmt = db()->prepare('INSERT INTO asset_fields (segment_id, field_key, label, data_type, field_information, video_tutorial_url, number_format_rule, secondary_of_field_id, conditional_map_json, is_required, is_displayed, is_import_enabled, is_unique, is_filter_enabled, filter_scope, active_status, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?, NULL, ?, NULL, ?, ?, ?, 0, ?, ?, 1, ?, NOW())');
             $childStmt->execute([
                 $segmentId,
                 $payload['secondary_field_key'],
                 $payload['secondary_label'],
                 'dropdown',
+                $payload['secondary_field_information'] ?: null,
+                $payload['secondary_video_tutorial_url'] ?: null,
                 $fieldId,
                 $payload['is_required'],
                 $payload['is_displayed'],
@@ -2047,12 +2252,14 @@ function create_asset_field(array $payload): void
             $childId = (int)db()->lastInsertId();
             replace_asset_field_options($childId, $payload['secondary_options'] ?? []);
         } else {
-            $stmt = db()->prepare('INSERT INTO asset_fields (segment_id, field_key, label, data_type, number_format_rule, secondary_of_field_id, conditional_map_json, is_required, is_displayed, is_import_enabled, is_unique, is_filter_enabled, filter_scope, active_status, sort_order, created_at) VALUES (?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, ?, 1, ?, NOW())');
+            $stmt = db()->prepare('INSERT INTO asset_fields (segment_id, field_key, label, data_type, field_information, video_tutorial_url, number_format_rule, secondary_of_field_id, conditional_map_json, is_required, is_displayed, is_import_enabled, is_unique, is_filter_enabled, filter_scope, active_status, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, ?, 1, ?, NOW())');
             $stmt->execute([
                 $segmentId,
                 $payload['field_key'],
                 $payload['label'],
                 $payload['data_type'],
+                $payload['field_information'] ?: null,
+                $payload['video_tutorial_url'] ?: null,
                 $payload['number_format_rule'] ?: null,
                 $payload['is_required'],
                 $payload['is_displayed'],
@@ -2088,10 +2295,12 @@ function update_asset_field(int $id, array $payload): void
     db()->beginTransaction();
     try {
         if (($payload['data_type'] ?? '') === 'conditional') {
-            $stmt = db()->prepare('UPDATE asset_fields SET label = ?, data_type = ?, number_format_rule = NULL, conditional_map_json = ?, is_required = ?, is_displayed = ?, is_import_enabled = ?, is_unique = 0, is_filter_enabled = ?, filter_scope = ?, sort_order = ?, updated_at = NOW() WHERE id = ?');
+            $stmt = db()->prepare('UPDATE asset_fields SET label = ?, data_type = ?, field_information = ?, video_tutorial_url = ?, number_format_rule = NULL, conditional_map_json = ?, is_required = ?, is_displayed = ?, is_import_enabled = ?, is_unique = 0, is_filter_enabled = ?, filter_scope = ?, sort_order = ?, updated_at = NOW() WHERE id = ?');
             $stmt->execute([
                 $payload['label'],
                 'conditional',
+                $payload['field_information'] ?: null,
+                $payload['video_tutorial_url'] ?: null,
                 json_encode($payload['conditional_map'] ?? [], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
                 $payload['is_required'],
                 $payload['is_displayed'],
@@ -2107,10 +2316,12 @@ function update_asset_field(int $id, array $payload): void
             if (!$childField) {
                 throw new RuntimeException('Conditional child field not found.');
             }
-            $childStmt = db()->prepare('UPDATE asset_fields SET label = ?, data_type = ?, number_format_rule = NULL, is_required = ?, is_displayed = ?, is_import_enabled = ?, is_unique = 0, is_filter_enabled = ?, filter_scope = ?, sort_order = ?, updated_at = NOW() WHERE id = ?');
+            $childStmt = db()->prepare('UPDATE asset_fields SET label = ?, data_type = ?, field_information = ?, video_tutorial_url = ?, number_format_rule = NULL, is_required = ?, is_displayed = ?, is_import_enabled = ?, is_unique = 0, is_filter_enabled = ?, filter_scope = ?, sort_order = ?, updated_at = NOW() WHERE id = ?');
             $childStmt->execute([
                 $payload['secondary_label'],
                 'dropdown',
+                $payload['secondary_field_information'] ?: null,
+                $payload['secondary_video_tutorial_url'] ?: null,
                 $payload['is_required'],
                 $payload['is_displayed'],
                 $payload['is_import_enabled'],
@@ -2122,10 +2333,12 @@ function update_asset_field(int $id, array $payload): void
             replace_asset_field_options((int)$childField['id'], $payload['secondary_options'] ?? []);
             delete_asset_field_file_rule((int)$childField['id']);
         } else {
-            $stmt = db()->prepare('UPDATE asset_fields SET label = ?, data_type = ?, number_format_rule = ?, conditional_map_json = NULL, is_required = ?, is_displayed = ?, is_import_enabled = ?, is_unique = ?, is_filter_enabled = ?, filter_scope = ?, sort_order = ?, updated_at = NOW() WHERE id = ?');
+            $stmt = db()->prepare('UPDATE asset_fields SET label = ?, data_type = ?, field_information = ?, video_tutorial_url = ?, number_format_rule = ?, conditional_map_json = NULL, is_required = ?, is_displayed = ?, is_import_enabled = ?, is_unique = ?, is_filter_enabled = ?, filter_scope = ?, sort_order = ?, updated_at = NOW() WHERE id = ?');
             $stmt->execute([
                 $payload['label'],
                 $payload['data_type'],
+                $payload['field_information'] ?: null,
+                $payload['video_tutorial_url'] ?: null,
                 $payload['number_format_rule'] ?: null,
                 $payload['is_required'],
                 $payload['is_displayed'],
@@ -2278,6 +2491,8 @@ function validate_asset_field_definition(array $input, ?int $fieldId = null): ar
     $keyInput = trim((string)($input['field_key'] ?? ''));
     $existingField = $fieldId ? get_asset_field($fieldId, $segmentId) : null;
     $fieldKey = $keyInput !== '' ? asset_slug($keyInput) : ($existingField['field_key'] ?? asset_slug($label));
+    $fieldInformation = asset_normalize_help_text((string)($input['field_information'] ?? ''));
+    $videoTutorialUrl = asset_normalize_tutorial_url((string)($input['video_tutorial_url'] ?? ''));
     $errors = [];
     if ($label === '') {
         $errors[] = 'Field label is required.';
@@ -2287,6 +2502,9 @@ function validate_asset_field_definition(array $input, ?int $fieldId = null): ar
     }
     if (!in_array($dataType, asset_supported_data_types(), true)) {
         $errors[] = 'Invalid field type.';
+    }
+    if (!asset_is_valid_tutorial_url($videoTutorialUrl)) {
+        $errors[] = 'Tutorial URL must be a valid URL.';
     }
     if ($existingField && (
         ((string)$existingField['data_type'] === 'conditional' && $dataType !== 'conditional')
@@ -2328,10 +2546,15 @@ function validate_asset_field_definition(array $input, ?int $fieldId = null): ar
     }
 
     $secondaryLabel = trim((string)($input['secondary_label'] ?? ''));
+    $secondaryFieldInformation = asset_normalize_help_text((string)($input['secondary_field_information'] ?? ''));
+    $secondaryVideoTutorialUrl = asset_normalize_tutorial_url((string)($input['secondary_video_tutorial_url'] ?? ''));
     $conditionalMap = [];
     $secondaryOptions = [];
     $secondaryFieldKey = '';
     if ($dataType === 'conditional') {
+        if (!asset_is_valid_tutorial_url($secondaryVideoTutorialUrl)) {
+            $errors[] = 'Secondary tutorial URL must be a valid URL.';
+        }
         $rawPrimaryOptions = preg_split('/\r\n|\r|\n/', (string)($input['conditional_primary_options_text'] ?? ''));
         $primaryOptions = [];
         foreach ($rawPrimaryOptions as $option) {
@@ -2431,6 +2654,8 @@ function validate_asset_field_definition(array $input, ?int $fieldId = null): ar
             'field_key' => $fieldKey,
             'label' => $label,
             'data_type' => $dataType,
+            'field_information' => $fieldInformation,
+            'video_tutorial_url' => $videoTutorialUrl,
             'number_format_rule' => $numberFormatRule,
             'is_required' => !empty($input['is_required']) ? 1 : 0,
             'is_displayed' => !empty($input['is_displayed']) ? 1 : 0,
@@ -2442,6 +2667,8 @@ function validate_asset_field_definition(array $input, ?int $fieldId = null): ar
             'options' => $options,
             'file_rule' => $fileRule,
             'secondary_label' => $secondaryLabel,
+            'secondary_field_information' => $secondaryFieldInformation,
+            'secondary_video_tutorial_url' => $secondaryVideoTutorialUrl,
             'secondary_field_key' => $secondaryFieldKey,
             'secondary_options' => $secondaryOptions,
             'conditional_map' => $conditionalMap,
