@@ -597,7 +597,7 @@ $renderFilterPicker = static function (string $name, string $label, array $optio
 <section class="card">
     <div class="toolbar-row">
         <?php if ($canModifyAssets && !$isUnderMeView): ?>
-            <button type="button" data-modal="asset-modal">+Add Asset</button>
+            <button type="button" data-modal="asset-modal">+Add Info</button>
             <?php if ($bulkImportEnabled): ?><button type="button" data-modal="import-modal">Bulk Entry</button><?php endif; ?>
         <?php endif; ?>
         <?php if (!$isUnderMeView && $bulkImportEnabled): ?>
@@ -648,7 +648,7 @@ $renderFilterPicker = static function (string $name, string $label, array $optio
                 <div class="card-head">
                     <h2><?= e($category['name']); ?></h2>
                     <div class="card-head-actions">
-                        <div class="muted"><?= count($assets); ?> asset(s)</div>
+                        <div class="muted"><?= count($assets); ?> row(s)</div>
                         <a href="index.php?<?= e(http_build_query(array_diff_key(array_merge($_GET, ['page' => 'board', 'office_view_scope' => $currentOfficeViewScope, 'segment_id' => $activeSegmentId]), ['sort_col' => true, 'sort_dir' => true]))); ?>" class="btn-small button-link">Refresh</a>
                         <button type="button" class="btn-small" data-modal="columns-modal-<?= (int)$category['id']; ?>">Columns</button>
                     </div>
