@@ -1,4 +1,48 @@
 document.addEventListener('DOMContentLoaded', () => {
+    const escapeHtml = (value) => String(value).replace(/[&<>"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[char]));
+    const normalizeHelpHref = (href) => {
+        const value = String(href || '').trim();
+        if (!value) {
+            return '';
+        }
+        const lower = value.toLowerCase();
+        if (lower.startsWith('javascript:') || lower.startsWith('data:') || lower.startsWith('vbscript:')) {
+            return '';
+        }
+        return value;
+    };
+    const renderHelpInformationHtml = (information) => {
+        const lines = information.trim() === '' ? ['No additional information provided.'] : information.split(/\r\n|\r|\n/);
+        const linkPattern = /<a\b([^>]*)href=(["'])(.*?)\2([^>]*)>(.*?)<\/a>/gi;
+        return lines.map((line) => {
+            linkPattern.lastIndex = 0;
+            let html = '';
+            let lastIndex = 0;
+            let match;
+            while ((match = linkPattern.exec(line)) !== null) {
+                html += escapeHtml(line.slice(lastIndex, match.index));
+                const href = normalizeHelpHref(match[3]);
+                const attrsText = `${match[1] || ''} ${match[4] || ''}`.toLowerCase();
+                const linkText = escapeHtml(match[5] || href || 'Open link');
+                if (href) {
+                    const extraAttrs = [];
+                    if (/\bdownload\b/.test(attrsText)) {
+                        extraAttrs.push('download');
+                    }
+                    const targetBlank = /\btarget\s*=\s*["']?_blank["']?/.test(attrsText);
+                    extraAttrs.push(targetBlank ? 'target="_blank"' : 'target="_self"');
+                    extraAttrs.push('rel="noopener"');
+                    html += `<a href="${escapeHtml(href)}" ${extraAttrs.join(' ')}>${linkText}</a>`;
+                } else {
+                    html += linkText;
+                }
+                lastIndex = match.index + match[0].length;
+            }
+            html += escapeHtml(line.slice(lastIndex));
+            return `<p>${html}</p>`;
+        }).join('');
+    };
+
     const pageKey = new URLSearchParams(window.location.search).get('page') || 'board';
     const scrollKey = `pwd-asset-scroll:${window.location.pathname}:${pageKey}`;
     const restoreScroll = () => {
@@ -123,8 +167,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 label.textContent = helpLabel;
             }
             if (body) {
-                const lines = information.trim() === '' ? ['No additional information provided.'] : information.split(/\r\n|\r|\n/);
-                body.innerHTML = lines.map((line) => `<p>${line.replace(/[&<>"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[char]))}</p>`).join('');
+                body.innerHTML = renderHelpInformationHtml(information);
             }
             if (videoBlock && iframe && link) {
                 if (tutorialUrl) {
