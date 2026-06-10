@@ -459,12 +459,17 @@ if ($action === 'asset_declare') {
     } else {
         $segment = asset_active_segment(input_int('segment_id'));
         $segmentName = trim((string)($segment['segment_name'] ?? ''));
-        declare_office_assets($ctx['office_type'], $ctx['office_id'], (int)current_user()['id'], input_int('segment_id'));
-        add_log((int)current_user()['id'], 'office_asset_declarations', $ctx['office_id'], 'Office asset data declared up to date.');
-        flash(
-            'success',
-            'This ' . ($segmentName !== '' ? $segmentName : 'segment') . ' table has been sent to admin. However you can still edit or add new information in the table.'
-        );
+        $submissionCheck = validate_office_asset_declaration_requirements($ctx['office_type'], $ctx['office_id'], input_int('segment_id'), current_user());
+        if (($submissionCheck['row_count'] ?? 0) > 0) {
+            flash('error', (string)($submissionCheck['message'] ?? 'Action Required before submission.'));
+        } else {
+            declare_office_assets($ctx['office_type'], $ctx['office_id'], (int)current_user()['id'], input_int('segment_id'));
+            add_log((int)current_user()['id'], 'office_asset_declarations', $ctx['office_id'], 'Office asset data declared up to date.');
+            flash(
+                'success',
+                'This ' . ($segmentName !== '' ? $segmentName : 'segment') . ' table has been sent to admin. However you can still edit or add new information in the table.'
+            );
+        }
     }
     $boardRedirect();
 }

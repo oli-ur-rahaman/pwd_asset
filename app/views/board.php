@@ -160,9 +160,10 @@ foreach ($fields as $field) {
         'field_key' => (string)$field['field_key'],
         'label' => (string)($uiFieldLabels[$field['field_key']] ?? $field['label']),
         'data_type' => (string)$field['data_type'],
-        'required' => (int)$field['is_required'] === 1,
+        'required' => asset_is_input_required($field),
         'is_unique' => (int)($field['is_unique'] ?? 0) === 1,
         'number_format_rule' => (string)($field['number_format_rule'] ?? ''),
+        'text_max_length' => (int)($field['text_max_length'] ?? 0),
         'secondary_of_field_key' => null,
         'conditional_map' => $conditionalMap,
         'options' => array_map(
@@ -227,6 +228,15 @@ $fileIconMeta = static function (string $originalName): array {
         $iconText = 'TXT';
     }
     return ['class' => $chipClass, 'icon' => $iconText];
+};
+$fieldMandatoryMarker = static function (array $field): string {
+    if (asset_is_input_required($field)) {
+        return '<span class="mandatory-marker mandatory-marker-input">*</span>';
+    }
+    if (asset_is_final_submission_required($field)) {
+        return '<span class="mandatory-marker mandatory-marker-final">*</span>';
+    }
+    return '';
 };
 $filterPickerValue = static function (array $options, string|int $selectedValue): string {
     $lookupKey = (string)$selectedValue;
@@ -689,7 +699,7 @@ $renderFilterPicker = static function (string $name, string $label, array $optio
                                         <?php $fieldSortKey = (string)$field['field_key']; ?>
                                         <th class="<?= $sortColumn === $fieldSortKey ? 'sort-active' : ''; ?>">
                                             <div class="field-head-row">
-                                                <a href="<?= e($headerSortUrl($fieldSortKey)); ?>" class="<?= trim($sortClass($fieldSortKey)); ?>"><?= e((string)($uiFieldLabels[$field['field_key']] ?? $field['label'])); ?><?= e($sortIndicator($fieldSortKey)); ?></a>
+                                                <a href="<?= e($headerSortUrl($fieldSortKey)); ?>" class="<?= trim($sortClass($fieldSortKey)); ?>"><?= e((string)($uiFieldLabels[$field['field_key']] ?? $field['label'])); ?><?= $fieldMandatoryMarker($field); ?><?= e($sortIndicator($fieldSortKey)); ?></a>
                                                 <?php $renderFieldHelpButton($fieldHelpMeta[$field['field_key']] ?? null, 'field-help-button field-help-table', 'Field information'); ?>
                                             </div>
                                         </th>
@@ -733,6 +743,13 @@ $renderFilterPicker = static function (string $name, string $label, array $optio
                                                         $fileRule = get_asset_field_file_rule((int)$field['id']);
                                                         $accept = implode(',', array_map(static fn(string $ext): string => '.' . $ext, asset_parse_extensions_string((string)$fileRule['allowed_extensions'])));
                                                         $formId = 'asset-inline-file-' . (int)$asset['id'] . '-' . preg_replace('/[^a-zA-Z0-9_-]+/', '-', (string)$field['field_key']);
+                                                        $fileCount = count($assetFiles);
+                                                        $maxFiles = max(1, (int)($fileRule['max_files'] ?? 1));
+                                                        $isMultipleFile = (int)$fileRule['is_multiple'] === 1;
+                                                        $canShowInlineAdd = !$isMultipleFile || $fileCount < $maxFiles;
+                                                        $inlineAddLabel = $isMultipleFile
+                                                            ? ($assetFiles ? 'Add More (max ' . $maxFiles . ')' : 'Add File')
+                                                            : 'Add or Replace';
                                                     ?>
                                                     <?php if ($assetFiles): ?>
                                                         <div class="file-link-list">
@@ -746,7 +763,7 @@ $renderFilterPicker = static function (string $name, string $label, array $optio
                                                     <?php elseif (!$canModifyAssets || is_superadmin() || $isUnderMeView): ?>
                                                         <span class="muted">No file</span>
                                                     <?php endif; ?>
-                                                    <?php if ($canModifyAssets && !is_superadmin() && !$isUnderMeView): ?>
+                                                    <?php if ($canModifyAssets && !is_superadmin() && !$isUnderMeView && $canShowInlineAdd): ?>
                                                         <form method="post" action="index.php" enctype="multipart/form-data" class="inline-file-upload-form" id="<?= $formId; ?>">
                                                             <?= csrf_input(); ?>
                                                             <input type="hidden" name="action" value="asset_upload_field_files">
@@ -766,7 +783,7 @@ $renderFilterPicker = static function (string $name, string $label, array $optio
                                                                 data-max-file-size="<?= e((string)$fileRule['max_file_size_bytes']); ?>"
                                                                 data-max-total-size="<?= e((string)$fileRule['max_total_size_bytes']); ?>"
                                                                 data-is-multiple="<?= e((string)$fileRule['is_multiple']); ?>">
-                                                            <label for="<?= $formId; ?>-input" class="btn-small inline-file-add-button"><?= $assetFiles ? 'Add More' : 'Add File'; ?></label>
+                                                            <label for="<?= $formId; ?>-input" class="btn-small inline-file-add-button"><?= e($inlineAddLabel); ?></label>
                                                         </form>
                                                     <?php endif; ?>
                                                 <?php else: ?>
@@ -874,16 +891,17 @@ $renderFilterPicker = static function (string $name, string $label, array $optio
                 <?php if ((int)$field['active_status'] !== 1) { continue; } ?>
                 <label>
                     <span class="field-label-row">
-                        <span><?= e((string)($uiFieldLabels[$field['field_key']] ?? $field['label'])); ?><?= (int)$field['is_required'] === 1 ? ' *' : ''; ?></span>
+                        <span><?= e((string)($uiFieldLabels[$field['field_key']] ?? $field['label'])); ?><?= $fieldMandatoryMarker($field); ?></span>
                         <?php $renderFieldHelpButton($fieldHelpMeta[$field['field_key']] ?? null, 'field-help-button field-help-inline', 'Field information'); ?>
                     </span>
                     <?php $value = (string)($editValues[$field['field_key']] ?? ''); ?>
+                    <?php $textMaxLength = (int)($field['text_max_length'] ?? 0); ?>
                     <?php if ($field['data_type'] === 'file'): ?>
                         <?php
                             $fileRule = get_asset_field_file_rule((int)$field['id']);
                             $fieldFiles = $editFiles[$field['field_key']] ?? [];
                             $accept = implode(',', array_map(static fn(string $ext): string => '.' . $ext, asset_parse_extensions_string((string)$fileRule['allowed_extensions'])));
-                            $showRemoveCheckbox = (int)$fileRule['is_multiple'] === 1 || (int)$field['is_required'] !== 1;
+                            $showRemoveCheckbox = (int)$fileRule['is_multiple'] === 1 || !asset_is_input_required($field);
                         ?>
                         <?php if ($fieldFiles): ?>
                             <div class="file-link-list">
@@ -909,9 +927,9 @@ $renderFilterPicker = static function (string $name, string $label, array $optio
                             <?php if (!$showRemoveCheckbox && $fieldFiles): ?> Uploading a new file will automatically replace the existing file.<?php endif; ?>
                         </span>
                     <?php elseif ($field['data_type'] === 'date'): ?>
-                        <input type="date" name="fields[<?= e($field['field_key']); ?>]" value="<?= e($value); ?>" <?= (int)$field['is_required'] === 1 ? 'required' : ''; ?>>
+                        <input type="date" name="fields[<?= e($field['field_key']); ?>]" value="<?= e($value); ?>" <?= asset_is_input_required($field) ? 'required' : ''; ?>>
                     <?php elseif ($field['data_type'] === 'number'): ?>
-                        <input type="number" step="0.01" name="fields[<?= e($field['field_key']); ?>]" value="<?= e($value); ?>" <?= (int)$field['is_required'] === 1 ? 'required' : ''; ?>>
+                        <input type="number" step="0.01" name="fields[<?= e($field['field_key']); ?>]" value="<?= e($value); ?>" <?= asset_is_input_required($field) ? 'required' : ''; ?>>
                     <?php elseif ($field['data_type'] === 'dropdown' || $field['data_type'] === 'conditional'): ?>
                         <?php
                             $parentId = (int)($field['secondary_of_field_id'] ?? 0);
@@ -932,7 +950,7 @@ $renderFilterPicker = static function (string $name, string $label, array $optio
                             name="fields[<?= e($field['field_key']); ?>]"
                             data-field-key="<?= e($field['field_key']); ?>"
                             data-field-name="<?= e($fieldNameAttr); ?>"
-                            <?= (int)$field['is_required'] === 1 ? 'required' : ''; ?>
+                            <?= asset_is_input_required($field) ? 'required' : ''; ?>
                             <?php if (asset_is_conditional_primary($field)): ?>
                                 data-conditional-primary="1"
                                 data-conditional-map='<?= e(json_encode(asset_decode_conditional_map($field), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)); ?>'
@@ -954,15 +972,17 @@ $renderFilterPicker = static function (string $name, string $label, array $optio
                             <?php endforeach; ?>
                         </select>
                     <?php elseif ($field['data_type'] === 'yes_no'): ?>
-                        <select name="fields[<?= e($field['field_key']); ?>]" <?= (int)$field['is_required'] === 1 ? 'required' : ''; ?>>
+                        <select name="fields[<?= e($field['field_key']); ?>]" <?= asset_is_input_required($field) ? 'required' : ''; ?>>
                             <option value="">Select</option>
                             <option value="Yes" <?= $value === 'Yes' ? 'selected' : ''; ?>>Yes</option>
                             <option value="No" <?= $value === 'No' ? 'selected' : ''; ?>>No</option>
                         </select>
                     <?php elseif ($field['field_key'] === 'remarks'): ?>
-                        <textarea name="fields[<?= e($field['field_key']); ?>]" rows="3"><?= e($value); ?></textarea>
+                        <textarea name="fields[<?= e($field['field_key']); ?>]" rows="3" <?= $textMaxLength > 0 ? 'maxlength="' . e((string)$textMaxLength) . '" data-char-limit="' . e((string)$textMaxLength) . '"' : ''; ?>><?= e($value); ?></textarea>
+                        <?php if ($textMaxLength > 0): ?><span class="hint char-count-hint" data-char-count-target></span><?php endif; ?>
                     <?php else: ?>
-                        <input type="text" name="fields[<?= e($field['field_key']); ?>]" value="<?= e($value); ?>" <?= (int)$field['is_required'] === 1 ? 'required' : ''; ?>>
+                        <input type="text" name="fields[<?= e($field['field_key']); ?>]" value="<?= e($value); ?>" <?= asset_is_input_required($field) ? 'required' : ''; ?> <?= ($field['data_type'] === 'text' && $textMaxLength > 0) ? 'maxlength="' . e((string)$textMaxLength) . '" data-char-limit="' . e((string)$textMaxLength) . '"' : ''; ?>>
+                        <?php if ((string)$field['data_type'] === 'text' && $textMaxLength > 0): ?><span class="hint char-count-hint" data-char-count-target></span><?php endif; ?>
                     <?php endif; ?>
                 </label>
             <?php endforeach; ?>
@@ -1031,7 +1051,7 @@ $renderFilterPicker = static function (string $name, string $label, array $optio
                                 <?php if ((int)$field['is_import_enabled'] === 1 && (int)$field['active_status'] === 1): ?>
                                     <th>
                                         <div class="field-head-row">
-                                            <span><?= e((string)($uiFieldLabels[$field['field_key']] ?? $field['label'])); ?></span>
+                                            <span><?= e((string)($uiFieldLabels[$field['field_key']] ?? $field['label'])); ?><?= $fieldMandatoryMarker($field); ?></span>
                                             <?php $renderFieldHelpButton($fieldHelpMeta[$field['field_key']] ?? null, 'field-help-button field-help-table', 'Field information'); ?>
                                         </div>
                                     </th>
@@ -1079,8 +1099,9 @@ $renderFilterPicker = static function (string $name, string $label, array $optio
                                                     data-review-role="field"
                                                     data-field-key="<?= e($field['field_key']); ?>"
                                                     data-field-type="<?= e($field['data_type']); ?>"
-                                                    data-required="<?= (int)$field['is_required']; ?>"
+                                                    data-required="<?= asset_is_input_required($field) ? '1' : '0'; ?>"
                                                     data-number-format-rule="<?= e((string)($field['number_format_rule'] ?? '')); ?>"
+                                                    data-text-max-length="<?= e((string)((int)($field['text_max_length'] ?? 0))); ?>"
                                                     <?php
                                                         $parentId = (int)($field['secondary_of_field_id'] ?? 0);
                                                         $parentField = null;
@@ -1120,9 +1141,11 @@ $renderFilterPicker = static function (string $name, string $label, array $optio
                                                     data-review-role="field"
                                                     data-field-key="<?= e($field['field_key']); ?>"
                                                     data-field-type="<?= e($field['data_type']); ?>"
-                                                    data-required="<?= (int)$field['is_required']; ?>"
+                                                    data-required="<?= asset_is_input_required($field) ? '1' : '0'; ?>"
                                                     data-number-format-rule="<?= e((string)($field['number_format_rule'] ?? '')); ?>"
+                                                    data-text-max-length="<?= e((string)((int)($field['text_max_length'] ?? 0))); ?>"
                                                     name="rows[<?= $rowIndex; ?>][fields][<?= e($field['field_key']); ?>]"
+                                                    <?= (int)($field['text_max_length'] ?? 0) > 0 ? 'maxlength="' . e((string)((int)$field['text_max_length'])) . '"' : ''; ?>
                                                     rows="3"
                                                 ><?= e($fieldValue); ?></textarea>
                                             <?php else: ?>
@@ -1133,9 +1156,11 @@ $renderFilterPicker = static function (string $name, string $label, array $optio
                                                     data-review-role="field"
                                                     data-field-key="<?= e($field['field_key']); ?>"
                                                     data-field-type="<?= e($field['data_type']); ?>"
-                                                    data-required="<?= (int)$field['is_required']; ?>"
+                                                    data-required="<?= asset_is_input_required($field) ? '1' : '0'; ?>"
                                                     data-number-format-rule="<?= e((string)($field['number_format_rule'] ?? '')); ?>"
+                                                    data-text-max-length="<?= e((string)((int)($field['text_max_length'] ?? 0))); ?>"
                                                     name="rows[<?= $rowIndex; ?>][fields][<?= e($field['field_key']); ?>]"
+                                                    <?= ((string)$field['data_type'] === 'text' && (int)($field['text_max_length'] ?? 0) > 0) ? 'maxlength="' . e((string)((int)$field['text_max_length'])) . '"' : ''; ?>
                                                     value="<?= e($fieldValue); ?>">
                                             <?php endif; ?>
                                         </td>

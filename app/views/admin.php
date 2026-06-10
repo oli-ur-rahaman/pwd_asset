@@ -18,6 +18,7 @@ $filterCardEnabledForSuperadmin = asset_filter_card_enabled_for_superadmin($acti
 $filterCardEnabledForUsers = asset_filter_card_enabled_for_users($activeSegmentId);
 $bulkImportEnabled = asset_bulk_import_enabled($activeSegmentId);
 $filterScopeOptions = asset_filter_scope_options();
+$numberRuleExamples = asset_number_format_rule_examples();
 ?>
 <?php if (!$canManageSuperadmin): ?>
     <style>
@@ -366,14 +367,26 @@ $filterScopeOptions = asset_filter_scope_options();
             </label>
         </div>
         <div class="field-config-group" data-field-config="number">
-            <label>Number Format Rule
+            <label>
+                <span class="field-label-row">
+                    <span>Number Format Rule</span>
+                    <button
+                        type="button"
+                        class="field-help-button field-help-inline"
+                        data-number-rule-help
+                        data-help-title="Number Format Rules"
+                        data-help-lines="<?= e(json_encode($numberRuleExamples, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)); ?>"
+                        title="Number format rules"
+                        aria-label="Number format rules"
+                    >i</button>
+                </span>
                 <input type="text" name="number_format_rule" placeholder="8.2 or -*8.*2">
             </label>
-            <div class="hint">
-                <?php foreach (asset_number_format_rule_examples() as $example): ?>
-                    <div><?= e($example); ?></div>
-                <?php endforeach; ?>
-            </div>
+        </div>
+        <div class="field-config-group" data-field-config="text">
+            <label>Text Max Characters
+                <input type="number" name="text_max_length" min="1" step="1" placeholder="Leave blank for no limit">
+            </label>
         </div>
         <div class="field-config-group" data-field-config="conditional">
             <label>Secondary Label
@@ -429,7 +442,13 @@ $filterScopeOptions = asset_filter_scope_options();
                 <input type="text" name="file_allowed_extensions" placeholder="pdf,jpg,docx,xlsx">
             </label>
         </div>
-        <label><input type="checkbox" name="is_required" value="1"> Mandatory</label>
+        <label>Mandatory Scope
+            <select name="mandatory_scope">
+                <?php foreach (asset_mandatory_scope_options() as $scopeValue => $scopeLabel): ?>
+                    <option value="<?= e((string)$scopeValue); ?>" <?= (int)$scopeValue === asset_mandatory_scope_optional() ? 'selected' : ''; ?>><?= e($scopeLabel); ?></option>
+                <?php endforeach; ?>
+            </select>
+        </label>
         <label><input type="checkbox" name="is_displayed" value="1" checked> Show in tables</label>
         <label><input type="checkbox" name="is_import_enabled" value="1" checked> Allow in import</label>
         <label><input type="checkbox" name="is_unique" value="1"> Unique value</label>
@@ -488,12 +507,26 @@ $filterScopeOptions = asset_filter_scope_options();
                                 </label>
                             </div>
                             <div class="field-config-group" data-field-config="number">
-                                <input form="<?= e($formId); ?>" class="inline-edit" type="text" name="number_format_rule" value="<?= e((string)($field['number_format_rule'] ?? '')); ?>" placeholder="8.2 or -*8.*2">
-                                <div class="hint">
-                                    <?php foreach (asset_number_format_rule_examples() as $example): ?>
-                                        <div><?= e($example); ?></div>
-                                    <?php endforeach; ?>
-                                </div>
+                                <label>
+                                    <span class="field-label-row">
+                                        <span>Number Format Rule</span>
+                                        <button
+                                            type="button"
+                                            class="field-help-button field-help-inline"
+                                            data-number-rule-help
+                                            data-help-title="Number Format Rules"
+                                            data-help-lines="<?= e(json_encode($numberRuleExamples, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)); ?>"
+                                            title="Number format rules"
+                                            aria-label="Number format rules"
+                                        >i</button>
+                                    </span>
+                                    <input form="<?= e($formId); ?>" class="inline-edit" type="text" name="number_format_rule" value="<?= e((string)($field['number_format_rule'] ?? '')); ?>" placeholder="8.2 or -*8.*2">
+                                </label>
+                            </div>
+                            <div class="field-config-group" data-field-config="text">
+                                <label>Text Max Characters
+                                    <input form="<?= e($formId); ?>" class="inline-edit" type="number" name="text_max_length" min="1" step="1" value="<?= e((string)($field['text_max_length'] ?? '')); ?>" placeholder="Leave blank for no limit">
+                                </label>
                             </div>
                             <div class="field-config-group" data-field-config="conditional">
                                 <label>Secondary Label
@@ -543,7 +576,13 @@ $filterScopeOptions = asset_filter_scope_options();
                                     <input type="hidden" name="segment_id" value="<?= e((string)$activeSegmentId); ?>">
                                     <input type="hidden" name="field_id" value="<?= e((string)$field['id']); ?>">
                                     <input type="hidden" name="field_key" value="<?= e($field['field_key']); ?>">
-                                    <label class="inline-check"><input form="<?= e($formId); ?>" type="checkbox" name="is_required" value="1" <?= (int)$field['is_required'] === 1 ? 'checked' : ''; ?>> Required</label>
+                                    <label>Mandatory Scope
+                                        <select form="<?= e($formId); ?>" class="inline-edit" name="mandatory_scope">
+                                            <?php foreach (asset_mandatory_scope_options() as $scopeValue => $scopeLabel): ?>
+                                                <option value="<?= e((string)$scopeValue); ?>" <?= asset_field_mandatory_scope($field) === (int)$scopeValue ? 'selected' : ''; ?>><?= e($scopeLabel); ?></option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </label>
                                     <label class="inline-check"><input form="<?= e($formId); ?>" type="checkbox" name="is_displayed" value="1" <?= (int)$field['is_displayed'] === 1 ? 'checked' : ''; ?>> Display</label>
                                     <label class="inline-check"><input form="<?= e($formId); ?>" type="checkbox" name="is_import_enabled" value="1" <?= (int)$field['is_import_enabled'] === 1 ? 'checked' : ''; ?> <?= in_array($field['data_type'], ['file'], true) ? 'disabled' : ''; ?>> Import</label>
                                     <label class="inline-check"><input form="<?= e($formId); ?>" type="checkbox" name="is_unique" value="1" <?= (int)($field['is_unique'] ?? 0) === 1 ? 'checked' : ''; ?> <?= in_array($field['data_type'], ['file', 'conditional'], true) ? 'disabled' : ''; ?>> Unique</label>
@@ -580,5 +619,20 @@ $filterScopeOptions = asset_filter_scope_options();
         </table>
     </div>
 </section>
+
+<div class="modal-backdrop" id="number-rule-help-modal" aria-hidden="true">
+    <div class="modal-card field-help-modal-card" role="dialog" aria-modal="true" aria-labelledby="number-rule-help-title">
+        <div class="flash-modal-head">
+            <h3 id="number-rule-help-title">Number Format Rules</h3>
+            <button type="button" class="welcome-modal-close modal-close" data-close="number-rule-help-modal" aria-label="Close">×</button>
+        </div>
+        <div class="field-help-content">
+            <div id="number-rule-help-body"></div>
+        </div>
+        <div class="modal-actions">
+            <button type="button" class="modal-close" data-close="number-rule-help-modal">Close</button>
+        </div>
+    </div>
+</div>
 
 <?php require __DIR__ . '/footer.php'; ?>

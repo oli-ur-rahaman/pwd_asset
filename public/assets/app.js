@@ -142,6 +142,57 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
+    document.querySelectorAll('[data-number-rule-help]').forEach((button) => {
+        button.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            const modal = document.getElementById('number-rule-help-modal');
+            if (!modal) {
+                return;
+            }
+            const title = document.getElementById('number-rule-help-title');
+            const body = document.getElementById('number-rule-help-body');
+            let lines = [];
+            try {
+                lines = JSON.parse(button.getAttribute('data-help-lines') || '[]');
+            } catch (error) {
+                lines = [];
+            }
+            if (title) {
+                title.textContent = button.getAttribute('data-help-title') || 'Number Format Rules';
+            }
+            if (body) {
+                const safeLines = Array.isArray(lines) ? lines : [];
+                body.innerHTML = safeLines.length
+                    ? safeLines.map((line) => `<p>${String(line).replace(/[&<>"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[char]))}</p>`).join('')
+                    : '<p>No rules available.</p>';
+            }
+            modal.classList.add('open');
+            modal.setAttribute('aria-hidden', 'false');
+        });
+    });
+
+    const bindCharCounter = (input) => {
+        const limit = Number.parseInt(input.getAttribute('data-char-limit') || '0', 10);
+        if (!limit || Number.isNaN(limit) || limit <= 0) {
+            return;
+        }
+        const target = input.parentElement ? input.parentElement.querySelector('[data-char-count-target]') : null;
+        if (!target) {
+            return;
+        }
+        const update = () => {
+            const length = String(input.value || '').length;
+            target.textContent = `${length}/${limit} characters`;
+        };
+        input.addEventListener('input', update);
+        update();
+    };
+
+    document.querySelectorAll('[data-char-limit]').forEach((input) => {
+        bindCharCounter(input);
+    });
+
     document.querySelectorAll('[data-show-all-columns]').forEach((button) => {
         button.addEventListener('click', () => {
             const formId = button.getAttribute('data-show-all-columns');
@@ -160,7 +211,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const assetDeleteProceed = document.getElementById('asset-delete-confirm-proceed');
     if (assetDeleteModal && assetDeleteForm && assetDeleteProceed) {
         assetDeleteProceed.addEventListener('click', () => {
-            const selectedRows = assetDeleteForm.querySelectorAll('input[name="asset_ids[]"]:checked');
+            const selectedRows = Array.from(document.getElementsByName('asset_ids[]')).filter((input) => {
+                if (!(input instanceof HTMLInputElement)) {
+                    return false;
+                }
+                const linkedForm = input.form;
+                return !!linkedForm && linkedForm.id === assetDeleteForm.id && input.checked;
+            });
             if (!selectedRows.length) {
                 window.alert('Please select at least one row before deletion.');
                 return;
@@ -1011,11 +1068,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 return '';
             }
             if (field.data_type === 'number') {
-                const parsed = Number(value);
-                if (Number.isNaN(parsed)) {
+                if (!/^-?\d+(?:\.\d+)?$/.test(value)) {
                     return null;
                 }
-                return parsed.toFixed(4).replace(/\.?0+$/, '');
+                return value.includes('.') ? value.replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '') : value;
             }
             if (field.data_type === 'date') {
                 const parsed = Date.parse(value);
@@ -1171,12 +1227,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (field.required && value === '') {
                     message = `${field.label} is required.`;
                 } else if (value !== '') {
-                    if (field.data_type === 'number' && Number.isNaN(Number(value))) {
+                    if (field.data_type === 'number' && !/^-?\d+(?:\.\d+)?$/.test(value)) {
                         message = `${field.label} must be numeric.`;
                     } else if (field.data_type === 'number') {
                         const parsedRule = parseNumberRule(field.number_format_rule || '');
                         if (parsedRule && !matchesNumberRule(value, parsedRule)) {
                             message = numberRuleMessage(field.label, parsedRule);
+                        }
+                    } else if (field.data_type === 'text') {
+                        const textMaxLength = Number.parseInt(String(field.text_max_length || '0'), 10);
+                        if (textMaxLength > 0 && value.length > textMaxLength) {
+                            message = `${field.label} must not exceed ${textMaxLength} characters.`;
                         }
                     } else if (field.data_type === 'date' && Number.isNaN(Date.parse(value))) {
                         message = `${field.label} must be a valid date.`;
@@ -1328,6 +1389,10 @@ document.addEventListener('DOMContentLoaded', () => {
             input.setAttribute('data-field-type', field.data_type);
             input.setAttribute('data-required', field.required ? '1' : '0');
             input.setAttribute('data-number-format-rule', field.number_format_rule || '');
+            input.setAttribute('data-text-max-length', field.text_max_length || '0');
+            if (field.data_type === 'text' && Number.parseInt(String(field.text_max_length || '0'), 10) > 0) {
+                input.maxLength = Number.parseInt(String(field.text_max_length || '0'), 10);
+            }
             if (field.data_type === 'conditional') {
                 input.setAttribute('data-conditional-primary', '1');
                 input.setAttribute('data-conditional-map', JSON.stringify(field.conditional_map || {}));

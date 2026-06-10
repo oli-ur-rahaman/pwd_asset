@@ -57,9 +57,11 @@ function ensure_asset_schema(): void
             field_key VARCHAR(100) NOT NULL,
             label VARCHAR(255) NOT NULL,
             data_type VARCHAR(20) NOT NULL,
+            mandatory_scope TINYINT NOT NULL DEFAULT 0,
             field_information LONGTEXT DEFAULT NULL,
             video_tutorial_url VARCHAR(1000) DEFAULT NULL,
             number_format_rule VARCHAR(30) DEFAULT NULL,
+            text_max_length INT DEFAULT NULL,
             secondary_of_field_id INT DEFAULT NULL,
             conditional_map_json LONGTEXT DEFAULT NULL,
             is_required TINYINT NOT NULL DEFAULT 0,
@@ -305,9 +307,11 @@ function ensure_asset_schema(): void
     asset_ensure_column('asset_fields', 'is_unique', 'TINYINT NOT NULL DEFAULT 0');
     asset_ensure_column('asset_fields', 'is_filter_enabled', 'TINYINT NOT NULL DEFAULT 0');
     asset_ensure_column('asset_fields', 'filter_scope', 'TINYINT NOT NULL DEFAULT 0');
+    asset_ensure_column('asset_fields', 'mandatory_scope', 'TINYINT NOT NULL DEFAULT 0');
     asset_ensure_column('asset_fields', 'field_information', 'LONGTEXT DEFAULT NULL');
     asset_ensure_column('asset_fields', 'video_tutorial_url', 'VARCHAR(1000) DEFAULT NULL');
     asset_ensure_column('asset_fields', 'number_format_rule', 'VARCHAR(30) DEFAULT NULL');
+    asset_ensure_column('asset_fields', 'text_max_length', 'INT DEFAULT NULL');
     asset_ensure_column('asset_fields', 'secondary_of_field_id', 'INT DEFAULT NULL');
     asset_ensure_column('asset_fields', 'conditional_map_json', 'LONGTEXT DEFAULT NULL');
     asset_ensure_column('asset_categories', 'segment_id', 'INT DEFAULT NULL');
@@ -323,6 +327,7 @@ function ensure_asset_schema(): void
     asset_relax_subcategory_requirement();
     asset_backfill_segment_assignments();
     asset_backfill_filter_scopes();
+    asset_backfill_mandatory_scopes();
 
     asset_seed_default_fields();
     asset_backfill_office_user_access_levels();
@@ -733,6 +738,97 @@ function asset_supported_data_types(): array
     return ['text', 'number', 'date', 'dropdown', 'yes_no', 'file', 'conditional'];
 }
 
+function asset_mandatory_scope_optional(): int
+{
+    return 0;
+}
+
+function asset_mandatory_scope_input(): int
+{
+    return 1;
+}
+
+function asset_mandatory_scope_final_submission(): int
+{
+    return 2;
+}
+
+function asset_mandatory_scope_options(): array
+{
+    return [
+        asset_mandatory_scope_optional() => 'Optional',
+        asset_mandatory_scope_input() => 'Mandatory at Input',
+        asset_mandatory_scope_final_submission() => 'Mandatory at Final Submission',
+    ];
+}
+
+function asset_normalize_mandatory_scope(int|string|null $value): int
+{
+    $scope = (int)$value;
+    if (!in_array($scope, [
+        asset_mandatory_scope_optional(),
+        asset_mandatory_scope_input(),
+        asset_mandatory_scope_final_submission(),
+    ], true)) {
+        return asset_mandatory_scope_optional();
+    }
+    return $scope;
+}
+
+function asset_field_mandatory_scope(array $field): int
+{
+    if (array_key_exists('mandatory_scope', $field)) {
+        return asset_normalize_mandatory_scope($field['mandatory_scope']);
+    }
+    return (int)($field['is_required'] ?? 0) === 1
+        ? asset_mandatory_scope_input()
+        : asset_mandatory_scope_optional();
+}
+
+function asset_is_input_required(array $field): bool
+{
+    return asset_field_mandatory_scope($field) === asset_mandatory_scope_input();
+}
+
+function asset_is_final_submission_required(array $field): bool
+{
+    return asset_field_mandatory_scope($field) === asset_mandatory_scope_final_submission();
+}
+
+function asset_backfill_mandatory_scopes(): void
+{
+    db()->exec('UPDATE asset_fields SET mandatory_scope = 1 WHERE (mandatory_scope IS NULL OR mandatory_scope = 0) AND is_required = 1');
+}
+
+function asset_label_for_submission_message(array $field): string
+{
+    $label = trim((string)($field['label'] ?? $field['field_key'] ?? 'Field'));
+    if ($label === '') {
+        return 'Field';
+    }
+    $parts = preg_split('/\s*\/\s*/u', $label);
+    return trim((string)($parts[0] ?? $label));
+}
+
+function asset_quote_label_list(array $labels): string
+{
+    $labels = array_values(array_filter(array_map(static fn($label): string => trim((string)$label), $labels), static fn(string $label): bool => $label !== ''));
+    $labels = array_values(array_unique($labels));
+    if (!$labels) {
+        return '"Required field"';
+    }
+    $quoted = array_map(static fn(string $label): string => '"' . $label . '"', $labels);
+    $count = count($quoted);
+    if ($count === 1) {
+        return $quoted[0];
+    }
+    if ($count === 2) {
+        return $quoted[0] . ' and ' . $quoted[1];
+    }
+    $last = array_pop($quoted);
+    return implode(', ', $quoted) . ', and ' . $last;
+}
+
 function asset_theme_options(): array
 {
     return [
@@ -925,6 +1021,15 @@ function asset_conditional_union_options(array $map): array
     return array_values($all);
 }
 
+function asset_normalize_conditional_option_value(string $value): string
+{
+    $value = trim($value);
+    if ($value === '') {
+        return '';
+    }
+    return preg_replace('/\s+/u', '_', $value) ?? $value;
+}
+
 function asset_parse_number_format_rule(string $rule): ?array
 {
     $rule = trim($rule);
@@ -953,6 +1058,24 @@ function asset_normalize_number_string(mixed $value): ?string
         return null;
     }
     return $value;
+}
+
+function asset_text_max_length(array $field): ?int
+{
+    $value = (int)($field['text_max_length'] ?? 0);
+    return $value > 0 ? $value : null;
+}
+
+function asset_format_number_display(?string $value): string
+{
+    $value = $value === null ? '' : trim((string)$value);
+    if ($value === '') {
+        return '';
+    }
+    if (!str_contains($value, '.')) {
+        return $value;
+    }
+    return rtrim(rtrim($value, '0'), '.');
 }
 
 function asset_number_format_error(string $label, array $parsedRule): string
@@ -1538,7 +1661,7 @@ function asset_format_normalized_value_for_log(array $field, ?array $normalized)
         return '';
     }
     return match ((string)$field['data_type']) {
-        'number' => $normalized['value_number'] !== null ? rtrim(rtrim((string)$normalized['value_number'], '0'), '.') : '',
+        'number' => asset_format_number_display($normalized['value_number'] !== null ? (string)$normalized['value_number'] : null),
         'date' => (string)($normalized['value_date'] ?? ''),
         'yes_no' => $normalized['value_bool'] === null ? '' : ((int)$normalized['value_bool'] === 1 ? 'Yes' : 'No'),
         'dropdown', 'conditional' => (string)($normalized['value_option'] ?? ''),
@@ -2214,7 +2337,7 @@ function create_asset_field(array $payload): void
     db()->beginTransaction();
     try {
         if (($payload['data_type'] ?? '') === 'conditional') {
-            $stmt = db()->prepare('INSERT INTO asset_fields (segment_id, field_key, label, data_type, field_information, video_tutorial_url, number_format_rule, secondary_of_field_id, conditional_map_json, is_required, is_displayed, is_import_enabled, is_unique, is_filter_enabled, filter_scope, active_status, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, 0, ?, ?, 1, ?, NOW())');
+            $stmt = db()->prepare('INSERT INTO asset_fields (segment_id, field_key, label, data_type, field_information, video_tutorial_url, number_format_rule, text_max_length, secondary_of_field_id, conditional_map_json, mandatory_scope, is_required, is_displayed, is_import_enabled, is_unique, is_filter_enabled, filter_scope, active_status, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?, ?, ?, ?, ?, 0, ?, ?, 1, ?, NOW())');
             $stmt->execute([
                 $segmentId,
                 $payload['field_key'],
@@ -2223,6 +2346,7 @@ function create_asset_field(array $payload): void
                 $payload['field_information'] ?: null,
                 $payload['video_tutorial_url'] ?: null,
                 json_encode($payload['conditional_map'] ?? [], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                $payload['mandatory_scope'],
                 $payload['is_required'],
                 $payload['is_displayed'],
                 $payload['is_import_enabled'],
@@ -2233,7 +2357,7 @@ function create_asset_field(array $payload): void
             $fieldId = (int)db()->lastInsertId();
             replace_asset_field_options($fieldId, $payload['options'] ?? []);
 
-            $childStmt = db()->prepare('INSERT INTO asset_fields (segment_id, field_key, label, data_type, field_information, video_tutorial_url, number_format_rule, secondary_of_field_id, conditional_map_json, is_required, is_displayed, is_import_enabled, is_unique, is_filter_enabled, filter_scope, active_status, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?, NULL, ?, NULL, ?, ?, ?, 0, ?, ?, 1, ?, NOW())');
+            $childStmt = db()->prepare('INSERT INTO asset_fields (segment_id, field_key, label, data_type, field_information, video_tutorial_url, number_format_rule, text_max_length, secondary_of_field_id, conditional_map_json, mandatory_scope, is_required, is_displayed, is_import_enabled, is_unique, is_filter_enabled, filter_scope, active_status, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, ?, NULL, ?, ?, ?, ?, 0, ?, ?, 1, ?, NOW())');
             $childStmt->execute([
                 $segmentId,
                 $payload['secondary_field_key'],
@@ -2242,6 +2366,7 @@ function create_asset_field(array $payload): void
                 $payload['secondary_field_information'] ?: null,
                 $payload['secondary_video_tutorial_url'] ?: null,
                 $fieldId,
+                $payload['mandatory_scope'],
                 $payload['is_required'],
                 $payload['is_displayed'],
                 $payload['is_import_enabled'],
@@ -2252,7 +2377,7 @@ function create_asset_field(array $payload): void
             $childId = (int)db()->lastInsertId();
             replace_asset_field_options($childId, $payload['secondary_options'] ?? []);
         } else {
-            $stmt = db()->prepare('INSERT INTO asset_fields (segment_id, field_key, label, data_type, field_information, video_tutorial_url, number_format_rule, secondary_of_field_id, conditional_map_json, is_required, is_displayed, is_import_enabled, is_unique, is_filter_enabled, filter_scope, active_status, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, ?, 1, ?, NOW())');
+            $stmt = db()->prepare('INSERT INTO asset_fields (segment_id, field_key, label, data_type, field_information, video_tutorial_url, number_format_rule, text_max_length, secondary_of_field_id, conditional_map_json, mandatory_scope, is_required, is_displayed, is_import_enabled, is_unique, is_filter_enabled, filter_scope, active_status, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, 1, ?, NOW())');
             $stmt->execute([
                 $segmentId,
                 $payload['field_key'],
@@ -2261,6 +2386,8 @@ function create_asset_field(array $payload): void
                 $payload['field_information'] ?: null,
                 $payload['video_tutorial_url'] ?: null,
                 $payload['number_format_rule'] ?: null,
+                $payload['text_max_length'],
+                $payload['mandatory_scope'],
                 $payload['is_required'],
                 $payload['is_displayed'],
                 $payload['is_import_enabled'],
@@ -2295,13 +2422,14 @@ function update_asset_field(int $id, array $payload): void
     db()->beginTransaction();
     try {
         if (($payload['data_type'] ?? '') === 'conditional') {
-            $stmt = db()->prepare('UPDATE asset_fields SET label = ?, data_type = ?, field_information = ?, video_tutorial_url = ?, number_format_rule = NULL, conditional_map_json = ?, is_required = ?, is_displayed = ?, is_import_enabled = ?, is_unique = 0, is_filter_enabled = ?, filter_scope = ?, sort_order = ?, updated_at = NOW() WHERE id = ?');
+            $stmt = db()->prepare('UPDATE asset_fields SET label = ?, data_type = ?, field_information = ?, video_tutorial_url = ?, number_format_rule = NULL, text_max_length = NULL, conditional_map_json = ?, mandatory_scope = ?, is_required = ?, is_displayed = ?, is_import_enabled = ?, is_unique = 0, is_filter_enabled = ?, filter_scope = ?, sort_order = ?, updated_at = NOW() WHERE id = ?');
             $stmt->execute([
                 $payload['label'],
                 'conditional',
                 $payload['field_information'] ?: null,
                 $payload['video_tutorial_url'] ?: null,
                 json_encode($payload['conditional_map'] ?? [], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                $payload['mandatory_scope'],
                 $payload['is_required'],
                 $payload['is_displayed'],
                 $payload['is_import_enabled'],
@@ -2316,12 +2444,13 @@ function update_asset_field(int $id, array $payload): void
             if (!$childField) {
                 throw new RuntimeException('Conditional child field not found.');
             }
-            $childStmt = db()->prepare('UPDATE asset_fields SET label = ?, data_type = ?, field_information = ?, video_tutorial_url = ?, number_format_rule = NULL, is_required = ?, is_displayed = ?, is_import_enabled = ?, is_unique = 0, is_filter_enabled = ?, filter_scope = ?, sort_order = ?, updated_at = NOW() WHERE id = ?');
+            $childStmt = db()->prepare('UPDATE asset_fields SET label = ?, data_type = ?, field_information = ?, video_tutorial_url = ?, number_format_rule = NULL, text_max_length = NULL, mandatory_scope = ?, is_required = ?, is_displayed = ?, is_import_enabled = ?, is_unique = 0, is_filter_enabled = ?, filter_scope = ?, sort_order = ?, updated_at = NOW() WHERE id = ?');
             $childStmt->execute([
                 $payload['secondary_label'],
                 'dropdown',
                 $payload['secondary_field_information'] ?: null,
                 $payload['secondary_video_tutorial_url'] ?: null,
+                $payload['mandatory_scope'],
                 $payload['is_required'],
                 $payload['is_displayed'],
                 $payload['is_import_enabled'],
@@ -2333,13 +2462,15 @@ function update_asset_field(int $id, array $payload): void
             replace_asset_field_options((int)$childField['id'], $payload['secondary_options'] ?? []);
             delete_asset_field_file_rule((int)$childField['id']);
         } else {
-            $stmt = db()->prepare('UPDATE asset_fields SET label = ?, data_type = ?, field_information = ?, video_tutorial_url = ?, number_format_rule = ?, conditional_map_json = NULL, is_required = ?, is_displayed = ?, is_import_enabled = ?, is_unique = ?, is_filter_enabled = ?, filter_scope = ?, sort_order = ?, updated_at = NOW() WHERE id = ?');
+            $stmt = db()->prepare('UPDATE asset_fields SET label = ?, data_type = ?, field_information = ?, video_tutorial_url = ?, number_format_rule = ?, text_max_length = ?, conditional_map_json = NULL, mandatory_scope = ?, is_required = ?, is_displayed = ?, is_import_enabled = ?, is_unique = ?, is_filter_enabled = ?, filter_scope = ?, sort_order = ?, updated_at = NOW() WHERE id = ?');
             $stmt->execute([
                 $payload['label'],
                 $payload['data_type'],
                 $payload['field_information'] ?: null,
                 $payload['video_tutorial_url'] ?: null,
                 $payload['number_format_rule'] ?: null,
+                $payload['text_max_length'],
+                $payload['mandatory_scope'],
                 $payload['is_required'],
                 $payload['is_displayed'],
                 $payload['is_import_enabled'],
@@ -2545,6 +2676,18 @@ function validate_asset_field_definition(array $input, ?int $fieldId = null): ar
         $numberFormatRule = '';
     }
 
+    $textMaxLength = null;
+    if ($dataType === 'text') {
+        $textMaxLengthRaw = trim((string)($input['text_max_length'] ?? ''));
+        if ($textMaxLengthRaw !== '') {
+            if (!ctype_digit($textMaxLengthRaw) || (int)$textMaxLengthRaw <= 0) {
+                $errors[] = 'Text max characters must be a positive whole number.';
+            } else {
+                $textMaxLength = (int)$textMaxLengthRaw;
+            }
+        }
+    }
+
     $secondaryLabel = trim((string)($input['secondary_label'] ?? ''));
     $secondaryFieldInformation = asset_normalize_help_text((string)($input['secondary_field_information'] ?? ''));
     $secondaryVideoTutorialUrl = asset_normalize_tutorial_url((string)($input['secondary_video_tutorial_url'] ?? ''));
@@ -2558,7 +2701,7 @@ function validate_asset_field_definition(array $input, ?int $fieldId = null): ar
         $rawPrimaryOptions = preg_split('/\r\n|\r|\n/', (string)($input['conditional_primary_options_text'] ?? ''));
         $primaryOptions = [];
         foreach ($rawPrimaryOptions as $option) {
-            $option = trim((string)$option);
+            $option = asset_normalize_conditional_option_value((string)$option);
             if ($option !== '') {
                 $primaryOptions[] = ['value' => $option, 'label' => $option];
             }
@@ -2585,13 +2728,13 @@ function validate_asset_field_definition(array $input, ?int $fieldId = null): ar
                 $errors[] = 'Conditional rules must use Primary=child1,child2 format.';
                 continue;
             }
-            $primaryKey = strtolower(trim((string)$parts[0]));
+            $primaryKey = strtolower(asset_normalize_conditional_option_value((string)$parts[0]));
             if (!isset($primaryLookup[$primaryKey])) {
                 $errors[] = 'Conditional rules reference an unknown primary option.';
                 continue;
             }
             $children = array_values(array_filter(array_map(
-                static fn(string $item): string => trim($item),
+                static fn(string $item): string => asset_normalize_conditional_option_value($item),
                 preg_split('/\s*,\s*/', (string)$parts[1]) ?: []
             ), static fn(string $item): bool => $item !== ''));
             if (!$children) {
@@ -2657,7 +2800,9 @@ function validate_asset_field_definition(array $input, ?int $fieldId = null): ar
             'field_information' => $fieldInformation,
             'video_tutorial_url' => $videoTutorialUrl,
             'number_format_rule' => $numberFormatRule,
-            'is_required' => !empty($input['is_required']) ? 1 : 0,
+            'text_max_length' => $textMaxLength,
+            'mandatory_scope' => asset_normalize_mandatory_scope($input['mandatory_scope'] ?? asset_mandatory_scope_optional()),
+            'is_required' => asset_normalize_mandatory_scope($input['mandatory_scope'] ?? asset_mandatory_scope_optional()) === asset_mandatory_scope_input() ? 1 : 0,
             'is_displayed' => !empty($input['is_displayed']) ? 1 : 0,
             'is_import_enabled' => in_array($dataType, ['file'], true) ? 0 : (!empty($input['is_import_enabled']) ? 1 : 0),
             'is_unique' => in_array($dataType, ['file', 'conditional'], true) ? 0 : (!empty($input['is_unique']) ? 1 : 0),
@@ -2808,7 +2953,7 @@ function validate_asset_file_field_value(array $field, ?int $assetId, array $inp
     $existingSize = array_sum(array_map(static fn(array $file): int => (int)($file['file_size'] ?? 0), $remainingExisting));
     $finalSize = $existingSize + $newSizeTotal;
     $label = (string)($field['label'] ?? $field['field_key']);
-    if ((int)$field['is_required'] === 1 && $finalCount === 0) {
+    if (asset_is_input_required($field) && $finalCount === 0) {
         $errors[$field['field_key']] = "{$label} is required.";
     } elseif ((int)$rule['is_multiple'] === 0 && $finalCount > 1) {
         $errors[$field['field_key']] = "{$label} allows only one file.";
@@ -2840,7 +2985,7 @@ function normalize_asset_field_value(array $field, mixed $raw, array $fieldMap, 
     ];
 
     $isEmpty = $value === null || $value === '';
-    if ((int)$field['is_required'] === 1 && $isEmpty) {
+    if (asset_is_input_required($field) && $isEmpty) {
         $errors[$key] = "{$label} is required.";
         return $normalized;
     }
@@ -2849,6 +2994,11 @@ function normalize_asset_field_value(array $field, mixed $raw, array $fieldMap, 
     }
 
     if ($type === 'text') {
+        $maxLength = asset_text_max_length($field);
+        if ($maxLength !== null && mb_strlen((string)$value) > $maxLength) {
+            $errors[$key] = "{$label} must not exceed {$maxLength} characters.";
+            return $normalized;
+        }
         $normalized['value_text'] = (string)$value;
         $normalized['display'] = (string)$value;
         return $normalized;
@@ -2865,7 +3015,7 @@ function normalize_asset_field_value(array $field, mixed $raw, array $fieldMap, 
             $errors[$key] = asset_number_format_error((string)$label, $parsedRule);
             return $normalized;
         }
-        $normalized['value_number'] = (float)$valueString;
+        $normalized['value_number'] = $valueString;
         $normalized['display'] = $valueString;
         return $normalized;
     }
@@ -2961,7 +3111,7 @@ function asset_normalize_unique_compare_value(array $field, mixed $raw): ?string
     }
 
     return match ($type) {
-        'number' => is_numeric($value) ? rtrim(rtrim(number_format((float)$value, 4, '.', ''), '0'), '.') : null,
+        'number' => (($normalized = asset_normalize_number_string($value)) !== null) ? asset_format_number_display($normalized) : null,
         'date' => (($timestamp = strtotime((string)$value)) !== false) ? date('Y-m-d', $timestamp) : null,
         'yes_no' => (($bool = asset_normalize_yes_no($value)) !== null) ? (string)$bool : null,
         'dropdown' => (function () use ($field, $value): ?string {
@@ -3259,7 +3409,7 @@ function get_asset_values(int $assetId): array
 function asset_display_value(array $row): string
 {
     return match ($row['data_type']) {
-        'number' => $row['value_number'] !== null ? rtrim(rtrim((string)$row['value_number'], '0'), '.') : '',
+        'number' => asset_format_number_display($row['value_number'] !== null ? (string)$row['value_number'] : null),
         'date' => (string)($row['value_date'] ?? ''),
         'yes_no' => $row['value_bool'] === null ? '' : ((int)$row['value_bool'] === 1 ? 'Yes' : 'No'),
         'dropdown', 'conditional' => (string)($row['value_option'] ?? ''),
@@ -4036,6 +4186,61 @@ function declare_office_assets(int $officeType, int $officeId, int $userId, ?int
         return;
     }
     db()->prepare('INSERT INTO office_asset_declarations (segment_id, office_type, office_id, declared_status, declared_at, declared_by, declared_officer_name, created_at) VALUES (?, ?, ?, 1, NOW(), ?, ?, NOW())')->execute([$segmentId, $officeType, $officeId, $userId, $officerName]);
+}
+
+function validate_office_asset_declaration_requirements(int $officeType, int $officeId, ?int $segmentId = null, ?array $user = null): array
+{
+    $segmentId = asset_normalize_segment_id($segmentId);
+    $user = $user ?: current_user();
+    $finalRequiredFields = array_values(array_filter(
+        get_asset_fields(true, $segmentId),
+        static fn(array $field): bool => (int)($field['active_status'] ?? 0) === 1 && asset_is_final_submission_required($field)
+    ));
+    if (!$finalRequiredFields) {
+        return ['row_count' => 0, 'message' => ''];
+    }
+
+    $assets = get_assets([
+        'segment_id' => $segmentId,
+        'office_view_scope' => 'my_office',
+        'office_type' => $officeType,
+        'office_id' => $officeId,
+    ], $user, false);
+    if (!$assets) {
+        return ['row_count' => 0, 'message' => ''];
+    }
+
+    $missingLabels = [];
+    $rowCount = 0;
+    foreach ($assets as $asset) {
+        $rowHasMissing = false;
+        foreach ($finalRequiredFields as $field) {
+            $fieldKey = (string)$field['field_key'];
+            $isMissing = false;
+            if ((string)($field['data_type'] ?? '') === 'file') {
+                $isMissing = empty($asset['files'][$fieldKey]);
+            } else {
+                $isMissing = trim((string)($asset['values'][$fieldKey] ?? '')) === '';
+            }
+            if (!$isMissing) {
+                continue;
+            }
+            $missingLabels[] = asset_label_for_submission_message($field);
+            $rowHasMissing = true;
+        }
+        if ($rowHasMissing) {
+            $rowCount++;
+        }
+    }
+
+    if ($rowCount <= 0) {
+        return ['row_count' => 0, 'message' => ''];
+    }
+
+    return [
+        'row_count' => $rowCount,
+        'message' => 'Action Required before submission: Missing ' . asset_quote_label_list($missingLabels) . ' in ' . $rowCount . ' row' . ($rowCount === 1 ? '' : 's') . '.',
+    ];
 }
 
 function reset_office_asset_declarations(array $pairs, int $userId, ?int $segmentId = null): int
@@ -5125,21 +5330,586 @@ function output_asset_template_download(bool $preferUploaded = true, ?int $segme
         readfile($stored['path']);
         exit;
     }
-    $headers = [];
-    foreach (asset_template_columns($segmentId) as $column) {
-        $headers[$column['key']] = $column['label'];
+    $spreadsheet = build_asset_template_autogen_workbook($segmentId);
+    output_asset_template_autogen_download($spreadsheet, asset_template_download_filename($segmentId));
+}
+
+function asset_template_row_limit(): int
+{
+    return 1000;
+}
+
+function asset_template_download_filename(?int $segmentId = null): string
+{
+    $base = asset_template_segment_display_name($segmentId);
+    $safe = preg_replace('/[^A-Za-z0-9_-]+/', '_', $base);
+    $safe = trim((string)$safe, '_');
+    if ($safe === '') {
+        $safe = 'segment';
     }
-    $rows = [[
-        'serial' => '1',
-        'instruction' => 'Fill data columns only. Keep heading row unchanged.',
-    ]];
+    return strtolower($safe) . '_autogen.xlsx';
+}
+
+function asset_template_segment_display_name(?int $segmentId = null): string
+{
+    $segmentId = asset_normalize_segment_id($segmentId);
+    $segment = asset_active_segment($segmentId, true);
+    $name = trim((string)($segment['segment_name'] ?? ''));
+    return $name !== '' ? $name : 'General';
+}
+
+function asset_template_safe_sheet_name(string $name, array $taken = []): string
+{
+    $name = preg_replace('/[\\\\\\/\\?\\*\\[\\]:]/', '', $name);
+    $name = trim((string)$name);
+    if ($name === '') {
+        $name = 'Sheet';
+    }
+    $name = mb_substr($name, 0, 31);
+    $base = $name;
+    $counter = 1;
+    while (in_array(mb_strtolower($name, 'UTF-8'), array_map(static fn(string $item): string => mb_strtolower($item, 'UTF-8'), $taken), true)) {
+        $suffix = '_' . $counter;
+        $name = mb_substr($base, 0, max(1, 31 - mb_strlen($suffix, 'UTF-8'))) . $suffix;
+        $counter++;
+    }
+    return $name;
+}
+
+function asset_template_data_sheet_name(?int $segmentId = null): string
+{
+    return asset_template_safe_sheet_name(asset_template_segment_display_name($segmentId) . '_autogen');
+}
+
+function asset_template_dropdown_sheet_name(?int $segmentId = null, array $taken = []): string
+{
+    return asset_template_safe_sheet_name(asset_template_segment_display_name($segmentId) . '_autogen_dropdowns', $taken);
+}
+
+function asset_template_named_token(string $value): string
+{
+    $value = strtoupper(trim($value));
+    $value = preg_replace('/[^A-Z0-9_]+/', '_', $value);
+    $value = preg_replace('/_+/', '_', (string)$value);
+    $value = trim((string)$value, '_');
+    if ($value === '') {
+        $value = 'ITEM';
+    }
+    if (preg_match('/^[0-9]/', $value)) {
+        $value = 'N_' . $value;
+    }
+    return $value;
+}
+
+function asset_template_formula_escape(string $value): string
+{
+    return str_replace('"', '""', $value);
+}
+
+function asset_template_formula_named_token_expr(string $cellReference): string
+{
+    $expr = 'TRIM(' . $cellReference . ')';
+    foreach ([' ', '-', '/', '&', '(', ')', ',', '.', "'", ':'] as $char) {
+        $expr = 'SUBSTITUTE(' . $expr . ',"' . asset_template_formula_escape($char) . '","_")';
+    }
+    return 'UPPER(' . $expr . ')';
+}
+
+function asset_template_input_column_definitions(?int $segmentId = null): array
+{
+    $segmentId = asset_normalize_segment_id($segmentId);
+    $columns = [];
     if (asset_category_selection_enabled($segmentId)) {
-        $rows[0]['category'] = '';
+        $columns[] = [
+            'key' => 'category',
+            'label' => 'Category / Category',
+            'data_type' => 'dropdown',
+            'required_input' => true,
+            'required_final' => true,
+            'non_editable' => false,
+            'instruction_label' => 'Category',
+            'options' => array_map(static fn(array $row): string => (string)$row['name'], get_asset_categories(false, $segmentId)),
+            'validation_kind' => 'category',
+        ];
     }
     if (asset_subcategory_enabled($segmentId)) {
-        $rows[0]['subcategory'] = '';
+        $columns[] = [
+            'key' => 'subcategory',
+            'label' => 'Sub-category / Sub-category',
+            'data_type' => 'dropdown',
+            'required_input' => true,
+            'required_final' => true,
+            'non_editable' => false,
+            'instruction_label' => 'Sub-category',
+            'parent_key' => asset_category_selection_enabled($segmentId) ? 'category' : null,
+            'validation_kind' => 'subcategory',
+        ];
     }
-    export_excel($rows, $headers, 'asset_import_template.xlsx', 'Asset Template');
+
+    $fields = get_asset_fields(false, $segmentId);
+    $fieldById = [];
+    foreach ($fields as $field) {
+        $fieldById[(int)$field['id']] = $field;
+    }
+    foreach ($fields as $field) {
+        if ((int)$field['is_import_enabled'] !== 1 || (int)$field['active_status'] !== 1) {
+            continue;
+        }
+        $parentId = (int)($field['secondary_of_field_id'] ?? 0);
+        $dataType = (string)$field['data_type'];
+        $definition = [
+            'key' => (string)$field['field_key'],
+            'label' => (string)$field['label'],
+            'data_type' => $dataType,
+            'required_input' => asset_is_input_required($field),
+            'required_final' => asset_is_final_submission_required($field),
+            'non_editable' => false,
+            'instruction_label' => asset_label_for_submission_message($field),
+            'number_format_rule' => (string)($field['number_format_rule'] ?? ''),
+            'text_max_length' => (int)($field['text_max_length'] ?? 0),
+            'validation_kind' => $dataType,
+            'field_id' => (int)$field['id'],
+        ];
+        if ($dataType === 'yes_no') {
+            $definition['options'] = ['Yes', 'No'];
+        } elseif ($dataType === 'dropdown' && $parentId <= 0) {
+            $definition['options'] = array_map(static fn(array $option): string => (string)$option['option_value'], get_asset_field_options((int)$field['id']));
+        } elseif ($dataType === 'conditional') {
+            $definition['options'] = array_map(static fn(array $option): string => (string)$option['option_value'], get_asset_field_options((int)$field['id']));
+            $definition['conditional_map'] = asset_decode_conditional_map($field);
+            $definition['validation_kind'] = 'conditional_primary';
+        } elseif ($dataType === 'dropdown' && $parentId > 0 && isset($fieldById[$parentId])) {
+            $definition['parent_key'] = (string)$fieldById[$parentId]['field_key'];
+            $definition['validation_kind'] = 'conditional_secondary';
+        }
+        $columns[] = $definition;
+    }
+    return $columns;
+}
+
+function asset_template_build_header_rich_text(array $column): \PhpOffice\PhpSpreadsheet\RichText\RichText
+{
+    $richText = new \PhpOffice\PhpSpreadsheet\RichText\RichText();
+    $main = $richText->createTextRun((string)($column['label'] ?? ''));
+    $main->getFont()->setBold(true)->getColor()->setRGB('17324D');
+
+    $appendLine = static function (\PhpOffice\PhpSpreadsheet\RichText\RichText $richTextValue, string $text, string $color = '17324D'): void {
+        $richTextValue->createText("\n");
+        $run = $richTextValue->createTextRun($text);
+        $run->getFont()->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color($color));
+        $run->getFont()->setSize(10);
+    };
+
+    if (!empty($column['non_editable'])) {
+        $appendLine($richText, 'view only, cannot edit', 'C00000');
+        return $richText;
+    }
+    if (in_array((string)($column['data_type'] ?? ''), ['dropdown', 'yes_no', 'conditional'], true) || in_array((string)($column['validation_kind'] ?? ''), ['category', 'subcategory', 'conditional_secondary'], true)) {
+        $appendLine($richText, 'select from dropdown', '365F91');
+    }
+    if ((string)($column['data_type'] ?? '') === 'date') {
+        $appendLine($richText, 'yyyy-mm-dd', '365F91');
+    }
+    if ((string)($column['data_type'] ?? '') === 'number') {
+        $numberHint = asset_template_number_header_hint((string)($column['number_format_rule'] ?? ''));
+        if ($numberHint !== '') {
+            $appendLine($richText, $numberHint, '365F91');
+        }
+    }
+    if ((string)($column['data_type'] ?? '') === 'text' && (int)($column['text_max_length'] ?? 0) > 0) {
+        $appendLine($richText, 'max ' . (int)$column['text_max_length'] . ' chars', '365F91');
+    }
+    if (!empty($column['required_input'])) {
+        $appendLine($richText, 'required (input now)', '228B22');
+    }
+    if (!empty($column['required_final'])) {
+        $appendLine($richText, 'required (can input later)', '808080');
+    }
+    return $richText;
+}
+
+function asset_template_number_header_hint(string $rule): string
+{
+    $rule = trim($rule);
+    if ($rule === '') {
+        return '';
+    }
+    $parsed = asset_parse_number_format_rule($rule);
+    if (!$parsed) {
+        return '';
+    }
+
+    $beforeDigits = max(1, (int)$parsed['before_digits']);
+    $afterDigits = max(0, (int)$parsed['after_digits']);
+    $maxBefore = str_repeat('9', $beforeDigits);
+    $hint = 'max value ' . $maxBefore;
+    if ($afterDigits > 0) {
+        $hint .= '.' . str_repeat('9', $afterDigits);
+    }
+    if (!empty($parsed['allow_negative'])) {
+        $hint .= ' (-ve allowd)';
+    }
+    return $hint;
+}
+
+function asset_template_column_width(array $column): float
+{
+    if (!empty($column['non_editable']) && (string)$column['key'] === 'serial') {
+        return 10;
+    }
+    if (!empty($column['non_editable']) && (string)$column['key'] === 'instruction') {
+        return 36;
+    }
+    return match ((string)($column['data_type'] ?? 'text')) {
+        'date' => 18,
+        'number' => 18,
+        'dropdown', 'yes_no', 'conditional' => 24,
+        default => 26,
+    };
+}
+
+function asset_template_date_validation_formula(string $cellReference): string
+{
+    return '=AND(LEN(' . $cellReference . ')=10,MID(' . $cellReference . ',5,1)="-",MID(' . $cellReference . ',8,1)="-",ISNUMBER(SUBSTITUTE(' . $cellReference . ',"-","")+0),IFERROR(INT(MID(' . $cellReference . ',6,2)),0)<=12,IFERROR(INT(MID(' . $cellReference . ',6,2)),0)>=1,IFERROR(INT(MID(' . $cellReference . ',9,2)),0)<=31,IFERROR(INT(MID(' . $cellReference . ',9,2)),0)>=1)';
+}
+
+function asset_template_number_validation_formula(string $cellReference, string $rule = ''): string
+{
+    $rule = trim($rule);
+    if ($rule === '') {
+        return '=OR(' . $cellReference . '="",ISNUMBER(' . $cellReference . '))';
+    }
+    $parsed = asset_parse_number_format_rule($rule);
+    if (!$parsed) {
+        return '=TRUE';
+    }
+    $unsigned = 'IF(LEFT(' . $cellReference . ',1)="-",MID(' . $cellReference . ',2,255),' . $cellReference . ')';
+    $before = 'IFERROR(LEFT(' . $unsigned . ',FIND(".",' . $unsigned . ')-1),' . $unsigned . ')';
+    $after = 'IFERROR(MID(' . $unsigned . ',FIND(".",' . $unsigned . ')+1,255),"")';
+    $signCheck = $parsed['allow_negative'] ? 'TRUE' : 'LEFT(' . $cellReference . ',1)<>"-"';
+    $beforeCheck = 'LEN(' . $before . ')' . ($parsed['before_exact'] ? '=' : '<=') . (int)$parsed['before_digits'];
+    $afterCheck = 'LEN(' . $after . ')' . ($parsed['after_exact'] ? '=' : '<=') . (int)$parsed['after_digits'];
+    return '=OR(' . $cellReference . '="",AND(ISNUMBER(--' . $cellReference . '),LEN(' . $cellReference . ')-LEN(SUBSTITUTE(' . $cellReference . ',".",""))<=1,' . $signCheck . ',' . $beforeCheck . ',' . $afterCheck . '))';
+}
+
+function build_asset_template_instruction_formula(string $rowInputRange, array $requiredColumnRefs, string $instructionColumnRef): string
+{
+    if (!$requiredColumnRefs) {
+        return '=IF(COUNTA(' . $rowInputRange . ')=0,"","OK")';
+    }
+    $parts = [];
+    foreach ($requiredColumnRefs as $entry) {
+        $parts[] = 'IF(' . $entry['ref'] . '="","' . asset_template_formula_escape((string)$entry['label']) . '","")';
+    }
+    $missingJoin = 'TEXTJOIN(", ",TRUE,' . implode(',', $parts) . ')';
+    return '=IF(COUNTA(' . $rowInputRange . ')=0,"",IF(' . $missingJoin . '="","OK","Missing: "&' . $missingJoin . '))';
+}
+
+function output_asset_template_autogen_download(\PhpOffice\PhpSpreadsheet\Spreadsheet $spreadsheet, string $filename): void
+{
+    header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    header('Content-Disposition: attachment; filename="' . $filename . '"');
+    header('Cache-Control: max-age=0');
+    $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
+    $writer->setPreCalculateFormulas(false);
+    $writer->save('php://output');
+    exit;
+}
+
+function build_asset_template_autogen_workbook(?int $segmentId = null): \PhpOffice\PhpSpreadsheet\Spreadsheet
+{
+    ensure_library('PhpOffice\\PhpSpreadsheet\\Spreadsheet', 'PhpSpreadsheet is not installed.');
+    $segmentId = asset_normalize_segment_id($segmentId);
+    $rowLimit = asset_template_row_limit();
+    $startRow = 2;
+    $endRow = $startRow + $rowLimit - 1;
+
+    $inputColumns = asset_template_input_column_definitions($segmentId);
+    $displayColumns = array_merge(
+        [[
+            'key' => 'serial',
+            'label' => 'Serial No',
+            'data_type' => 'number',
+            'non_editable' => true,
+        ]],
+        $inputColumns,
+        [[
+            'key' => 'instruction',
+            'label' => 'Instruction',
+            'data_type' => 'text',
+            'non_editable' => true,
+        ]]
+    );
+
+    $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+    $dataSheet = $spreadsheet->getActiveSheet();
+    $dataSheet->setTitle(asset_template_data_sheet_name($segmentId));
+    $dropdownSheet = new \PhpOffice\PhpSpreadsheet\Worksheet\Worksheet(
+        $spreadsheet,
+        asset_template_dropdown_sheet_name($segmentId, [$dataSheet->getTitle()])
+    );
+    $spreadsheet->addSheet($dropdownSheet);
+    $spreadsheet->setActiveSheetIndex(0);
+    $dropdownSheet->setSheetState(\PhpOffice\PhpSpreadsheet\Worksheet\Worksheet::SHEETSTATE_HIDDEN);
+
+    $dataSheet->setShowGridlines(false);
+    $dataSheet->freezePane('A2');
+
+    $helperColumnIndex = 1;
+    $definedRanges = [];
+    $emptyRangeName = 'TPL_EMPTY';
+    $dropdownSheet->setCellValue('A1', $emptyRangeName);
+    $dropdownSheet->setCellValue('A2', '');
+    $spreadsheet->addNamedRange(new \PhpOffice\PhpSpreadsheet\NamedRange($emptyRangeName, $dropdownSheet, '$A$2:$A$2'));
+    $helperColumnIndex = 2;
+
+    $writeListRange = static function (\PhpOffice\PhpSpreadsheet\Spreadsheet $book, \PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet, string $rangeName, array $values, int &$columnIndex) use (&$definedRanges): string {
+        $values = array_values(array_unique(array_values(array_filter(array_map(static fn($value): string => trim((string)$value), $values), static fn(string $value): bool => $value !== ''))));
+        if (!$values) {
+            $values = [''];
+        }
+        $col = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($columnIndex);
+        $sheet->setCellValue($col . '1', $rangeName);
+        foreach ($values as $offset => $value) {
+            $sheet->setCellValueExplicit($col . ($offset + 2), $value, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+        }
+        $rangeRef = '$' . $col . '$2:$' . $col . '$' . (count($values) + 1);
+        if (!isset($definedRanges[$rangeName])) {
+            $book->addNamedRange(new \PhpOffice\PhpSpreadsheet\NamedRange($rangeName, $sheet, $rangeRef));
+            $definedRanges[$rangeName] = true;
+        }
+        $columnIndex++;
+        return $rangeName;
+    };
+
+    $categoryRangeName = null;
+    $fieldMapByKey = [];
+    foreach ($inputColumns as $column) {
+        $fieldMapByKey[$column['key']] = $column;
+    }
+    foreach ($inputColumns as &$column) {
+        if (($column['validation_kind'] ?? '') === 'category') {
+            $categoryRangeName = $writeListRange($spreadsheet, $dropdownSheet, 'TPL_CATEGORY_LIST', $column['options'] ?? [], $helperColumnIndex);
+            foreach (get_asset_categories(false, $segmentId) as $category) {
+                $children = array_map(static fn(array $row): string => (string)$row['name'], get_asset_subcategories((int)$category['id'], false, $segmentId));
+                $writeListRange(
+                    $spreadsheet,
+                    $dropdownSheet,
+                    'TPL_CAT_' . asset_template_named_token((string)$category['name']),
+                    $children,
+                    $helperColumnIndex
+                );
+            }
+            $column['range_name'] = $categoryRangeName;
+        } elseif (($column['validation_kind'] ?? '') === 'dropdown') {
+            $column['range_name'] = $writeListRange(
+                $spreadsheet,
+                $dropdownSheet,
+                'TPL_LIST_' . asset_template_named_token((string)$column['key']),
+                $column['options'] ?? [],
+                $helperColumnIndex
+            );
+        } elseif (($column['validation_kind'] ?? '') === 'yes_no') {
+            $column['range_name'] = $writeListRange(
+                $spreadsheet,
+                $dropdownSheet,
+                'TPL_YESNO',
+                $column['options'] ?? ['Yes', 'No'],
+                $helperColumnIndex
+            );
+        } elseif (($column['validation_kind'] ?? '') === 'conditional_primary') {
+            $fieldToken = asset_template_named_token((string)$column['key']);
+            $column['range_name'] = $writeListRange(
+                $spreadsheet,
+                $dropdownSheet,
+                'TPL_COND_' . $fieldToken . '_LIST',
+                $column['options'] ?? [],
+                $helperColumnIndex
+            );
+            foreach (($column['conditional_map'] ?? []) as $primaryValue => $children) {
+                $writeListRange(
+                    $spreadsheet,
+                    $dropdownSheet,
+                    'TPL_COND_' . $fieldToken . '_' . asset_template_named_token((string)$primaryValue),
+                    is_array($children) ? $children : [],
+                    $helperColumnIndex
+                );
+            }
+        }
+    }
+    unset($column);
+
+    $columnLetters = [];
+    foreach ($displayColumns as $index => $column) {
+        $letter = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($index + 1);
+        $columnLetters[$column['key']] = $letter;
+        $dataSheet->setCellValue($letter . '1', asset_template_build_header_rich_text($column));
+        $dataSheet->getColumnDimension($letter)->setWidth(asset_template_column_width($column));
+    }
+
+    $lastColumnLetter = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex(count($displayColumns));
+    $dataSheet->getRowDimension(1)->setRowHeight(72);
+    for ($row = $startRow; $row <= $endRow; $row++) {
+        $dataSheet->setCellValueExplicit($columnLetters['serial'] . $row, (string)($row - 1), \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+    }
+
+    $requiredRefs = [];
+    foreach ($inputColumns as $column) {
+        if (!$column['required_input'] && !$column['required_final']) {
+            continue;
+        }
+        $requiredRefs[] = [
+            'ref' => $columnLetters[$column['key']] . $startRow,
+            'label' => $column['instruction_label'],
+        ];
+    }
+    $inputFirstLetter = $columnLetters[$inputColumns[0]['key'] ?? 'serial'] ?? 'B';
+    $inputLastLetter = $columnLetters[$inputColumns[count($inputColumns) - 1]['key'] ?? 'serial'] ?? $columnLetters['serial'];
+    for ($row = $startRow; $row <= $endRow; $row++) {
+        $rowRequiredRefs = array_map(static function (array $item) use ($row): array {
+            $columnPart = preg_replace('/\d+$/', '', $item['ref']);
+            return ['ref' => $columnPart . $row, 'label' => $item['label']];
+        }, $requiredRefs);
+        $instructionFormula = build_asset_template_instruction_formula($inputFirstLetter . $row . ':' . $inputLastLetter . $row, $rowRequiredRefs, $columnLetters['instruction'] . $row);
+        $dataSheet->setCellValue($columnLetters['instruction'] . $row, $instructionFormula);
+    }
+
+    $headerStyleRange = 'A1:' . $lastColumnLetter . '1';
+    $dataSheet->getStyle($headerStyleRange)->applyFromArray([
+        'alignment' => [
+            'wrapText' => true,
+            'vertical' => \PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_CENTER,
+            'horizontal' => \PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER,
+        ],
+        'fill' => [
+            'fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
+            'startColor' => ['rgb' => 'EAF1F8'],
+        ],
+        'borders' => [
+            'allBorders' => [
+                'borderStyle' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN,
+                'color' => ['rgb' => 'C4CBD3'],
+            ],
+        ],
+    ]);
+
+    $dataRange = 'A1:' . $lastColumnLetter . $endRow;
+    $dataSheet->getStyle($dataRange)->applyFromArray([
+        'borders' => [
+            'allBorders' => [
+                'borderStyle' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN,
+                'color' => ['rgb' => 'D0D4D9'],
+            ],
+        ],
+        'alignment' => [
+            'vertical' => \PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_TOP,
+            'wrapText' => true,
+        ],
+    ]);
+    $dataSheet->getStyle('A2:' . $lastColumnLetter . $endRow)->getFont()->setSize(10);
+    $dataSheet->getStyle($columnLetters['instruction'] . '2:' . $columnLetters['instruction'] . $endRow)->getAlignment()->setWrapText(true);
+
+    foreach ($inputColumns as $column) {
+        $colLetter = $columnLetters[$column['key']];
+        $dataSheet->getStyle($colLetter . $startRow . ':' . $colLetter . $endRow)
+            ->getProtection()
+            ->setLocked(\PhpOffice\PhpSpreadsheet\Style\Protection::PROTECTION_UNPROTECTED);
+
+        if ((string)$column['data_type'] === 'date') {
+            $dataSheet->getStyle($colLetter . $startRow . ':' . $colLetter . $endRow)
+                ->getNumberFormat()
+                ->setFormatCode('@');
+        } elseif ((string)$column['data_type'] === 'number' && trim((string)($column['number_format_rule'] ?? '')) !== '') {
+            $dataSheet->getStyle($colLetter . $startRow . ':' . $colLetter . $endRow)
+                ->getNumberFormat()
+                ->setFormatCode('@');
+        } elseif ((string)$column['data_type'] === 'number') {
+            $dataSheet->getStyle($colLetter . $startRow . ':' . $colLetter . $endRow)
+                ->getNumberFormat()
+                ->setFormatCode('0.############');
+        }
+
+        for ($row = $startRow; $row <= $endRow; $row++) {
+            $cellRef = $colLetter . $row;
+            $validation = $dataSheet->getCell($cellRef)->getDataValidation();
+            $validation->setAllowBlank(true);
+            $validation->setShowErrorMessage(true);
+            $validation->setErrorStyle(\PhpOffice\PhpSpreadsheet\Cell\DataValidation::STYLE_STOP);
+            $validation->setErrorTitle('Invalid Entry');
+            $validation->setShowInputMessage(false);
+
+            switch ((string)($column['validation_kind'] ?? '')) {
+                case 'category':
+                    $validation->setType(\PhpOffice\PhpSpreadsheet\Cell\DataValidation::TYPE_LIST);
+                    $validation->setShowDropDown(true);
+                    $validation->setFormula1('=TPL_CATEGORY_LIST');
+                    $validation->setError('Choose from dropdown.');
+                    break;
+                case 'subcategory':
+                    $parentRef = $columnLetters['category'] . $row;
+                    $validation->setType(\PhpOffice\PhpSpreadsheet\Cell\DataValidation::TYPE_LIST);
+                    $validation->setShowDropDown(true);
+                    $validation->setAllowBlank(false);
+                    $validation->setFormula1('=IF(' . $parentRef . '="",TPL_EMPTY,INDIRECT("TPL_CAT_"&' . asset_template_formula_named_token_expr($parentRef) . '))');
+                    $validation->setError('Choose valid sub-category.');
+                    break;
+                case 'dropdown':
+                    $validation->setType(\PhpOffice\PhpSpreadsheet\Cell\DataValidation::TYPE_LIST);
+                    $validation->setShowDropDown(true);
+                    $validation->setFormula1('=' . (string)$column['range_name']);
+                    $validation->setError('Choose from dropdown.');
+                    break;
+                case 'yes_no':
+                    $validation->setType(\PhpOffice\PhpSpreadsheet\Cell\DataValidation::TYPE_LIST);
+                    $validation->setShowDropDown(true);
+                    $validation->setFormula1('=TPL_YESNO');
+                    $validation->setError('Choose Yes or No.');
+                    break;
+                case 'conditional_primary':
+                    $validation->setType(\PhpOffice\PhpSpreadsheet\Cell\DataValidation::TYPE_LIST);
+                    $validation->setShowDropDown(true);
+                    $validation->setFormula1('=' . (string)$column['range_name']);
+                    $validation->setError('Choose from dropdown.');
+                    break;
+                case 'conditional_secondary':
+                    $parentRef = $columnLetters[(string)$column['parent_key']] . $row;
+                    $fieldToken = asset_template_named_token((string)$column['parent_key']);
+                    $validation->setType(\PhpOffice\PhpSpreadsheet\Cell\DataValidation::TYPE_LIST);
+                    $validation->setShowDropDown(true);
+                    $validation->setAllowBlank(false);
+                    $validation->setFormula1('=IF(' . $parentRef . '="",TPL_EMPTY,INDIRECT("TPL_COND_' . $fieldToken . '_"&' . asset_template_formula_named_token_expr($parentRef) . '))');
+                    $validation->setError('Choose valid item from dropdown.');
+                    break;
+                case 'date':
+                    $validation->setType(\PhpOffice\PhpSpreadsheet\Cell\DataValidation::TYPE_CUSTOM);
+                    $validation->setFormula1(asset_template_date_validation_formula($cellRef));
+                    $validation->setError('Use YYYY-MM-DD.');
+                    break;
+                case 'number':
+                    $validation->setType(\PhpOffice\PhpSpreadsheet\Cell\DataValidation::TYPE_CUSTOM);
+                    $validation->setFormula1(asset_template_number_validation_formula($cellRef, (string)($column['number_format_rule'] ?? '')));
+                    $validation->setError('Invalid number format.');
+                    break;
+                case 'text':
+                    if ((int)($column['text_max_length'] ?? 0) > 0) {
+                        $validation->setType(\PhpOffice\PhpSpreadsheet\Cell\DataValidation::TYPE_CUSTOM);
+                        $validation->setFormula1('=OR(' . $cellRef . '="",LEN(' . $cellRef . ')<=' . (int)$column['text_max_length'] . ')');
+                        $validation->setError('Max ' . (int)$column['text_max_length'] . ' characters.');
+                    }
+                    break;
+            }
+        }
+    }
+
+    $dataSheet->getProtection()->setPassword('1234');
+    $dataSheet->getProtection()->setSheet(true);
+    $dataSheet->getProtection()->setSort(false);
+    $dataSheet->getProtection()->setInsertRows(false);
+    $dataSheet->getProtection()->setFormatCells(false);
+    $dropdownSheet->getProtection()->setPassword('1234');
+    $dropdownSheet->getProtection()->setSheet(true);
+
+    return $spreadsheet;
 }
 
 function asset_template_headers(?int $segmentId = null): array

@@ -130,6 +130,17 @@ button:disabled { opacity: .6; cursor: not-allowed; }
   gap: 6px;
   flex-wrap: wrap;
 }
+.mandatory-marker {
+  display: inline-block;
+  margin-left: 4px;
+  font-weight: 800;
+}
+.mandatory-marker-input {
+  color: #12385d;
+}
+.mandatory-marker-final {
+  color: #9ab0c4;
+}
 .field-head-row {
   width: 100%;
   justify-content: flex-start;
