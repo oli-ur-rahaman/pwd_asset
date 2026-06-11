@@ -703,11 +703,15 @@ if ($action === 'asset_import_upload') {
         flash('error', 'Please choose an Excel file.');
         $boardRedirect();
     }
-    $result = parse_asset_import_file($_FILES['asset_file']['tmp_name'], $_FILES['asset_file']['name'], current_user(), input_int('segment_id'));
-    if ($result['errors']) {
-        flash('error', implode(' ', $result['errors']));
-    } else {
-        flash('success', 'Import file audited. Please review the rows below.');
+    try {
+        $result = parse_asset_import_file($_FILES['asset_file']['tmp_name'], $_FILES['asset_file']['name'], current_user(), input_int('segment_id'));
+        if ($result['errors']) {
+            flash('error', implode(' ', $result['errors']));
+        } else {
+            flash('success', 'Import file audited. Please review the rows below.');
+        }
+    } catch (Throwable $e) {
+        flash('error', 'Failed to read the uploaded Excel file. ' . $e->getMessage());
     }
     $boardRedirect();
 }

@@ -5950,9 +5950,14 @@ function parse_asset_import_file(string $tmpName, string $originalName, array $u
 {
     $segmentId = asset_normalize_segment_id($segmentId);
     ensure_library('PhpOffice\\PhpSpreadsheet\\IOFactory', 'PhpSpreadsheet is not installed.');
-    $spreadsheet = PhpOffice\PhpSpreadsheet\IOFactory::load($tmpName);
+    $reader = PhpOffice\PhpSpreadsheet\IOFactory::createReaderForFile($tmpName);
+    $reader->setReadDataOnly(true);
+    if (method_exists($reader, 'setReadEmptyCells')) {
+        $reader->setReadEmptyCells(false);
+    }
+    $spreadsheet = $reader->load($tmpName);
     $sheet = $spreadsheet->getActiveSheet();
-    $rows = $sheet->toArray(null, true, true, true);
+    $rows = $sheet->toArray(null, false, false, true);
     if (!$rows) {
         return ['errors' => ['Uploaded file is empty.'], 'rows' => []];
     }
