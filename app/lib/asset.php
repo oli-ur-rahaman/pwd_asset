@@ -5962,7 +5962,7 @@ function parse_asset_import_file(string $tmpName, string $originalName, array $u
     $spreadsheet = $reader->load($tmpName);
     $sheet = $spreadsheet->getActiveSheet();
     $lastInputColumn = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex(count($expectedKeys) + 1);
-    $lastRow = max(1, $sheet->getHighestDataRow($lastInputColumn));
+    $lastRow = max(1, $sheet->getHighestDataRow());
     $rows = $sheet->rangeToArray('A1:' . $lastInputColumn . $lastRow, null, false, false, true);
     if (!$rows) {
         return ['errors' => ['Uploaded file is empty.'], 'rows' => []];
