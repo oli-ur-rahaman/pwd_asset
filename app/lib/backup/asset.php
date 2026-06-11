@@ -5949,32 +5949,26 @@ function build_asset_template_rows(?int $segmentId = null): array
 function parse_asset_import_file(string $tmpName, string $originalName, array $user, ?int $segmentId = null): array
 {
     $segmentId = asset_normalize_segment_id($segmentId);
-    $expectedKeys = asset_import_expected_keys($segmentId);
-    if (!$expectedKeys) {
-        return ['errors' => ['No active import columns are configured.'], 'rows' => []];
-    }
     ensure_library('PhpOffice\\PhpSpreadsheet\\IOFactory', 'PhpSpreadsheet is not installed.');
-    $reader = PhpOffice\PhpSpreadsheet\IOFactory::createReaderForFile($tmpName);
-    $reader->setReadDataOnly(true);
-    if (method_exists($reader, 'setReadEmptyCells')) {
-        $reader->setReadEmptyCells(false);
-    }
-    $spreadsheet = $reader->load($tmpName);
+    $spreadsheet = PhpOffice\PhpSpreadsheet\IOFactory::load($tmpName);
     $sheet = $spreadsheet->getActiveSheet();
-    $lastInputColumn = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex(count($expectedKeys) + 1);
-    $lastRow = max(1, $sheet->getHighestDataRow($lastInputColumn));
-    $rows = $sheet->rangeToArray('A1:' . $lastInputColumn . $lastRow, null, false, false, true);
+    $rows = $sheet->toArray(null, true, true, true);
     if (!$rows) {
         return ['errors' => ['Uploaded file is empty.'], 'rows' => []];
     }
     array_shift($rows);
+    $expectedKeys = asset_import_expected_keys($segmentId);
+    if (!$expectedKeys) {
+        return ['errors' => ['No active import columns are configured.'], 'rows' => []];
+    }
 
     $importRows = [];
     $topErrors = [];
     foreach ($rows as $rowIndex => $cells) {
         $values = array_values($cells);
-        if ($values) {
+        if (count($values) >= 2) {
             array_shift($values);
+            array_pop($values);
         }
         $payload = [];
         $hasValue = false;
