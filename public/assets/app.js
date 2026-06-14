@@ -42,6 +42,152 @@ document.addEventListener('DOMContentLoaded', () => {
             return `<p>${html}</p>`;
         }).join('');
     };
+    const setupStickyTableHeaders = () => {
+        const candidateTables = Array.from(document.querySelectorAll('table')).filter((table) => table.tHead && table.tHead.querySelector('th'));
+        if (!candidateTables.length) {
+            return;
+        }
+        const layer = document.createElement('div');
+        layer.className = 'sticky-table-header-layer';
+        layer.setAttribute('aria-hidden', 'true');
+        document.body.appendChild(layer);
+
+        let activeTable = null;
+        let activeWrapper = null;
+
+        const isTableVisible = (table) => {
+            if (!table.isConnected) {
+                return false;
+            }
+            const modal = table.closest('.modal-backdrop');
+            if (modal && !modal.classList.contains('open')) {
+                return false;
+            }
+            const rect = table.getBoundingClientRect();
+            return rect.width > 0 && rect.height > 0;
+        };
+
+        const hideLayer = () => {
+            activeTable = null;
+            activeWrapper = null;
+            layer.classList.remove('is-visible');
+            layer.innerHTML = '';
+            layer.style.width = '';
+            layer.style.left = '';
+        };
+
+        const syncLayer = (table) => {
+            if (!table || !table.tHead) {
+                hideLayer();
+                return;
+            }
+            const wrapper = table.closest('.table-wrap') || table.parentElement;
+            if (!wrapper) {
+                hideLayer();
+                return;
+            }
+            const tableRect = table.getBoundingClientRect();
+            const headRect = table.tHead.getBoundingClientRect();
+            const wrapperRect = wrapper.getBoundingClientRect();
+            const headerHeight = Math.max(1, Math.round(headRect.height || table.tHead.offsetHeight || 0));
+            if (
+                wrapperRect.width <= 0
+                || tableRect.bottom <= headerHeight
+                || headRect.bottom > 0
+                || wrapperRect.bottom <= 0
+                || wrapperRect.top >= window.innerHeight
+            ) {
+                hideLayer();
+                return;
+            }
+
+            const cloneTable = table.cloneNode(false);
+            const cloneHead = table.tHead.cloneNode(true);
+            cloneTable.appendChild(cloneHead);
+            cloneTable.style.width = `${Math.round(table.offsetWidth)}px`;
+            cloneTable.style.transform = `translateX(${-wrapper.scrollLeft}px)`;
+
+            const originalRows = Array.from(table.tHead.rows);
+            const cloneRows = Array.from(cloneHead.rows);
+            originalRows.forEach((row, rowIndex) => {
+                const cloneRow = cloneRows[rowIndex];
+                if (!cloneRow) {
+                    return;
+                }
+                Array.from(row.cells).forEach((cell, cellIndex) => {
+                    const cloneCell = cloneRow.cells[cellIndex];
+                    if (!cloneCell) {
+                        return;
+                    }
+                    const width = cell.getBoundingClientRect().width;
+                    cloneCell.style.width = `${Math.round(width)}px`;
+                    cloneCell.style.minWidth = `${Math.round(width)}px`;
+                    cloneCell.style.maxWidth = `${Math.round(width)}px`;
+                });
+            });
+
+            layer.innerHTML = '';
+            layer.appendChild(cloneTable);
+            layer.style.left = `${Math.round(wrapperRect.left)}px`;
+            layer.style.width = `${Math.round(wrapperRect.width)}px`;
+            layer.classList.add('is-visible');
+            activeTable = table;
+            activeWrapper = wrapper;
+        };
+
+        const pickActiveTable = () => {
+            let bestTable = null;
+            let bestTop = -Infinity;
+            candidateTables.forEach((table) => {
+                if (!isTableVisible(table)) {
+                    return;
+                }
+                const wrapper = table.closest('.table-wrap') || table.parentElement;
+                if (!wrapper) {
+                    return;
+                }
+                const rect = table.getBoundingClientRect();
+                const headRect = table.tHead.getBoundingClientRect();
+                const headerHeight = Math.max(1, Math.round(headRect.height || table.tHead.offsetHeight || 0));
+                const shouldStick = headRect.bottom <= 0 && rect.bottom > headerHeight;
+                if (!shouldStick) {
+                    return;
+                }
+                if (rect.top > bestTop) {
+                    bestTop = rect.top;
+                    bestTable = table;
+                }
+            });
+            if (!bestTable) {
+                hideLayer();
+                return;
+            }
+            syncLayer(bestTable);
+        };
+
+        const scheduleUpdate = () => {
+            window.requestAnimationFrame(pickActiveTable);
+        };
+
+        window.addEventListener('scroll', scheduleUpdate, { passive: true });
+        window.addEventListener('resize', scheduleUpdate);
+        candidateTables.forEach((table) => {
+            const wrapper = table.closest('.table-wrap') || table.parentElement;
+            if (wrapper) {
+                wrapper.addEventListener('scroll', () => {
+                    if (table === activeTable || wrapper === activeWrapper) {
+                        scheduleUpdate();
+                    }
+                }, { passive: true });
+            }
+        });
+        document.querySelectorAll('[data-modal], .modal-close').forEach((trigger) => {
+            trigger.addEventListener('click', () => {
+                window.setTimeout(scheduleUpdate, 50);
+            });
+        });
+        scheduleUpdate();
+    };
 
     const pageKey = new URLSearchParams(window.location.search).get('page') || 'board';
     const scrollKey = `pwd-asset-scroll:${window.location.pathname}:${pageKey}`;
@@ -58,6 +204,7 @@ document.addEventListener('DOMContentLoaded', () => {
             window.scrollTo(0, target);
         });
     };
+    setupStickyTableHeaders();
     restoreScroll();
     let scrollSaveTimer = null;
     const persistScroll = () => {
@@ -461,6 +608,380 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    const bimhMetaNode = document.getElementById('bimh-picker-meta');
+    let bimhMeta = { lookup_url: 'index.php?page=bimh_lookup', scope: {}, rows: [] };
+    if (bimhMetaNode) {
+        try {
+            bimhMeta = JSON.parse(bimhMetaNode.textContent || '{}');
+        } catch (error) {
+            bimhMeta = { lookup_url: 'index.php?page=bimh_lookup', scope: {}, rows: [] };
+        }
+    }
+    const bimhLookupCache = new Map();
+    const bimhPickerModal = document.getElementById('bimh-picker-modal');
+    const bimhPickerSearch = document.getElementById('bimh-picker-search');
+    const bimhPickerCircle = document.getElementById('bimh-picker-circle');
+    const bimhPickerDivision = document.getElementById('bimh-picker-division');
+    const bimhPickerBody = document.getElementById('bimh-picker-body');
+    const bimhPickerRows = Array.isArray(bimhMeta.rows) ? bimhMeta.rows : [];
+    let activeBimhField = null;
+
+    const normalizeBimhSearchText = (value) => String(value || '')
+        .toLowerCase()
+        .replace(/\s+/g, ' ')
+        .trim();
+    const normalizeBimhCompactText = (value) => String(value || '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '');
+
+    const bimhFieldSuggestions = (query) => {
+        const normalized = normalizeBimhSearchText(query);
+        const normalizedCompact = normalizeBimhCompactText(query);
+        const rows = !normalized
+            ? bimhPickerRows
+            : bimhPickerRows.filter((row) => {
+                const idText = normalizeBimhSearchText(row.bimh_id || '');
+                const estText = normalizeBimhSearchText(row.est_name || '');
+                const idCompact = normalizeBimhCompactText(row.bimh_id || '');
+                const estCompact = normalizeBimhCompactText(row.est_name || '');
+                return idText.includes(normalized)
+                    || estText.includes(normalized)
+                    || (normalizedCompact !== '' && (idCompact.includes(normalizedCompact) || estCompact.includes(normalizedCompact)));
+            });
+        return rows;
+    };
+
+    const setBimhEstName = (fieldBox, value) => {
+        const target = fieldBox?.querySelector('[data-bimh-est-name]');
+        if (target) {
+            const text = String(value || '').trim();
+            target.textContent = text;
+            const isNotFound = text === 'BIMH ID is not in the Database.';
+            target.classList.toggle('is-not-found', isNotFound);
+        }
+    };
+
+    const positionBimhSuggestions = (fieldBox) => {
+        const menu = fieldBox?.querySelector('[data-bimh-suggestions]');
+        const input = fieldBox?.querySelector('[data-bimh-id-input]');
+        if (!menu || !input || menu.hidden) {
+            return;
+        }
+        menu.style.top = '';
+        menu.style.bottom = '';
+        menu.style.left = '';
+        menu.style.width = '';
+        const inputRect = input.getBoundingClientRect();
+        const fieldRect = fieldBox.getBoundingClientRect();
+        const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+        const estimatedHeight = Math.min(8, Math.max(1, menu.childElementCount)) * 44 + 16;
+        const spaceBelow = viewportHeight - inputRect.bottom;
+        const openUpward = spaceBelow < Math.min(estimatedHeight, 320) && inputRect.top > spaceBelow;
+        menu.style.left = `${Math.round(inputRect.left - fieldRect.left)}px`;
+        menu.style.width = `${Math.round(inputRect.width)}px`;
+        if (openUpward) {
+            menu.style.bottom = `${Math.round(fieldRect.bottom - inputRect.top + 6)}px`;
+        } else {
+            menu.style.top = `${Math.round(inputRect.bottom - fieldRect.top + 6)}px`;
+        }
+    };
+
+    const hideBimhSuggestions = (fieldBox) => {
+        const menu = fieldBox?.querySelector('[data-bimh-suggestions]');
+        if (!menu) {
+            return;
+        }
+        menu.hidden = true;
+        menu.innerHTML = '';
+        fieldBox.classList.remove('is-suggestion-open');
+    };
+
+    const applyBimhSuggestion = (fieldBox, row) => {
+        const input = fieldBox?.querySelector('[data-bimh-id-input]');
+        if (!input || !row) {
+            return;
+        }
+        input.value = String(row.bimh_id || '');
+        setBimhEstName(fieldBox, row.est_name || '');
+        hideBimhSuggestions(fieldBox);
+    };
+
+    const showBimhSuggestions = (fieldBox, query = '') => {
+        const menu = fieldBox?.querySelector('[data-bimh-suggestions]');
+        if (!menu) {
+            return;
+        }
+        const rows = bimhFieldSuggestions(query);
+        if (!rows.length) {
+            hideBimhSuggestions(fieldBox);
+            return;
+        }
+        menu.innerHTML = rows.map((row, index) => `
+            <button type="button" class="bimh-suggestion-option" data-bimh-suggestion-index="${index}">
+                <span class="bimh-suggestion-id">${escapeHtml(row.bimh_id || '')}</span>
+                <span class="bimh-suggestion-name">${escapeHtml(row.est_name || '')}</span>
+            </button>
+        `).join('');
+        menu.hidden = false;
+        fieldBox.classList.add('is-suggestion-open');
+        positionBimhSuggestions(fieldBox);
+        Array.from(menu.querySelectorAll('[data-bimh-suggestion-index]')).forEach((button) => {
+            button.addEventListener('mousedown', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                const row = rows[Number.parseInt(button.getAttribute('data-bimh-suggestion-index') || '-1', 10)];
+                applyBimhSuggestion(fieldBox, row);
+                const input = fieldBox.querySelector('[data-bimh-id-input]');
+                if (input) {
+                    input.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+            });
+        });
+    };
+
+    const fetchBimhLookup = async (bimhId) => {
+        const normalized = String(bimhId || '').trim();
+        if (!normalized) {
+            return { est_name: '' };
+        }
+        if (bimhLookupCache.has(normalized)) {
+            return bimhLookupCache.get(normalized);
+        }
+        const response = await fetch(`${bimhMeta.lookup_url || 'index.php?page=bimh_lookup'}&bimh_id=${encodeURIComponent(normalized)}`, {
+            credentials: 'same-origin',
+            headers: { Accept: 'application/json' },
+        });
+        if (!response.ok) {
+            return { est_name: 'Connection error.' };
+        }
+        const payload = await response.json();
+        bimhLookupCache.set(normalized, payload || { est_name: 'BIMH ID is not in the Database.' });
+        return payload || { est_name: 'BIMH ID is not in the Database.' };
+    };
+
+    const runBimhLookup = async (fieldBox) => {
+        const input = fieldBox?.querySelector('[data-bimh-id-input]');
+        if (!input) {
+            return;
+        }
+        const requestedValue = String(input.value || '').trim();
+        if (!requestedValue) {
+            setBimhEstName(fieldBox, '');
+            return;
+        }
+        setBimhEstName(fieldBox, 'Checking...');
+        const result = await fetchBimhLookup(requestedValue);
+        if (String(input.value || '').trim() !== requestedValue) {
+            return;
+        }
+        setBimhEstName(fieldBox, result.est_name || 'BIMH ID is not in the Database.');
+    };
+
+    const bindBimhField = (fieldBox, autoLookup = true) => {
+        if (!fieldBox || fieldBox.dataset.bimhBound === '1') {
+            if (autoLookup && fieldBox) {
+                const input = fieldBox.querySelector('[data-bimh-id-input]');
+                const estTarget = fieldBox.querySelector('[data-bimh-est-name]');
+                if (input && estTarget && String(input.value || '').trim() !== '' && String(estTarget.textContent || '').trim() === '') {
+                    runBimhLookup(fieldBox);
+                }
+            }
+            return;
+        }
+        fieldBox.dataset.bimhBound = '1';
+        const input = fieldBox.querySelector('[data-bimh-id-input]');
+        const pickerButton = fieldBox.querySelector('[data-bimh-picker-open]');
+        if (pickerButton && bimhPickerModal) {
+            pickerButton.addEventListener('click', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                activeBimhField = fieldBox;
+                hideBimhSuggestions(fieldBox);
+                if (bimhPickerSearch) {
+                    bimhPickerSearch.value = '';
+                }
+                if (bimhPickerCircle) {
+                    bimhPickerCircle.value = '';
+                }
+                syncBimhDivisionOptions();
+                if (bimhPickerDivision) {
+                    bimhPickerDivision.value = '';
+                }
+                bimhPickerModal.classList.add('open');
+                bimhPickerModal.setAttribute('aria-hidden', 'false');
+                if (bimhPickerSearch) {
+                    bimhPickerSearch.focus();
+                }
+                renderBimhPickerRows();
+            });
+        }
+        if (input) {
+            input.addEventListener('input', () => {
+                const currentValue = String(input.value || '');
+                if (currentValue.trim() === '') {
+                    hideBimhSuggestions(fieldBox);
+                    return;
+                }
+                showBimhSuggestions(fieldBox, currentValue);
+            });
+            input.addEventListener('change', () => runBimhLookup(fieldBox));
+            input.addEventListener('blur', () => {
+                window.setTimeout(() => hideBimhSuggestions(fieldBox), 120);
+                runBimhLookup(fieldBox);
+            });
+        }
+        if (autoLookup && input && String(input.value || '').trim() !== '') {
+            runBimhLookup(fieldBox);
+        }
+    };
+
+    const fillSelectOptions = (select, options, placeholder = 'All') => {
+        if (!select) {
+            return;
+        }
+        const previous = select.value;
+        select.innerHTML = '';
+        const blank = document.createElement('option');
+        blank.value = '';
+        blank.textContent = placeholder;
+        select.appendChild(blank);
+        options.forEach((item) => {
+            const option = document.createElement('option');
+            option.value = String(item.value || '');
+            option.textContent = String(item.label || '');
+            select.appendChild(option);
+        });
+        select.value = options.some((item) => String(item.value || '') === previous) ? previous : '';
+    };
+
+    const buildBimhFilterOptions = () => {
+        const circleMap = new Map();
+        const divisionMap = new Map();
+        bimhPickerRows.forEach((row) => {
+            const circleId = String(row.circle_id || '');
+            const divisionId = String(row.division_id || '');
+            if (circleId && !circleMap.has(circleId)) {
+                circleMap.set(circleId, { value: circleId, label: row.circle_name || circleId });
+            }
+            if (divisionId && !divisionMap.has(divisionId)) {
+                divisionMap.set(divisionId, { value: divisionId, label: row.division_name || divisionId, circle_id: circleId });
+            }
+        });
+        fillSelectOptions(bimhPickerCircle, Array.from(circleMap.values()).sort((a, b) => String(a.label).localeCompare(String(b.label))));
+        fillSelectOptions(bimhPickerDivision, Array.from(divisionMap.values()).sort((a, b) => String(a.label).localeCompare(String(b.label))));
+    };
+
+    const syncBimhDivisionOptions = () => {
+        if (!bimhPickerDivision) {
+            return;
+        }
+        const selectedCircle = String(bimhPickerCircle?.value || '');
+        const divisionMap = new Map();
+        bimhPickerRows.forEach((row) => {
+            const divisionId = String(row.division_id || '');
+            const circleId = String(row.circle_id || '');
+            if (!divisionId) {
+                return;
+            }
+            if (selectedCircle && circleId !== selectedCircle) {
+                return;
+            }
+            if (!divisionMap.has(divisionId)) {
+                divisionMap.set(divisionId, { value: divisionId, label: row.division_name || divisionId });
+            }
+        });
+        fillSelectOptions(bimhPickerDivision, Array.from(divisionMap.values()).sort((a, b) => String(a.label).localeCompare(String(b.label))));
+    };
+
+    const getFilteredBimhRows = () => {
+        const search = String(bimhPickerSearch?.value || '').trim().toLowerCase();
+        const selectedCircle = String(bimhPickerCircle?.value || '');
+        const selectedDivision = String(bimhPickerDivision?.value || '');
+        return bimhPickerRows.filter((row) => {
+            if (selectedCircle && String(row.circle_id || '') !== selectedCircle) {
+                return false;
+            }
+            if (selectedDivision && String(row.division_id || '') !== selectedDivision) {
+                return false;
+            }
+            if (!search) {
+                return true;
+            }
+            const haystack = `${row.bimh_id || ''} ${row.est_name || ''} ${row.upazila_thana || ''} ${row.district || ''} ${row.circle_name || ''} ${row.division_name || ''}`.toLowerCase();
+            return haystack.includes(search);
+        });
+    };
+
+    function renderBimhPickerRows() {
+        if (!bimhPickerBody) {
+            return;
+        }
+        const filteredRows = getFilteredBimhRows();
+        const showCircle = !!bimhMeta.scope?.show_circle_filter;
+        const showDivision = !!bimhMeta.scope?.show_division_filter;
+        const colspan = 5 + (showCircle ? 1 : 0) + (showDivision ? 1 : 0);
+        if (!filteredRows.length) {
+            bimhPickerBody.innerHTML = `<tr><td colspan="${colspan}" class="muted">No establishment found.</td></tr>`;
+            return;
+        }
+        bimhPickerBody.innerHTML = filteredRows.map((row, index) => {
+            const cells = [
+                `<td>${escapeHtml(row.bimh_id || '')}</td>`,
+                `<td>${escapeHtml(row.est_name || '')}</td>`,
+                `<td>${escapeHtml(row.upazila_thana || '')}</td>`,
+                `<td>${escapeHtml(row.district || '')}</td>`,
+            ];
+            if (showCircle) {
+                cells.push(`<td>${escapeHtml(row.circle_name || '')}</td>`);
+            }
+            if (showDivision) {
+                cells.push(`<td>${escapeHtml(row.division_name || '')}</td>`);
+            }
+            cells.push(`<td><button type="button" class="btn-small" data-bimh-select-row="${index}">Select</button></td>`);
+            return `<tr>${cells.join('')}</tr>`;
+        }).join('');
+        Array.from(bimhPickerBody.querySelectorAll('[data-bimh-select-row]')).forEach((button) => {
+            button.addEventListener('click', () => {
+                const row = filteredRows[Number.parseInt(button.getAttribute('data-bimh-select-row') || '-1', 10)];
+                if (!row || !activeBimhField) {
+                    return;
+                }
+                const input = activeBimhField.querySelector('[data-bimh-id-input]');
+                if (input) {
+                    input.value = String(row.bimh_id || '');
+                    input.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+                setBimhEstName(activeBimhField, row.est_name || '');
+                if (bimhPickerModal) {
+                    bimhPickerModal.classList.remove('open');
+                    bimhPickerModal.setAttribute('aria-hidden', 'true');
+                }
+            });
+        });
+    }
+
+    buildBimhFilterOptions();
+    syncBimhDivisionOptions();
+    if (bimhPickerSearch) {
+        bimhPickerSearch.addEventListener('input', renderBimhPickerRows);
+    }
+    if (bimhPickerCircle) {
+        bimhPickerCircle.addEventListener('change', () => {
+            syncBimhDivisionOptions();
+            renderBimhPickerRows();
+        });
+    }
+    if (bimhPickerDivision) {
+        bimhPickerDivision.addEventListener('change', renderBimhPickerRows);
+    }
+    document.querySelectorAll('[data-bimh-field]').forEach((fieldBox) => bindBimhField(fieldBox, true));
+    window.addEventListener('resize', () => {
+        document.querySelectorAll('.bimh-field.is-suggestion-open').forEach((fieldBox) => positionBimhSuggestions(fieldBox));
+    });
+    window.addEventListener('scroll', () => {
+        document.querySelectorAll('.bimh-field.is-suggestion-open').forEach((fieldBox) => positionBimhSuggestions(fieldBox));
+    }, { passive: true });
+
     const filterCategory = document.querySelector('#asset-filters select[name="category_id"]');
     const filterSubcategory = document.querySelector('#asset-filters select[name="subcategory_id"]');
     if (filterCategory && filterSubcategory) {
@@ -515,6 +1036,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     value,
                     label: option.getAttribute('data-option-label') || value,
                     meta,
+                    disabled: option.getAttribute('data-option-disabled') === '1',
                 });
             });
             pickerOptionSources.set(picker, source);
@@ -569,14 +1091,22 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (queryMatch && dependencyMatch) {
                     const button = document.createElement('button');
                     button.type = 'button';
-                    button.className = 'filter-picker-option';
+                    button.className = `filter-picker-option${option.disabled ? ' is-disabled' : ''}`;
                     button.setAttribute('data-option-value', option.value);
                     button.setAttribute('data-option-label', option.label);
+                    if (option.disabled) {
+                        button.setAttribute('data-option-disabled', '1');
+                        button.setAttribute('title', 'Not present in the table.');
+                        button.setAttribute('aria-disabled', 'true');
+                    }
                     Object.entries(option.meta || {}).forEach(([metaKey, metaValue]) => {
                         button.setAttribute(`data-${metaKey}`, metaValue);
                     });
                     button.textContent = option.label;
                     button.addEventListener('click', () => {
+                        if (option.disabled) {
+                            return;
+                        }
                         setPickerSelection(picker, option.value, option.label);
                         closePicker(picker);
                         getPickerTextInput(picker)?.dispatchEvent(new Event('change', { bubbles: true }));
@@ -685,8 +1215,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const currentValue = getPickerValue(subcategoryPicker);
             const stillVisible = visible.some((option) => option.getAttribute('data-option-value') === currentValue);
             if (!stillVisible) {
-                if (visible.length === 1) {
-                    setPickerSelection(subcategoryPicker, visible[0].getAttribute('data-option-value') || '', visible[0].getAttribute('data-option-label') || '');
+                const enabledVisible = visible.filter((option) => option.getAttribute('data-option-disabled') !== '1');
+                if (enabledVisible.length === 1) {
+                    setPickerSelection(subcategoryPicker, enabledVisible[0].getAttribute('data-option-value') || '', enabledVisible[0].getAttribute('data-option-label') || '');
                 } else {
                     setPickerSelection(subcategoryPicker, '', '');
                 }
@@ -742,8 +1273,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 const currentValue = getPickerValue(picker);
                 const stillVisible = visible.some((option) => option.getAttribute('data-option-value') === currentValue);
                 if (!stillVisible) {
-                    if (visible.length === 1) {
-                        setPickerSelection(picker, visible[0].getAttribute('data-option-value') || '', visible[0].getAttribute('data-option-label') || '');
+                    const enabledVisible = visible.filter((option) => option.getAttribute('data-option-disabled') !== '1');
+                    if (enabledVisible.length === 1) {
+                        setPickerSelection(picker, enabledVisible[0].getAttribute('data-option-value') || '', enabledVisible[0].getAttribute('data-option-label') || '');
                     } else {
                         setPickerSelection(picker, '', '');
                     }
@@ -782,36 +1314,20 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!childPicker) {
                 return;
             }
-            let map = {};
-            try {
-                map = JSON.parse(primaryPicker?.getAttribute('data-filter-conditional-map') || '{}');
-            } catch (error) {
-                map = {};
-            }
-            const allChildOptions = [];
-            Object.entries(map).forEach(([primaryValue, items]) => {
-                (items || []).forEach((item) => {
-                    if (!allChildOptions.some((option) => option.value === item && (option.meta?.primary || '') === primaryValue)) {
-                        allChildOptions.push({
-                            value: item,
-                            label: item,
-                            meta: { primary: primaryValue },
-                        });
-                    }
-                });
-            });
-            setPickerSourceOptions(childPicker, allChildOptions);
             const previous = getPickerValue(childPicker) || '';
             const visible = renderPickerMenu(childPicker, '', getPickerMatcher(childPicker));
             const stillVisible = visible.some((option) => option.getAttribute('data-option-value') === previous);
             if (stillVisible) {
                 setPickerSelection(childPicker, previous, previous);
-            } else if (visible.length === 1) {
-                setPickerSelection(childPicker, visible[0].getAttribute('data-option-value') || '', visible[0].getAttribute('data-option-label') || '');
-            } else if (getPickerValue(primaryPicker) === '' || getPickerValue(primaryPicker) === '0') {
-                setPickerSelection(childPicker, '', '');
             } else {
-                setPickerSelection(childPicker, '', '');
+                const enabledVisible = visible.filter((option) => option.getAttribute('data-option-disabled') !== '1');
+                if (enabledVisible.length === 1) {
+                    setPickerSelection(childPicker, enabledVisible[0].getAttribute('data-option-value') || '', enabledVisible[0].getAttribute('data-option-label') || '');
+                } else if (getPickerValue(primaryPicker) === '' || getPickerValue(primaryPicker) === '0') {
+                    setPickerSelection(childPicker, '', '');
+                } else {
+                    setPickerSelection(childPicker, '', '');
+                }
             }
         };
 
@@ -992,6 +1508,54 @@ document.addEventListener('DOMContentLoaded', () => {
         downloadDivision.addEventListener('change', filterByOffice);
         syncDownloadScope();
         filterByOffice();
+    }
+
+    const declarationToggleButtons = Array.from(document.querySelectorAll('[data-declaration-toggle]'));
+    const declarationSections = Array.from(document.querySelectorAll('[data-declaration-section]'));
+    if (declarationToggleButtons.length && declarationSections.length) {
+        const declarationToggleStorageKey = `pwd-asset-declarations-toggle:${window.location.pathname}`;
+        let storedDeclarationState = {};
+        try {
+            storedDeclarationState = JSON.parse(sessionStorage.getItem(declarationToggleStorageKey) || '{}') || {};
+        } catch (error) {
+            storedDeclarationState = {};
+        }
+        const saveDeclarationState = () => {
+            const state = {};
+            declarationToggleButtons.forEach((button) => {
+                const key = button.getAttribute('data-declaration-toggle') || '';
+                if (!key) {
+                    return;
+                }
+                state[key] = button.classList.contains('is-active');
+            });
+            sessionStorage.setItem(declarationToggleStorageKey, JSON.stringify(state));
+        };
+        declarationToggleButtons.forEach((button) => {
+            const key = button.getAttribute('data-declaration-toggle') || '';
+            if (!key || !Object.prototype.hasOwnProperty.call(storedDeclarationState, key)) {
+                return;
+            }
+            const shouldShow = !!storedDeclarationState[key];
+            button.classList.toggle('is-active', shouldShow);
+            const section = document.querySelector(`[data-declaration-section="${key}"]`);
+            if (section) {
+                section.toggleAttribute('hidden', !shouldShow);
+            }
+        });
+        declarationToggleButtons.forEach((button) => {
+            button.addEventListener('click', () => {
+                const key = button.getAttribute('data-declaration-toggle') || '';
+                const section = document.querySelector(`[data-declaration-section="${key}"]`);
+                if (!section) {
+                    return;
+                }
+                const isHidden = section.hasAttribute('hidden');
+                section.toggleAttribute('hidden', !isHidden);
+                button.classList.toggle('is-active', isHidden);
+                saveDeclarationState();
+            });
+        });
     }
 
     const usersFilters = document.getElementById('users-filters');
@@ -1368,6 +1932,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
             }
 
+            row.querySelectorAll('[data-bimh-field]').forEach((fieldBox) => {
+                bindBimhField(fieldBox, true);
+            });
             syncSubcategoryOptions(row);
             syncReviewConditionalSelects(row);
             validateRow(row);
@@ -1394,6 +1961,32 @@ document.addEventListener('DOMContentLoaded', () => {
             const td = document.createElement('td');
             td.className = 'cell-valid';
             let input;
+            if (field.data_type === 'bimh') {
+                const wrapper = document.createElement('div');
+                wrapper.className = 'bimh-field';
+                wrapper.setAttribute('data-bimh-field', '');
+                wrapper.innerHTML = `
+                    <div class="bimh-input-row">
+                        <input
+                            type="text"
+                            class="review-input bimh-id-input"
+                            name="rows[${index}][fields][${field.field_key}]"
+                            data-review-role="field"
+                            data-field-key="${field.field_key}"
+                            data-field-type="${field.data_type}"
+                            data-required="${field.required ? '1' : '0'}"
+                            data-number-format-rule="${field.number_format_rule || ''}"
+                            data-text-max-length="${field.text_max_length || '0'}"
+                            data-bimh-id-input
+                            data-bimh-field-key="${field.field_key}">
+                        <button type="button" class="icon-only-button bimh-picker-button" data-bimh-picker-open title="Pick establishment" aria-label="Pick establishment">&#x1F50D;</button>
+                    </div>
+                    <div class="bimh-suggestion-menu" data-bimh-suggestions hidden></div>
+                    <div class="bimh-est-name-box" data-bimh-est-name></div>
+                `;
+                td.appendChild(wrapper);
+                return td;
+            }
             if (field.data_type === 'dropdown' || field.data_type === 'yes_no' || field.data_type === 'conditional') {
                 input = document.createElement('select');
                 const placeholder = document.createElement('option');

@@ -34,6 +34,23 @@ $superadminUsers = is_superadmin() ? get_superadmin_additional_users() : [];
 </section>
 
 <?php if (is_superadmin()): ?>
+    <section class="card">
+        <h2>BIMH Data</h2>
+        <p class="hint">This is a global BIMH master upload. If a BIMH ID already exists, that row will be updated. If the BIMH ID is new, a new row will be created. Duplicate BIMH IDs cannot exist in the database because `BIMH ID` is the unique primary key.</p>
+        <?php if (!can_manage_superadmin_scope()): ?>
+            <p class="hint">View-only superadmin users can see this section but cannot upload BIMH data.</p>
+        <?php else: ?>
+            <form method="post" action="index.php" enctype="multipart/form-data" class="grid profile-form">
+                <?= csrf_input(); ?>
+                <input type="hidden" name="action" value="upload_bimh_data">
+                <label>Upload BIMH Excel File
+                    <input type="file" name="bimh_file" accept=".xlsx,.xls" required>
+                </label>
+                <button type="submit" class="btn-small">Update BIMH Data</button>
+            </form>
+        <?php endif; ?>
+    </section>
+
     <section class="card" id="profile-superadmin-users">
         <div class="hero-row office-manage-users-head">
             <div>

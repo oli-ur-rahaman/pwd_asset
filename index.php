@@ -377,6 +377,26 @@ if ($action === 'upload_asset_template') {
     $adminRedirect();
 }
 
+if ($action === 'upload_bimh_data') {
+    if (!can_manage_superadmin_scope()) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
+    try {
+        $summary = save_uploaded_bimh_workbook($_FILES['bimh_file'] ?? []);
+        flash(
+            'success',
+            'BIMH data uploaded successfully. Total processed: '
+            . (int)($summary['imported'] ?? 0)
+            . ', new rows: ' . (int)($summary['inserted'] ?? 0)
+            . ', updated rows: ' . (int)($summary['updated'] ?? 0) . '.'
+        );
+    } catch (Throwable $e) {
+        flash('error', $e->getMessage());
+    }
+    $adminRedirect();
+}
+
 if ($action === 'create_office_order') {
     if (!can_manage_superadmin_scope()) {
         http_response_code(403);
@@ -489,11 +509,20 @@ if ($action === 'asset_reset_declarations') {
     } else {
         $pairs[] = ['office_type' => input_int('office_type'), 'office_id' => input_int('office_id')];
     }
-    $count = reset_office_asset_declarations($pairs, (int)current_user()['id'], input_int('segment_id'));
-    flash('success', $count . ' declaration(s) reset.');
+    $resetAllSegments = input_int('reset_all_segments', 0) === 1;
+    if ($resetAllSegments) {
+        $count = 0;
+        foreach (get_asset_segments(true) as $segment) {
+            $count += reset_office_asset_declarations($pairs, (int)current_user()['id'], (int)$segment['id']);
+        }
+        flash('success', $count . ' declaration(s) reset across all segments.');
+    } else {
+        $count = reset_office_asset_declarations($pairs, (int)current_user()['id'], input_int('segment_id'));
+        flash('success', $count . ' declaration(s) reset.');
+    }
     $params = ['page' => 'declarations'];
     $segmentId = input_int('segment_id');
-    if ($segmentId > 0) {
+    if (!$resetAllSegments && $segmentId > 0) {
         $params['segment_id'] = $segmentId;
     }
     redirect('index.php?' . http_build_query($params));
@@ -1101,6 +1130,26 @@ if ($page === 'office_order_file') {
 
 if ($page === 'asset_file') {
     stream_asset_file((int)request_str('id', '0'), current_user());
+}
+
+if ($page === 'bimh_lookup') {
+    $user = current_user();
+    if (!$user) {
+        http_response_code(403);
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode(['ok' => false, 'message' => 'Not allowed.']);
+        exit;
+    }
+    $bimhId = trim((string)request_str('bimh_id', ''));
+    $estName = asset_bimh_est_name_for_id($bimhId);
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode([
+        'ok' => true,
+        'bimh_id' => $bimhId,
+        'est_name' => $estName,
+        'found' => $bimhId !== '' && $estName !== '' && $estName !== 'BIMH ID is not in the Database.',
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    exit;
 }
 
 if ($page === 'office_orders') {

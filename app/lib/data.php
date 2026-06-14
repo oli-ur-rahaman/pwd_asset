@@ -15,24 +15,24 @@ function get_fy_list(): array
 function get_divisions_for_user(array $user): array
 {
     if ((int)$user['office_type'] === 4 && !empty($user['division_id'])) {
-        $stmt = db()->prepare('SELECT id, office_name, zone_id, circle_id FROM divisions WHERE id = ?');
+        $stmt = db()->prepare('SELECT id, office_name, office_address, zone_id, circle_id FROM divisions WHERE id = ?');
         $stmt->execute([$user['division_id']]);
         return $stmt->fetchAll();
     }
 
     if ((int)$user['office_type'] === 3 && !empty($user['circle_id'])) {
-        $stmt = db()->prepare('SELECT id, office_name, zone_id, circle_id FROM divisions WHERE circle_id = ? ORDER BY office_name');
+        $stmt = db()->prepare('SELECT id, office_name, office_address, zone_id, circle_id FROM divisions WHERE circle_id = ? ORDER BY office_name');
         $stmt->execute([$user['circle_id']]);
         return $stmt->fetchAll();
     }
 
     if ((int)$user['office_type'] === 2 && !empty($user['zone_id'])) {
-        $stmt = db()->prepare('SELECT id, office_name, zone_id, circle_id FROM divisions WHERE zone_id = ? ORDER BY office_name');
+        $stmt = db()->prepare('SELECT id, office_name, office_address, zone_id, circle_id FROM divisions WHERE zone_id = ? ORDER BY office_name');
         $stmt->execute([$user['zone_id']]);
         return $stmt->fetchAll();
     }
 
-    $stmt = db()->query('SELECT id, office_name, zone_id, circle_id FROM divisions ORDER BY office_name');
+    $stmt = db()->query('SELECT id, office_name, office_address, zone_id, circle_id FROM divisions ORDER BY office_name');
     return $stmt->fetchAll();
 }
 

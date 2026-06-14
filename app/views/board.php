@@ -120,6 +120,8 @@ foreach ($fields as $field) {
         'has_help' => asset_field_has_help($field),
     ];
 }
+$bimhPickerData = asset_bimh_picker_rows($user);
+$bimhPickerScope = asset_bimh_picker_scope($user);
 $availableTableColumns = asset_table_available_columns($fields, $uiFieldLabels, $currentOfficeViewScope, $activeSegmentId);
 $columnPreferenceMap = get_asset_table_column_preferences((int)$user['id'], $activeSegmentId);
 $filterCatalog = build_asset_filter_catalog($baseScopeAssets, $fields, $activeSegmentId);
@@ -145,6 +147,13 @@ foreach ($fields as $field) {
     }
 }
 $groupedAssets = $scopeAccessAvailable ? get_assets_grouped_by_category($filters, $user) : [];
+$displayedAssets = [];
+foreach ($groupedAssets as $group) {
+    foreach (($group['assets'] ?? []) as $assetRow) {
+        $displayedAssets[] = $assetRow;
+    }
+}
+$activeFilterCatalog = build_asset_filter_catalog($displayedAssets, $fields, $activeSegmentId);
 $categoryNameById = [];
 foreach ($categories as $category) {
     $categoryNameById[(int)$category['id']] = (string)$category['name'];
@@ -265,6 +274,51 @@ $renderFieldHelpButton = static function (?array $meta, string $buttonClass = 'f
     >i</button>
     <?php
 };
+$renderBimhFieldControl = static function (
+    string $inputName,
+    string $fieldKey,
+    string $value = '',
+    string $estName = '',
+    bool $isRequired = false,
+    string $inputClass = '',
+    array $inputAttributes = []
+): void {
+    $inputClasses = trim('bimh-id-input ' . $inputClass);
+    $isNotFound = trim($estName) === 'BIMH ID is not in the Database.';
+    $attributes = '';
+    foreach ($inputAttributes as $attrName => $attrValue) {
+        if ($attrValue === null || $attrValue === '') {
+            continue;
+        }
+        $attributes .= ' ' . $attrName . '="' . e((string)$attrValue) . '"';
+    }
+    ?>
+    <div class="bimh-field" data-bimh-field>
+        <div class="bimh-input-row">
+            <input
+                type="text"
+                name="<?= e($inputName); ?>"
+                value="<?= e($value); ?>"
+                class="<?= e($inputClasses); ?>"
+                data-bimh-id-input
+                data-bimh-field-key="<?= e($fieldKey); ?>"
+                data-field-key="<?= e($fieldKey); ?>"
+                <?= $isRequired ? 'required' : ''; ?><?= $attributes; ?>>
+            <button type="button" class="icon-only-button bimh-picker-button" data-bimh-picker-open title="Pick establishment" aria-label="Pick establishment">&#x1F50D;</button>
+        </div>
+        <div class="bimh-suggestion-menu" data-bimh-suggestions hidden></div>
+        <div class="bimh-est-name-box<?= $isNotFound ? ' is-not-found' : ''; ?>" data-bimh-est-name><?= e($estName); ?></div>
+    </div>
+    <?php
+};
+$renderBimhEstNameTableCell = static function (string $estName): void {
+    $text = trim($estName);
+    if ($text === 'BIMH ID is not in the Database.') {
+        ?><span class="bimh-est-name-box bimh-est-name-inline is-not-found"><?= e($text); ?></span><?php
+        return;
+    }
+    echo e($text);
+};
 $renderFilterPicker = static function (string $name, string $label, array $options, string|int $selectedValue = '', array $attributes = [], ?array $helpMeta = null) use ($filterPickerValue, $renderFieldHelpButton): void {
     $normalizedSelectedValue = ((string)$selectedValue === '0') ? '' : (string)$selectedValue;
     $selectedText = $filterPickerValue($options, $normalizedSelectedValue);
@@ -279,7 +333,7 @@ $renderFilterPicker = static function (string $name, string $label, array $optio
     ?>
     <label>
         <span class="field-label-row">
-            <span><?= e($label); ?></span>
+            <span><?= $label; ?></span>
             <?php $renderFieldHelpButton($helpMeta, 'field-help-button field-help-inline', 'Field information'); ?>
         </span>
         <div class="filter-picker" id="<?= e($pickerId); ?>" data-filter-picker<?= $wrapperAttrs; ?>>
@@ -290,9 +344,14 @@ $renderFilterPicker = static function (string $name, string $label, array $optio
                 <?php foreach ($options as $option): ?>
                     <button
                         type="button"
-                        class="filter-picker-option"
+                        class="filter-picker-option<?= !empty($option['disabled']) ? ' is-disabled' : ''; ?>"
                         data-option-value="<?= e((string)($option['value'] ?? '')); ?>"
                         data-option-label="<?= e((string)($option['label'] ?? '')); ?>"
+                        <?php if (!empty($option['disabled'])): ?>
+                            data-option-disabled="1"
+                            title="Not present in the table."
+                            aria-disabled="true"
+                        <?php endif; ?>
                         <?php foreach (($option['meta'] ?? []) as $metaKey => $metaValue): ?>
                             data-<?= e((string)$metaKey); ?>="<?= e((string)$metaValue); ?>"
                         <?php endforeach; ?>
@@ -303,6 +362,66 @@ $renderFilterPicker = static function (string $name, string $label, array $optio
     </label>
     <?php
 };
+$buildSelectableFilterOptions = static function (array $allOptions, array $activeValues, bool $includeBlank = false): array {
+    $options = [];
+    foreach ($allOptions as $option) {
+        $value = (string)($option['value'] ?? '');
+        if ($value === '') {
+            continue;
+        }
+        $option['disabled'] = !isset($activeValues[$value]);
+        $options[] = $option;
+    }
+    if ($includeBlank) {
+        $options[] = [
+            'value' => '__blank__',
+            'label' => 'Blank',
+            'disabled' => !isset($activeValues['__blank__']),
+        ];
+    }
+    return $options;
+};
+$scopeOfficeOptions = [
+    'zones' => [],
+    'circles' => [],
+    'divisions' => [],
+    'subdivisions' => [],
+];
+if (is_superadmin()) {
+    foreach ($zones as $zone) {
+        $scopeOfficeOptions['zones'][] = ['value' => (string)$zone['id'], 'label' => (string)$zone['office_name']];
+    }
+    foreach ($circles as $circle) {
+        $scopeOfficeOptions['circles'][] = ['value' => (string)$circle['id'], 'label' => (string)$circle['office_name'], 'meta' => ['zone' => (string)$circle['zone_id']]];
+    }
+    foreach ($divisions as $division) {
+        $scopeOfficeOptions['divisions'][] = ['value' => (string)$division['id'], 'label' => (string)$division['office_name'], 'meta' => ['zone' => (string)$division['zone_id'], 'circle' => (string)$division['circle_id']]];
+    }
+    foreach ($subdivisions as $subdivision) {
+        $scopeOfficeOptions['subdivisions'][] = ['value' => (string)$subdivision['id'], 'label' => (string)$subdivision['office_name'], 'meta' => ['zone' => (string)$subdivision['zone_id'], 'circle' => (string)$subdivision['circle_id'], 'division' => (string)$subdivision['division_id']]];
+    }
+} elseif ($isUnderMeView) {
+    $officeType = (int)($user['office_type'] ?? 0);
+    foreach ($circles as $circle) {
+        if ($officeType === 2 && (int)$circle['zone_id'] === (int)($user['zone_id'] ?? 0)) {
+            $scopeOfficeOptions['circles'][] = ['value' => (string)$circle['id'], 'label' => (string)$circle['office_name'], 'meta' => ['zone' => (string)$circle['zone_id']]];
+        }
+    }
+    foreach ($divisions as $division) {
+        if (($officeType === 2 && (int)$division['zone_id'] === (int)($user['zone_id'] ?? 0)) || ($officeType === 3 && (int)$division['circle_id'] === (int)($user['circle_id'] ?? 0))) {
+            $scopeOfficeOptions['divisions'][] = ['value' => (string)$division['id'], 'label' => (string)$division['office_name'], 'meta' => ['zone' => (string)$division['zone_id'], 'circle' => (string)$division['circle_id']]];
+        }
+    }
+    foreach ($subdivisions as $subdivision) {
+        if (
+            ($officeType === 2 && (int)$subdivision['zone_id'] === (int)($user['zone_id'] ?? 0))
+            || ($officeType === 3 && (int)$subdivision['circle_id'] === (int)($user['circle_id'] ?? 0))
+            || ($officeType === 4 && (int)$subdivision['division_id'] === (int)($user['division_id'] ?? 0))
+        ) {
+            $scopeOfficeOptions['subdivisions'][] = ['value' => (string)$subdivision['id'], 'label' => (string)$subdivision['office_name'], 'meta' => ['zone' => (string)$subdivision['zone_id'], 'circle' => (string)$subdivision['circle_id'], 'division' => (string)$subdivision['division_id']]];
+        }
+    }
+}
 ?>
 <section class="card hero-card">
     <div class="hero-row">
@@ -456,71 +575,71 @@ $renderFilterPicker = static function (string $name, string $label, array $optio
         <?php if (!is_superadmin()): ?><input type="hidden" name="office_view_scope" value="<?= e($currentOfficeViewScope); ?>"><?php endif; ?>
         <?php if ($showCategoryFilter): ?>
             <?php
-                $categoryPickerOptions = array_map(
+                $activeCategoryValues = [];
+                foreach (array_keys($activeFilterCatalog['categories']) as $categoryId) {
+                    $activeCategoryValues[(string)$categoryId] = true;
+                }
+                $categoryPickerOptions = $buildSelectableFilterOptions(array_map(
                     static fn(array $category): array => ['value' => (string)$category['id'], 'label' => (string)$category['name']],
                     array_values($filterCatalog['categories'])
-                );
+                ), $activeCategoryValues);
                 $renderFilterPicker('category_id', 'Category', $categoryPickerOptions, (string)($filters['category_id'] ?? '0'));
             ?>
         <?php endif; ?>
         <?php if ($showSubcategoryFilter): ?>
             <?php
-                $subcategoryPickerOptions = array_map(
+                $activeSubcategoryValues = [];
+                foreach (array_keys($activeFilterCatalog['subcategories']) as $subcategoryId) {
+                    $activeSubcategoryValues[(string)$subcategoryId] = true;
+                }
+                $subcategoryPickerOptions = $buildSelectableFilterOptions(array_map(
                     static fn(array $subcategory): array => [
                         'value' => (string)$subcategory['id'],
                         'label' => (string)$subcategory['name'],
                         'meta' => ['category' => (string)$subcategory['category_id']],
                     ],
                     array_values($filterCatalog['subcategories'])
-                );
+                ), $activeSubcategoryValues);
                 $renderFilterPicker('subcategory_id', 'Sub-category', $subcategoryPickerOptions, (string)($filters['subcategory_id'] ?? '0'));
             ?>
         <?php endif; ?>
         <?php if ($showZoneFilter): ?>
             <?php
-                $zonePickerOptions = array_map(
-                    static fn(array $zone): array => ['value' => (string)$zone['id'], 'label' => (string)$zone['name']],
-                    array_values($filterCatalog['zones'])
-                );
+                $activeZoneValues = [];
+                foreach (array_keys($activeFilterCatalog['zones']) as $zoneId) {
+                    $activeZoneValues[(string)$zoneId] = true;
+                }
+                $zonePickerOptions = $buildSelectableFilterOptions($scopeOfficeOptions['zones'], $activeZoneValues);
                 $renderFilterPicker('zone_id', 'Zone', $zonePickerOptions, (string)$selectedZone);
             ?>
         <?php endif; ?>
         <?php if ($showCircleFilter): ?>
             <?php
-                $circlePickerOptions = array_map(
-                    static fn(array $circle): array => [
-                        'value' => (string)$circle['id'],
-                        'label' => (string)$circle['name'],
-                        'meta' => ['zone' => (string)$circle['zone_id']],
-                    ],
-                    array_values($filterCatalog['circles'])
-                );
+                $activeCircleValues = [];
+                foreach (array_keys($activeFilterCatalog['circles']) as $circleId) {
+                    $activeCircleValues[(string)$circleId] = true;
+                }
+                $circlePickerOptions = $buildSelectableFilterOptions($scopeOfficeOptions['circles'], $activeCircleValues);
                 $renderFilterPicker('circle_id', 'Circle', $circlePickerOptions, (string)$selectedCircle);
             ?>
         <?php endif; ?>
         <?php if ($showDivisionFilter): ?>
             <?php
-                $divisionPickerOptions = array_map(
-                    static fn(array $division): array => [
-                        'value' => (string)$division['id'],
-                        'label' => (string)$division['name'],
-                        'meta' => ['zone' => (string)$division['zone_id'], 'circle' => (string)$division['circle_id']],
-                    ],
-                    array_values($filterCatalog['divisions'])
-                );
+                $activeDivisionValues = [];
+                foreach (array_keys($activeFilterCatalog['divisions']) as $divisionId) {
+                    $activeDivisionValues[(string)$divisionId] = true;
+                }
+                $divisionPickerOptions = $buildSelectableFilterOptions($scopeOfficeOptions['divisions'], $activeDivisionValues);
                 $renderFilterPicker('division_id', 'Division', $divisionPickerOptions, (string)$selectedDivision);
             ?>
         <?php endif; ?>
         <?php if ($showSubdivisionFilter): ?>
             <?php
-                $subdivisionPickerOptions = array_map(
-                    static fn(array $subdivision): array => [
-                        'value' => (string)$subdivision['id'],
-                        'label' => (string)$subdivision['name'],
-                        'meta' => ['zone' => (string)$subdivision['zone_id'], 'circle' => (string)$subdivision['circle_id'], 'division' => (string)$subdivision['division_id']],
-                    ],
-                    array_values($filterCatalog['subdivisions'])
-                );
+                $activeSubdivisionValues = [];
+                foreach (array_keys($activeFilterCatalog['subdivisions']) as $subdivisionId) {
+                    $activeSubdivisionValues[(string)$subdivisionId] = true;
+                }
+                $subdivisionPickerOptions = $buildSelectableFilterOptions($scopeOfficeOptions['subdivisions'], $activeSubdivisionValues);
                 $renderFilterPicker('subdivision_id', 'Sub-division', $subdivisionPickerOptions, (string)$selectedSubdivision);
             ?>
         <?php endif; ?>
@@ -531,21 +650,22 @@ $renderFilterPicker = static function (string $name, string $label, array $optio
                 }
                 $fieldKey = (string)$field['field_key'];
                 $fieldType = (string)$field['data_type'];
-                $fieldLabel = (string)($uiFieldLabels[$fieldKey] ?? $field['label']);
+                $fieldLabel = e((string)($uiFieldLabels[$fieldKey] ?? $field['label'])) . $fieldMandatoryMarker($field);
                 $filterKey = 'field_filter_' . $fieldKey;
                 $catalogField = $filterCatalog['fields'][$fieldKey] ?? null;
+                $activeCatalogField = $activeFilterCatalog['fields'][$fieldKey] ?? null;
             ?>
             <?php if ($fieldType === 'date'): ?>
                 <label>
                     <span class="field-label-row">
-                        <span><?= e($fieldLabel); ?> From</span>
+                        <span><?= $fieldLabel; ?> From</span>
                         <?php $renderFieldHelpButton($fieldHelpMeta[$fieldKey] ?? null, 'field-help-button field-help-inline', 'Field information'); ?>
                     </span>
                     <input type="date" name="<?= e($filterKey . '_from'); ?>" value="<?= e((string)($filters[$filterKey . '_from'] ?? '')); ?>">
                 </label>
                 <label>
                     <span class="field-label-row">
-                        <span><?= e($fieldLabel); ?> To</span>
+                        <span><?= $fieldLabel; ?> To</span>
                         <?php $renderFieldHelpButton($fieldHelpMeta[$fieldKey] ?? null, 'field-help-button field-help-inline', 'Field information'); ?>
                     </span>
                     <input type="date" name="<?= e($filterKey . '_to'); ?>" value="<?= e((string)($filters[$filterKey . '_to'] ?? '')); ?>">
@@ -554,8 +674,18 @@ $renderFilterPicker = static function (string $name, string $label, array $optio
                 <?php $childField = get_asset_conditional_child_field((int)$field['id']); ?>
                 <?php
                     $conditionalPrimaryOptions = [];
+                    $activePrimaryValues = [];
+                    foreach (array_keys((array)($activeCatalogField['options'] ?? [])) as $optionValue) {
+                        $activePrimaryValues[(string)$optionValue] = true;
+                    }
                     foreach (($catalogField['options'] ?? []) as $optionValue => $optionLabel) {
-                        $conditionalPrimaryOptions[] = ['value' => (string)$optionValue, 'label' => (string)$optionLabel];
+                        $conditionalPrimaryOptions[] = ['value' => (string)$optionValue, 'label' => (string)$optionLabel, 'disabled' => !isset($activePrimaryValues[(string)$optionValue])];
+                    }
+                    if (!empty($activeCatalogField['has_blank'])) {
+                        $activePrimaryValues['__blank__'] = true;
+                    }
+                    if (!empty($catalogField['has_blank']) || !empty($activeCatalogField['has_blank'])) {
+                        $conditionalPrimaryOptions[] = ['value' => '__blank__', 'label' => 'Blank', 'disabled' => empty($activePrimaryValues['__blank__'])];
                     }
                     $renderFilterPicker(
                         $filterKey,
@@ -573,10 +703,30 @@ $renderFilterPicker = static function (string $name, string $label, array $optio
                 <?php if ($childField): ?>
                     <?php $childFilterKey = 'field_filter_' . $childField['field_key']; ?>
                     <?php
+                        $childActiveField = $activeFilterCatalog['fields'][$childField['field_key']] ?? null;
+                        $childOptions = [];
+                        $seenChildOptions = [];
+                        foreach ((array)($catalogField['secondary_options_map'] ?? []) as $primaryValue => $children) {
+                            foreach ((array)$children as $childValue) {
+                                if (isset($seenChildOptions[$childValue])) {
+                                    continue;
+                                }
+                                $seenChildOptions[$childValue] = true;
+                                $childOptions[] = [
+                                    'value' => (string)$childValue,
+                                    'label' => (string)$childValue,
+                                    'disabled' => !isset(($childActiveField['options'] ?? [])[(string)$childValue]),
+                                    'meta' => ['primary' => (string)$primaryValue],
+                                ];
+                            }
+                        }
+                        if (!empty($childActiveField['has_blank'])) {
+                            $childOptions[] = ['value' => '__blank__', 'label' => 'Blank', 'disabled' => false];
+                        }
                         $renderFilterPicker(
                             $childFilterKey,
-                            (string)($uiFieldLabels[$childField['field_key']] ?? $childField['label']),
-                            [],
+                            e((string)($uiFieldLabels[$childField['field_key']] ?? $childField['label'])) . $fieldMandatoryMarker($childField),
+                            $childOptions,
                             (string)($filters[$childFilterKey] ?? ''),
                             ['data-filter-conditional-secondary' => (string)$fieldKey],
                             $fieldHelpMeta[$childField['field_key']] ?? null
@@ -586,8 +736,15 @@ $renderFilterPicker = static function (string $name, string $label, array $optio
             <?php elseif (!empty($catalogField['options'])): ?>
                 <?php
                     $fieldPickerOptions = [];
+                    $activeFieldValues = [];
+                    foreach (array_keys((array)($activeCatalogField['options'] ?? [])) as $optionValue) {
+                        $activeFieldValues[(string)$optionValue] = true;
+                    }
                     foreach ($catalogField['options'] as $optionValue => $optionLabel) {
-                        $fieldPickerOptions[] = ['value' => (string)$optionValue, 'label' => (string)$optionLabel];
+                        $fieldPickerOptions[] = ['value' => (string)$optionValue, 'label' => (string)$optionLabel, 'disabled' => !isset($activeFieldValues[(string)$optionValue])];
+                    }
+                    if (!empty($catalogField['has_blank']) || !empty($activeCatalogField['has_blank'])) {
+                        $fieldPickerOptions[] = ['value' => '__blank__', 'label' => 'Blank', 'disabled' => empty($activeCatalogField['has_blank'])];
                     }
                     $renderFilterPicker($filterKey, $fieldLabel, $fieldPickerOptions, (string)($filters[$filterKey] ?? ''), [], $fieldHelpMeta[$fieldKey] ?? null);
                 ?>
@@ -651,6 +808,9 @@ $renderFilterPicker = static function (string $name, string $label, array $optio
                 foreach ($fields as $field) {
                     if ((int)$field['is_displayed'] === 1 && (int)$field['active_status'] === 1 && !empty($visibleColumnKeys[$field['field_key']])) {
                         $visibleFieldCount++;
+                        if ((string)($field['data_type'] ?? '') === 'bimh' && !empty($visibleColumnKeys[$field['field_key'] . '__est_name'])) {
+                            $visibleFieldCount++;
+                        }
                     }
                 }
             ?>
@@ -703,6 +863,11 @@ $renderFilterPicker = static function (string $name, string $label, array $optio
                                                 <?php $renderFieldHelpButton($fieldHelpMeta[$field['field_key']] ?? null, 'field-help-button field-help-table', 'Field information'); ?>
                                             </div>
                                         </th>
+                                        <?php if ((string)($field['data_type'] ?? '') === 'bimh' && !empty($visibleColumnKeys[$field['field_key'] . '__est_name'])): ?>
+                                            <th class="<?= $sortColumn === $fieldSortKey . '__est_name' ? 'sort-active' : ''; ?>">
+                                                <a href="<?= e($headerSortUrl($fieldSortKey . '__est_name')); ?>" class="<?= trim($sortClass($fieldSortKey . '__est_name')); ?>">Est Name<?= e($sortIndicator($fieldSortKey . '__est_name')); ?></a>
+                                            </th>
+                                        <?php endif; ?>
                                     <?php endif; ?>
                                 <?php endforeach; ?>
                                 <?php if ($showActionColumn): ?><th>Action</th><?php endif; ?>
@@ -790,6 +955,9 @@ $renderFilterPicker = static function (string $name, string $label, array $optio
                                                     <?= e((string)($asset['values'][$field['field_key']] ?? '')); ?>
                                                 <?php endif; ?>
                                             </td>
+                                            <?php if ((string)($field['data_type'] ?? '') === 'bimh' && !empty($visibleColumnKeys[$field['field_key'] . '__est_name'])): ?>
+                                                <td><?php $renderBimhEstNameTableCell((string)($asset['values'][$field['field_key'] . '__est_name'] ?? '')); ?></td>
+                                            <?php endif; ?>
                                         <?php endif; ?>
                                     <?php endforeach; ?>
                                     <?php if ($showActionColumn): ?>
@@ -930,6 +1098,17 @@ $renderFilterPicker = static function (string $name, string $label, array $optio
                         <input type="date" name="fields[<?= e($field['field_key']); ?>]" value="<?= e($value); ?>" <?= asset_is_input_required($field) ? 'required' : ''; ?>>
                     <?php elseif ($field['data_type'] === 'number'): ?>
                         <input type="number" step="0.01" name="fields[<?= e($field['field_key']); ?>]" value="<?= e($value); ?>" <?= asset_is_input_required($field) ? 'required' : ''; ?>>
+                    <?php elseif ($field['data_type'] === 'bimh'): ?>
+                        <?php
+                            $estNameValue = (string)($editValues[$field['field_key'] . '__est_name'] ?? asset_bimh_est_name_for_id($value));
+                            $renderBimhFieldControl(
+                                'fields[' . $field['field_key'] . ']',
+                                (string)$field['field_key'],
+                                $value,
+                                $estNameValue,
+                                asset_is_input_required($field)
+                            );
+                        ?>
                     <?php elseif ($field['data_type'] === 'dropdown' || $field['data_type'] === 'conditional'): ?>
                         <?php
                             $parentId = (int)($field['secondary_of_field_id'] ?? 0);
@@ -1148,6 +1327,24 @@ $renderFilterPicker = static function (string $name, string $label, array $optio
                                                     <?= (int)($field['text_max_length'] ?? 0) > 0 ? 'maxlength="' . e((string)((int)$field['text_max_length'])) . '"' : ''; ?>
                                                     rows="3"
                                                 ><?= e($fieldValue); ?></textarea>
+                                            <?php elseif ($field['data_type'] === 'bimh'): ?>
+                                                <?php
+                                                    $renderBimhFieldControl(
+                                                        'rows[' . $rowIndex . '][fields][' . $field['field_key'] . ']',
+                                                        (string)$field['field_key'],
+                                                        $fieldValue,
+                                                        asset_bimh_est_name_for_id($fieldValue),
+                                                        asset_is_input_required($field),
+                                                        'review-input',
+                                                        [
+                                                            'data-review-role' => 'field',
+                                                            'data-field-type' => (string)$field['data_type'],
+                                                            'data-required' => asset_is_input_required($field) ? '1' : '0',
+                                                            'data-number-format-rule' => (string)($field['number_format_rule'] ?? ''),
+                                                            'data-text-max-length' => (string)((int)($field['text_max_length'] ?? 0)),
+                                                        ]
+                                                    );
+                                                ?>
                                             <?php else: ?>
                                                 <input
                                                     type="<?= $field['data_type'] === 'number' ? 'number' : ($field['data_type'] === 'date' ? 'date' : 'text'); ?>"
@@ -1294,6 +1491,61 @@ $renderFilterPicker = static function (string $name, string $label, array $optio
     </div>
 </div>
 <?php endif; ?>
+
+<script type="application/json" id="bimh-picker-meta"><?= json_encode([
+    'lookup_url' => 'index.php?page=bimh_lookup',
+    'scope' => $bimhPickerScope,
+    'rows' => $bimhPickerData,
+], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?></script>
+
+<div class="modal-backdrop" id="bimh-picker-modal" aria-hidden="true">
+    <div class="modal-card modal-wide bimh-picker-modal-card" role="dialog" aria-modal="true" aria-labelledby="bimh-picker-title">
+        <div class="flash-modal-head">
+            <h3 id="bimh-picker-title">Select Establishment</h3>
+            <button type="button" class="welcome-modal-close modal-close" data-close="bimh-picker-modal" aria-label="Close">×</button>
+        </div>
+        <div class="bimh-picker-filters">
+            <label>Search
+                <input type="text" id="bimh-picker-search" placeholder="Search by BIMH ID or establishment name">
+            </label>
+            <?php if (!empty($bimhPickerScope['show_circle_filter'])): ?>
+                <label>Circle
+                    <select id="bimh-picker-circle">
+                        <option value="">All</option>
+                    </select>
+                </label>
+            <?php endif; ?>
+            <?php if (!empty($bimhPickerScope['show_division_filter'])): ?>
+                <label>Division
+                    <select id="bimh-picker-division">
+                        <option value="">All</option>
+                    </select>
+                </label>
+            <?php endif; ?>
+        </div>
+        <div class="table-wrap">
+            <table class="bimh-picker-table">
+                <thead>
+                    <tr>
+                        <th>BIMH ID</th>
+                        <th>Est Name</th>
+                        <th>Upazila/Thana</th>
+                        <th>District</th>
+                        <?php if (!empty($bimhPickerScope['show_circle_filter'])): ?><th>Circle</th><?php endif; ?>
+                        <?php if (!empty($bimhPickerScope['show_division_filter'])): ?><th>Division</th><?php endif; ?>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody id="bimh-picker-body">
+                    <tr><td colspan="<?= (!empty($bimhPickerScope['show_circle_filter']) ? 1 : 0) + (!empty($bimhPickerScope['show_division_filter']) ? 1 : 0) + 5; ?>" class="muted">No establishment found.</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <div class="modal-actions">
+            <button type="button" class="modal-close" data-close="bimh-picker-modal">Close</button>
+        </div>
+    </div>
+</div>
 
 <div class="modal-backdrop" id="field-help-modal" aria-hidden="true">
     <div class="modal-card field-help-modal-card" role="dialog" aria-modal="true" aria-labelledby="field-help-title">

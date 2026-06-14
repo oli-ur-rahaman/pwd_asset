@@ -357,6 +357,7 @@ $numberRuleExamples = asset_number_format_rule_examples();
         </label>
         <label>Field Information
             <textarea name="field_information" rows="3" placeholder="Explain this field for users"></textarea>
+            <span class="hint">Link button format: <code>&lt;a href="Medical Service Information.xlsx" download&gt;Download Form&lt;/a&gt;</code>. Store the file in a web-accessible project location, such as the project root or a public file folder, then use that relative path in <code>href</code>.</span>
         </label>
         <label>Tutorial URL
             <input type="url" name="video_tutorial_url" placeholder="https://www.youtube.com/watch?v=...">
@@ -396,6 +397,7 @@ $numberRuleExamples = asset_number_format_rule_examples();
         <div class="field-config-group" data-field-config="conditional">
             <label>Secondary Information
                 <textarea name="secondary_field_information" rows="3" placeholder="Explain the secondary field"></textarea>
+                <span class="hint">Link button format: <code>&lt;a href="Medical Service Information.xlsx" download&gt;Download Form&lt;/a&gt;</code>. Store the file in a web-accessible project location, such as the project root or a public file folder, then use that relative path in <code>href</code>.</span>
             </label>
         </div>
         <div class="field-config-group" data-field-config="conditional">
@@ -501,6 +503,7 @@ $numberRuleExamples = asset_number_format_rule_examples();
                             <div class="field-config-group">
                                 <label>Field Information
                                     <textarea form="<?= e($formId); ?>" class="inline-edit field-options-box" name="field_information" rows="3" placeholder="Explain this field"><?= e((string)($field['field_information'] ?? '')); ?></textarea>
+                                    <span class="hint">Link button format: <code>&lt;a href="Medical Service Information.xlsx" download&gt;Download Form&lt;/a&gt;</code>. Store the file in a web-accessible project location, such as the project root or a public file folder, then use that relative path in <code>href</code>.</span>
                                 </label>
                                 <label>Tutorial URL
                                     <input form="<?= e($formId); ?>" class="inline-edit" type="url" name="video_tutorial_url" value="<?= e((string)($field['video_tutorial_url'] ?? '')); ?>" placeholder="https://www.youtube.com/watch?v=...">
@@ -534,6 +537,7 @@ $numberRuleExamples = asset_number_format_rule_examples();
                                 </label>
                                 <label>Secondary Information
                                     <textarea form="<?= e($formId); ?>" class="inline-edit field-options-box" name="secondary_field_information" rows="3" placeholder="Explain the secondary field"><?= e((string)($conditionalChild['field_information'] ?? '')); ?></textarea>
+                                    <span class="hint">Link button format: <code>&lt;a href="Medical Service Information.xlsx" download&gt;Download Form&lt;/a&gt;</code>. Store the file in a web-accessible project location, such as the project root or a public file folder, then use that relative path in <code>href</code>.</span>
                                 </label>
                                 <label>Secondary Tutorial URL
                                     <input form="<?= e($formId); ?>" class="inline-edit" type="url" name="secondary_video_tutorial_url" value="<?= e((string)($conditionalChild['video_tutorial_url'] ?? '')); ?>" placeholder="https://www.youtube.com/watch?v=...">

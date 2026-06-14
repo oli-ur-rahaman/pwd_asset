@@ -280,6 +280,73 @@ function ensure_asset_schema(): void
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
     );
 
+    db()->exec(
+        "CREATE TABLE IF NOT EXISTS bimh_data (
+            bimh_id VARCHAR(100) NOT NULL PRIMARY KEY,
+            establishment_name VARCHAR(500) DEFAULT NULL,
+            project_name TEXT DEFAULT NULL,
+            concerned_ministry VARCHAR(255) DEFAULT NULL,
+            establishment_type VARCHAR(255) DEFAULT NULL,
+            constructed_by VARCHAR(255) DEFAULT NULL,
+            division_name VARCHAR(255) DEFAULT NULL,
+            district VARCHAR(255) DEFAULT NULL,
+            upazila_thana VARCHAR(255) DEFAULT NULL,
+            union_ward VARCHAR(255) DEFAULT NULL,
+            pwd_civil_zone VARCHAR(255) DEFAULT NULL,
+            pwd_civil_circle VARCHAR(255) DEFAULT NULL,
+            pwd_civil_division VARCHAR(255) DEFAULT NULL,
+            pwd_civil_subdivision VARCHAR(255) DEFAULT NULL,
+            pwd_mechanical_zone VARCHAR(255) DEFAULT NULL,
+            pwd_mechanical_circle VARCHAR(255) DEFAULT NULL,
+            pwd_mechanical_division VARCHAR(255) DEFAULT NULL,
+            pwd_mechanical_subdivision VARCHAR(255) DEFAULT NULL,
+            latitude VARCHAR(100) DEFAULT NULL,
+            longitude VARCHAR(100) DEFAULT NULL,
+            structural_drawing_id VARCHAR(255) DEFAULT NULL,
+            architectural_drawing_id VARCHAR(255) DEFAULT NULL,
+            year_of_construction VARCHAR(50) DEFAULT NULL,
+            approximately VARCHAR(255) DEFAULT NULL,
+            uses_of_establishment TEXT DEFAULT NULL,
+            civil_other_information TEXT DEFAULT NULL,
+            establishment_height VARCHAR(100) DEFAULT NULL,
+            boundary_height VARCHAR(100) DEFAULT NULL,
+            boundary_length VARCHAR(100) DEFAULT NULL,
+            drainage_length VARCHAR(100) DEFAULT NULL,
+            park_area VARCHAR(100) DEFAULT NULL,
+            road_length VARCHAR(100) DEFAULT NULL,
+            road_area VARCHAR(100) DEFAULT NULL,
+            above_ground VARCHAR(100) DEFAULT NULL,
+            under_ground VARCHAR(100) DEFAULT NULL,
+            plinth_area VARCHAR(100) DEFAULT NULL,
+            total_floor_area VARCHAR(100) DEFAULT NULL,
+            structure_type VARCHAR(255) DEFAULT NULL,
+            foundation_type VARCHAR(255) DEFAULT NULL,
+            foundation_design_for TEXT DEFAULT NULL,
+            details TEXT DEFAULT NULL,
+            lift_no VARCHAR(100) DEFAULT NULL,
+            ac_no VARCHAR(100) DEFAULT NULL,
+            ac_capacity VARCHAR(100) DEFAULT NULL,
+            motor_no VARCHAR(100) DEFAULT NULL,
+            motor_capacity VARCHAR(100) DEFAULT NULL,
+            substation_no VARCHAR(100) DEFAULT NULL,
+            substation_capacity VARCHAR(100) DEFAULT NULL,
+            generator_no VARCHAR(100) DEFAULT NULL,
+            generator_capacity VARCHAR(100) DEFAULT NULL,
+            fire_detection_system VARCHAR(255) DEFAULT NULL,
+            fire_protection_system VARCHAR(255) DEFAULT NULL,
+            em_other_info TEXT DEFAULT NULL,
+            pwd_civil_division_key VARCHAR(255) DEFAULT NULL,
+            pwd_mechanical_division_key VARCHAR(255) DEFAULT NULL,
+            address_key VARCHAR(255) DEFAULT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT NULL,
+            KEY idx_bimh_civil_division_key (pwd_civil_division_key),
+            KEY idx_bimh_mechanical_division_key (pwd_mechanical_division_key),
+            KEY idx_bimh_address_key (address_key),
+            KEY idx_bimh_establishment_name (establishment_name(191))
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    );
+
     asset_ensure_column('zones', 'active_status', 'TINYINT NOT NULL DEFAULT 1');
     asset_ensure_column('zones', 'allow_office_user_management', 'TINYINT NOT NULL DEFAULT 1');
     asset_ensure_column('circles', 'active_status', 'TINYINT NOT NULL DEFAULT 1');
@@ -322,12 +389,19 @@ function ensure_asset_schema(): void
     asset_ensure_column('asset_import_batches', 'segment_id', 'INT DEFAULT NULL');
     asset_ensure_column('asset_activity_logs', 'segment_id', 'INT DEFAULT NULL');
     asset_ensure_column('asset_table_column_preferences', 'segment_id', 'INT DEFAULT NULL');
+    asset_ensure_column('bimh_data', 'pwd_civil_division_key', 'VARCHAR(255) DEFAULT NULL');
+    asset_ensure_column('bimh_data', 'pwd_mechanical_division_key', 'VARCHAR(255) DEFAULT NULL');
+    asset_ensure_column('bimh_data', 'address_key', 'VARCHAR(255) DEFAULT NULL');
     asset_ensure_segment_indexes();
+    asset_ensure_index('bimh_data', 'idx_bimh_civil_division_key', ['pwd_civil_division_key']);
+    asset_ensure_index('bimh_data', 'idx_bimh_mechanical_division_key', ['pwd_mechanical_division_key']);
+    asset_ensure_index('bimh_data', 'idx_bimh_address_key', ['address_key']);
     asset_relax_category_requirement();
     asset_relax_subcategory_requirement();
     asset_backfill_segment_assignments();
     asset_backfill_filter_scopes();
     asset_backfill_mandatory_scopes();
+    asset_bimh_backfill_helper_keys();
 
     asset_seed_default_fields();
     asset_backfill_office_user_access_levels();
@@ -340,7 +414,13 @@ function asset_ensure_column(string $table, string $column, string $definition):
     if ($stmt->fetch()) {
         return;
     }
-    db()->exec("ALTER TABLE {$table} ADD COLUMN {$column} {$definition}");
+    try {
+        db()->exec("ALTER TABLE {$table} ADD COLUMN {$column} {$definition}");
+    } catch (PDOException $e) {
+        if ((string)$e->getCode() !== '42S21' && (int)($e->errorInfo[1] ?? 0) !== 1060) {
+            throw $e;
+        }
+    }
 }
 
 function asset_index_exists(string $table, string $indexName): bool
@@ -735,7 +815,7 @@ function asset_seed_default_fields(): void
 
 function asset_supported_data_types(): array
 {
-    return ['text', 'number', 'date', 'dropdown', 'yes_no', 'file', 'conditional'];
+    return ['text', 'number', 'date', 'dropdown', 'yes_no', 'file', 'conditional', 'bimh'];
 }
 
 function asset_mandatory_scope_optional(): int
@@ -1076,6 +1156,528 @@ function asset_format_number_display(?string $value): string
         return $value;
     }
     return rtrim(rtrim($value, '0'), '.');
+}
+
+function asset_bimh_workbook_path(): ?string
+{
+    $root = dirname(__DIR__, 2);
+    $candidates = [
+        asset_bimh_uploaded_path(),
+        $root . '/[edited] Establishment All Bangladesh.xlsx',
+        $root . '/Establishment All Bangladesh.xlsx',
+    ];
+    foreach ($candidates as $path) {
+        if (is_file($path)) {
+            return $path;
+        }
+    }
+    return null;
+}
+
+function asset_bimh_storage_dir(): string
+{
+    return dirname(__DIR__, 2) . '/storage/bimh';
+}
+
+function asset_bimh_uploaded_path(): string
+{
+    return asset_bimh_storage_dir() . '/bimh_source_latest.xlsx';
+}
+
+function asset_bimh_normalize_division_key(?string $value): string
+{
+    $value = trim((string)$value);
+    if ($value === '') {
+        return '';
+    }
+    $parts = explode(',', $value, 2);
+    $value = trim((string)($parts[0] ?? ''));
+    $value = mb_strtolower($value, 'UTF-8');
+    return preg_replace('/[^[:alnum:]]+/u', '', $value) ?? '';
+}
+
+function asset_bimh_normalize_address_key(?string $value): string
+{
+    $value = trim((string)$value);
+    if ($value === '') {
+        return '';
+    }
+    $parts = explode(',', $value, 2);
+    $value = trim((string)($parts[1] ?? ''));
+    if ($value === '') {
+        return '';
+    }
+    $value = mb_strtolower($value, 'UTF-8');
+    return preg_replace('/[^[:alnum:]]+/u', '', $value) ?? '';
+}
+
+function asset_bimh_normalize_scope_address_key(?string $value): string
+{
+    $value = trim((string)$value);
+    if ($value === '') {
+        return '';
+    }
+    $value = mb_strtolower($value, 'UTF-8');
+    return preg_replace('/[^[:alnum:]]+/u', '', $value) ?? '';
+}
+
+function asset_bimh_build_address_key(?string $civilDivision, ?string $mechanicalDivision): string
+{
+    $civilKey = asset_bimh_normalize_address_key($civilDivision);
+    if ($civilKey !== '') {
+        return $civilKey;
+    }
+    return asset_bimh_normalize_address_key($mechanicalDivision);
+}
+
+function asset_bimh_backfill_helper_keys(): void
+{
+    static $done = false;
+    if ($done) {
+        return;
+    }
+    $done = true;
+
+    try {
+        $rows = db()->query('SELECT bimh_id, pwd_civil_division, pwd_mechanical_division, pwd_civil_division_key, pwd_mechanical_division_key, address_key FROM bimh_data')->fetchAll();
+        if (!$rows) {
+            return;
+        }
+
+        $stmt = db()->prepare('UPDATE bimh_data SET pwd_civil_division_key = ?, pwd_mechanical_division_key = ?, address_key = ? WHERE bimh_id = ?');
+        db()->beginTransaction();
+        foreach ($rows as $row) {
+            $civilKey = asset_bimh_normalize_division_key((string)($row['pwd_civil_division'] ?? ''));
+            $mechanicalKey = asset_bimh_normalize_division_key((string)($row['pwd_mechanical_division'] ?? ''));
+            $addressKey = asset_bimh_build_address_key(
+                $row['pwd_civil_division'] ?? null,
+                $row['pwd_mechanical_division'] ?? null
+            );
+
+            if (
+                (string)($row['pwd_civil_division_key'] ?? '') === $civilKey
+                && (string)($row['pwd_mechanical_division_key'] ?? '') === $mechanicalKey
+                && (string)($row['address_key'] ?? '') === $addressKey
+            ) {
+                continue;
+            }
+
+            $stmt->execute([$civilKey !== '' ? $civilKey : null, $mechanicalKey !== '' ? $mechanicalKey : null, $addressKey !== '' ? $addressKey : null, (string)$row['bimh_id']]);
+        }
+        db()->commit();
+    } catch (Throwable $e) {
+        if (db()->inTransaction()) {
+            db()->rollBack();
+        }
+    }
+}
+
+function asset_bimh_sheet_column_map(): array
+{
+    return [
+        'BIMH ID' => 'bimh_id',
+        'Establishment Name' => 'establishment_name',
+        'Project Name' => 'project_name',
+        'Concerned Ministry' => 'concerned_ministry',
+        'Establishment Type' => 'establishment_type',
+        'Constructed By' => 'constructed_by',
+        'Division' => 'division_name',
+        'District' => 'district',
+        'Upazila/Thana' => 'upazila_thana',
+        'Union/Ward' => 'union_ward',
+        'PWD Civil Zone' => 'pwd_civil_zone',
+        'PWD Civil Circle' => 'pwd_civil_circle',
+        'PWD Civil Division' => 'pwd_civil_division',
+        'PWD Civil Subdivision' => 'pwd_civil_subdivision',
+        'PWD Mechanical Zone' => 'pwd_mechanical_zone',
+        'PWD Mechanical Circle' => 'pwd_mechanical_circle',
+        'PWD Mechanical Division' => 'pwd_mechanical_division',
+        'PWD Mechanical Subdivision' => 'pwd_mechanical_subdivision',
+        'Latitude' => 'latitude',
+        'Longitude' => 'longitude',
+        'Structural Drawing ID' => 'structural_drawing_id',
+        'Architectural Drawing ID' => 'architectural_drawing_id',
+        'Year Of Construction' => 'year_of_construction',
+        'Approximately' => 'approximately',
+        'Uses Of Establishment' => 'uses_of_establishment',
+        'Civil Other Information' => 'civil_other_information',
+        'Establishment Height' => 'establishment_height',
+        'Boundary Height' => 'boundary_height',
+        'Boundary Length' => 'boundary_length',
+        'Drainage Length' => 'drainage_length',
+        'Park Area' => 'park_area',
+        'Road Length' => 'road_length',
+        'Road Area' => 'road_area',
+        'Above Ground' => 'above_ground',
+        'Under Ground' => 'under_ground',
+        'Plinth Area' => 'plinth_area',
+        'Total Floor Area' => 'total_floor_area',
+        'Structure Type' => 'structure_type',
+        'Foundation Type' => 'foundation_type',
+        'Foundation Design For' => 'foundation_design_for',
+        'Details' => 'details',
+        'Lift No' => 'lift_no',
+        'AC No' => 'ac_no',
+        'AC Capacity' => 'ac_capacity',
+        'Motor No' => 'motor_no',
+        'Motor Capacity' => 'motor_capacity',
+        'Substation No' => 'substation_no',
+        'Substation Capacity' => 'substation_capacity',
+        'Generator No' => 'generator_no',
+        'Generator Capacity' => 'generator_capacity',
+        'Fire Detection System' => 'fire_detection_system',
+        'Fire Protection System' => 'fire_protection_system',
+        'E/M Other Info' => 'em_other_info',
+    ];
+}
+
+function asset_bimh_sync_from_workbook(?string $path = null): array
+{
+    $path = $path && is_file($path) ? $path : asset_bimh_workbook_path();
+    if (!$path || !is_file($path)) {
+        throw new RuntimeException('BIMH workbook file was not found.');
+    }
+
+    ensure_library('PhpOffice\\PhpSpreadsheet\\IOFactory', 'PhpSpreadsheet is not installed.');
+    $reader = \PhpOffice\PhpSpreadsheet\IOFactory::createReaderForFile($path);
+    $reader->setReadDataOnly(true);
+    if (method_exists($reader, 'setReadEmptyCells')) {
+        $reader->setReadEmptyCells(false);
+    }
+    $spreadsheet = $reader->load($path);
+    $sheet = $spreadsheet->getSheetByName('Sheet1') ?: $spreadsheet->getActiveSheet();
+    $rows = $sheet->toArray(null, false, false, false);
+    if (!$rows) {
+        throw new RuntimeException('BIMH workbook is empty.');
+    }
+
+    $headers = array_map(static fn($value): string => trim((string)$value), array_values($rows[0] ?? []));
+    $columnMap = asset_bimh_sheet_column_map();
+    $headerIndexes = [];
+    foreach ($headers as $index => $header) {
+        if (isset($columnMap[$header])) {
+            $headerIndexes[$columnMap[$header]] = $index;
+        }
+    }
+    if (!array_key_exists('bimh_id', $headerIndexes) || !array_key_exists('establishment_name', $headerIndexes)) {
+        throw new RuntimeException('BIMH workbook Sheet1 headers do not match the expected structure.');
+    }
+
+    $dbColumns = array_values($columnMap);
+    $dbColumns[] = 'pwd_civil_division_key';
+    $dbColumns[] = 'pwd_mechanical_division_key';
+    $dbColumns[] = 'address_key';
+    $dbColumns[] = 'updated_at';
+    $placeholderSql = implode(', ', array_fill(0, count($dbColumns), '?'));
+    $updateSql = implode(', ', array_map(static fn(string $column): string => $column . ' = VALUES(' . $column . ')', array_filter($dbColumns, static fn(string $column): bool => $column !== 'bimh_id')));
+    $stmt = db()->prepare('INSERT INTO bimh_data (' . implode(', ', $dbColumns) . ') VALUES (' . $placeholderSql . ') ON DUPLICATE KEY UPDATE ' . $updateSql);
+    $existingIds = array_fill_keys(array_map(
+        static fn(array $row): string => (string)$row['bimh_id'],
+        db()->query('SELECT bimh_id FROM bimh_data')->fetchAll()
+    ), true);
+
+    $imported = 0;
+    $inserted = 0;
+    $updated = 0;
+    db()->beginTransaction();
+    try {
+        foreach (array_slice($rows, 1) as $row) {
+            $record = [];
+            foreach ($columnMap as $excelHeader => $dbColumn) {
+                $columnIndex = $headerIndexes[$dbColumn] ?? null;
+                $record[$dbColumn] = $columnIndex === null ? null : trim((string)($row[$columnIndex] ?? ''));
+                if ($record[$dbColumn] === '') {
+                    $record[$dbColumn] = null;
+                }
+            }
+            $bimhId = trim((string)($record['bimh_id'] ?? ''));
+            if ($bimhId === '') {
+                continue;
+            }
+            $wasExisting = isset($existingIds[$bimhId]);
+            $record['bimh_id'] = $bimhId;
+            $record['pwd_civil_division_key'] = asset_bimh_normalize_division_key((string)($record['pwd_civil_division'] ?? ''));
+            $record['pwd_mechanical_division_key'] = asset_bimh_normalize_division_key((string)($record['pwd_mechanical_division'] ?? ''));
+            $record['address_key'] = asset_bimh_build_address_key(
+                $record['pwd_civil_division'] ?? null,
+                $record['pwd_mechanical_division'] ?? null
+            );
+            $record['updated_at'] = date('Y-m-d H:i:s');
+            $params = [];
+            foreach ($dbColumns as $column) {
+                $params[] = $record[$column] ?? null;
+            }
+            $stmt->execute($params);
+            $imported++;
+            if ($wasExisting) {
+                $updated++;
+            } else {
+                $inserted++;
+                $existingIds[$bimhId] = true;
+            }
+        }
+        db()->commit();
+    } catch (Throwable $e) {
+        if (db()->inTransaction()) {
+            db()->rollBack();
+        }
+        throw $e;
+    }
+
+    return ['imported' => $imported, 'inserted' => $inserted, 'updated' => $updated, 'path' => $path];
+}
+
+function asset_bimh_bootstrap_if_empty(): void
+{
+    static $bootstrapped = false;
+    if ($bootstrapped) {
+        return;
+    }
+    $bootstrapped = true;
+    try {
+        $count = (int)db()->query('SELECT COUNT(*) FROM bimh_data')->fetchColumn();
+        if ($count > 0) {
+            return;
+        }
+        $path = asset_bimh_workbook_path();
+        if (!$path) {
+            return;
+        }
+        asset_bimh_sync_from_workbook($path);
+    } catch (Throwable $e) {
+    }
+}
+
+function save_uploaded_bimh_workbook(array $file): array
+{
+    if (empty($file['tmp_name']) || !is_uploaded_file($file['tmp_name'])) {
+        throw new RuntimeException('Please choose a valid BIMH Excel file.');
+    }
+    $extension = strtolower(pathinfo((string)($file['name'] ?? ''), PATHINFO_EXTENSION));
+    if (!in_array($extension, ['xlsx', 'xls'], true)) {
+        throw new RuntimeException('BIMH file must be an Excel file.');
+    }
+
+    $summary = asset_bimh_sync_from_workbook((string)$file['tmp_name']);
+
+    $dir = asset_bimh_storage_dir();
+    if (!is_dir($dir) && !mkdir($dir, 0777, true) && !is_dir($dir)) {
+        throw new RuntimeException('Unable to create BIMH storage directory.');
+    }
+    $target = asset_bimh_uploaded_path();
+    if (!move_uploaded_file((string)$file['tmp_name'], $target)) {
+        throw new RuntimeException('BIMH data imported but the uploaded source file could not be saved.');
+    }
+
+    return $summary + ['stored_path' => $target];
+}
+
+function asset_bimh_lookup_many(array $ids): array
+{
+    asset_bimh_bootstrap_if_empty();
+    $normalizedIds = [];
+    foreach ($ids as $id) {
+        $value = trim((string)$id);
+        if ($value !== '') {
+            $normalizedIds[$value] = $value;
+        }
+    }
+    if (!$normalizedIds) {
+        return [];
+    }
+    $placeholders = implode(',', array_fill(0, count($normalizedIds), '?'));
+    $stmt = db()->prepare("SELECT bimh_id, establishment_name FROM bimh_data WHERE bimh_id IN ({$placeholders})");
+    $stmt->execute(array_values($normalizedIds));
+    $map = [];
+    foreach ($stmt->fetchAll() as $row) {
+        $map[(string)$row['bimh_id']] = trim((string)($row['establishment_name'] ?? ''));
+    }
+    return $map;
+}
+
+function asset_bimh_lookup(string $bimhId): ?array
+{
+    $bimhId = trim($bimhId);
+    if ($bimhId === '') {
+        return null;
+    }
+    asset_bimh_bootstrap_if_empty();
+    $stmt = db()->prepare('SELECT * FROM bimh_data WHERE bimh_id = ? LIMIT 1');
+    $stmt->execute([$bimhId]);
+    $row = $stmt->fetch();
+    return $row ?: null;
+}
+
+function asset_bimh_est_name_for_id(?string $bimhId): string
+{
+    $bimhId = trim((string)$bimhId);
+    if ($bimhId === '') {
+        return '';
+    }
+    $row = asset_bimh_lookup($bimhId);
+    if (!$row) {
+        return 'BIMH ID is not in the Database.';
+    }
+    return trim((string)($row['establishment_name'] ?? '')) ?: 'BIMH ID is not in the Database.';
+}
+
+function asset_bimh_accessible_divisions(array $user): array
+{
+    $officeType = (int)($user['office_type'] ?? 0);
+    if (is_superadmin()) {
+        return db()->query('SELECT id, office_name, office_address, zone_id, circle_id FROM divisions ORDER BY office_name ASC')->fetchAll();
+    }
+    if ($officeType === 5 && !empty($user['subdivision_id'])) {
+        $subdivision = find_subdivision_with_hierarchy((int)$user['subdivision_id']);
+        if (!$subdivision || empty($subdivision['division_id'])) {
+            return [];
+        }
+        $stmt = db()->prepare('SELECT id, office_name, office_address, zone_id, circle_id FROM divisions WHERE id = ?');
+        $stmt->execute([(int)$subdivision['division_id']]);
+        return $stmt->fetchAll();
+    }
+    return get_divisions_for_user($user);
+}
+
+function asset_bimh_picker_scope(array $user): array
+{
+    return match ((int)($user['office_type'] ?? 0)) {
+        2 => ['show_circle_filter' => true, 'show_division_filter' => true],
+        3 => ['show_circle_filter' => false, 'show_division_filter' => true],
+        default => ['show_circle_filter' => false, 'show_division_filter' => false],
+    };
+}
+
+function asset_bimh_picker_rows(array $user): array
+{
+    asset_bimh_bootstrap_if_empty();
+    $divisions = asset_bimh_accessible_divisions($user);
+    if (!$divisions) {
+        return [];
+    }
+
+    $divisionKeyMap = [];
+    $addressDivisionKeyMap = [];
+    $addressKeys = [];
+    $blankAddressDivisionKeys = [];
+    foreach ($divisions as $division) {
+        $divisionKey = asset_bimh_normalize_division_key((string)($division['office_name'] ?? ''));
+        if ($divisionKey === '') {
+            continue;
+        }
+        $divisionMeta = [
+            'division_id' => (int)($division['id'] ?? 0),
+            'division_name' => (string)($division['office_name'] ?? ''),
+            'circle_id' => (int)($division['circle_id'] ?? 0),
+            'zone_id' => (int)($division['zone_id'] ?? 0),
+            'address_key' => asset_bimh_normalize_scope_address_key((string)($division['office_address'] ?? '')),
+        ];
+        $divisionKeyMap[$divisionKey] = $divisionMeta;
+        if ($divisionMeta['address_key'] !== '') {
+            $addressKeys[$divisionMeta['address_key']] = $divisionMeta['address_key'];
+            $addressDivisionKeyMap[$divisionMeta['address_key']][$divisionKey] = $divisionMeta;
+        } else {
+            $blankAddressDivisionKeys[$divisionKey] = $divisionKey;
+        }
+    }
+    if (!$divisionKeyMap) {
+        return [];
+    }
+
+    $keys = array_keys($divisionKeyMap);
+    $rows = [];
+    $collectRows = static function (array $resultSet, string $source) use (&$rows, $addressDivisionKeyMap, $divisionKeyMap): void {
+        foreach ($resultSet as $row) {
+            $bimhId = trim((string)($row['bimh_id'] ?? ''));
+            if ($bimhId === '') {
+                continue;
+            }
+            if (isset($rows[$bimhId]) && $rows[$bimhId]['match_source'] === 'mechanical') {
+                continue;
+            }
+            $rowAddressKey = trim((string)($row['address_key'] ?? ''));
+            $matchedKey = trim((string)($row['matched_key'] ?? ''));
+            $divisionMeta = null;
+            if ($rowAddressKey !== '' && isset($addressDivisionKeyMap[$rowAddressKey][$matchedKey])) {
+                $divisionMeta = $addressDivisionKeyMap[$rowAddressKey][$matchedKey];
+            } elseif (isset($divisionKeyMap[$matchedKey])) {
+                $divisionMeta = $divisionKeyMap[$matchedKey];
+            }
+            if (!$divisionMeta) {
+                continue;
+            }
+            $rows[$bimhId] = [
+                'bimh_id' => $bimhId,
+                'est_name' => trim((string)($row['establishment_name'] ?? '')),
+                'upazila_thana' => trim((string)($row['upazila_thana'] ?? '')),
+                'district' => trim((string)($row['district'] ?? '')),
+                'circle_id' => (int)($divisionMeta['circle_id'] ?? 0),
+                'division_id' => (int)($divisionMeta['division_id'] ?? 0),
+                'circle_name' => trim((string)($row['matched_circle'] ?? '')),
+                'division_name' => trim((string)($divisionMeta['division_name'] ?? ($row['matched_division'] ?? ''))),
+                'match_source' => $source,
+            ];
+        }
+    };
+
+    $runQuerySet = static function (string $divisionColumn, string $circleColumn, string $divisionKeyColumn, array $divisionKeys, ?array $filterAddressKeys = null): array {
+        if (!$divisionKeys) {
+            return [];
+        }
+        $divisionPlaceholders = implode(',', array_fill(0, count($divisionKeys), '?'));
+        $params = array_values($divisionKeys);
+        $where = "{$divisionKeyColumn} IN ({$divisionPlaceholders})";
+        if ($filterAddressKeys !== null && $filterAddressKeys) {
+            $addressPlaceholders = implode(',', array_fill(0, count($filterAddressKeys), '?'));
+            $where .= " AND address_key IN ({$addressPlaceholders})";
+            $params = array_merge($params, array_values($filterAddressKeys));
+        }
+        $sql = "SELECT bimh_id, establishment_name, upazila_thana, district, address_key, {$circleColumn} AS matched_circle, {$divisionColumn} AS matched_division, {$divisionKeyColumn} AS matched_key FROM bimh_data WHERE {$where} ORDER BY establishment_name ASC, bimh_id ASC";
+        $stmt = db()->prepare($sql);
+        $stmt->execute($params);
+        return $stmt->fetchAll();
+    };
+
+    $mechanicalRows = [];
+    $civilRows = [];
+    if ($addressKeys) {
+        $mechanicalRows = array_merge(
+            $mechanicalRows,
+            $runQuerySet('pwd_mechanical_division', 'pwd_mechanical_circle', 'pwd_mechanical_division_key', $keys, $addressKeys)
+        );
+        $civilRows = array_merge(
+            $civilRows,
+            $runQuerySet('pwd_civil_division', 'pwd_civil_circle', 'pwd_civil_division_key', $keys, $addressKeys)
+        );
+    }
+    if ($blankAddressDivisionKeys) {
+        $fallbackKeys = array_values($blankAddressDivisionKeys);
+        $mechanicalRows = array_merge(
+            $mechanicalRows,
+            $runQuerySet('pwd_mechanical_division', 'pwd_mechanical_circle', 'pwd_mechanical_division_key', $fallbackKeys)
+        );
+        $civilRows = array_merge(
+            $civilRows,
+            $runQuerySet('pwd_civil_division', 'pwd_civil_circle', 'pwd_civil_division_key', $fallbackKeys)
+        );
+    }
+
+    foreach ([['mechanical', $mechanicalRows], ['civil', $civilRows]] as [$source, $resultSet]) {
+        if (!is_array($resultSet)) {
+            continue;
+        }
+        $collectRows($resultSet, $source);
+    }
+
+    uasort($rows, static function (array $a, array $b): int {
+        $nameCompare = strnatcasecmp((string)($a['est_name'] ?? ''), (string)($b['est_name'] ?? ''));
+        if ($nameCompare !== 0) {
+            return $nameCompare;
+        }
+        return strnatcasecmp((string)($a['bimh_id'] ?? ''), (string)($b['bimh_id'] ?? ''));
+    });
+
+    return array_values($rows);
 }
 
 function asset_number_format_error(string $label, array $parsedRule): string
@@ -1555,6 +2157,13 @@ function asset_table_available_columns(array $fields, array $uiFieldLabels, stri
             'label' => (string)($uiFieldLabels[$field['field_key']] ?? $field['label']),
             'type' => 'field',
         ];
+        if ((string)($field['data_type'] ?? '') === 'bimh') {
+            $columns[] = [
+                'key' => (string)$field['field_key'] . '__est_name',
+                'label' => 'Est Name',
+                'type' => 'field',
+            ];
+        }
     }
     return $columns;
 }
@@ -3400,8 +4009,20 @@ function get_asset_values(int $assetId): array
     $stmt->execute([$assetId]);
     $rows = $stmt->fetchAll();
     $map = [];
+    $bimhValues = [];
     foreach ($rows as $row) {
-        $map[$row['field_key']] = asset_display_value($row);
+        $fieldKey = (string)$row['field_key'];
+        $display = asset_display_value($row);
+        $map[$fieldKey] = $display;
+        if ((string)($row['data_type'] ?? '') === 'bimh' && $display !== '') {
+            $bimhValues[$fieldKey] = $display;
+        }
+    }
+    if ($bimhValues) {
+        $nameMap = asset_bimh_lookup_many(array_values($bimhValues));
+        foreach ($bimhValues as $fieldKey => $bimhId) {
+            $map[$fieldKey . '__est_name'] = $nameMap[$bimhId] ?? 'BIMH ID is not in the Database.';
+        }
     }
     return $map;
 }
@@ -3551,24 +4172,40 @@ function asset_matches_dynamic_filters(array $asset, array $filters, array $fiel
                 if ($extensions) {
                     return false;
                 }
+            } elseif ($value === '__blank__') {
+                if ($extensions) {
+                    return false;
+                }
             } elseif ($value !== '' && !in_array(strtolower($value), $extensions, true)) {
                 return false;
             }
             continue;
         }
         if ($fieldType === 'conditional') {
-            if ($value !== '' && strcasecmp(asset_filter_value($asset, $fieldKey), $value) !== 0) {
+            $currentValue = asset_filter_value($asset, $fieldKey);
+            if ($value === '__blank__' && $currentValue !== '') {
+                return false;
+            }
+            if ($value !== '' && $value !== '__blank__' && strcasecmp($currentValue, $value) !== 0) {
                 return false;
             }
             continue;
         }
         if (asset_is_conditional_secondary($field)) {
-            if ($value !== '' && strcasecmp(asset_filter_value($asset, $fieldKey), $value) !== 0) {
+            $currentValue = asset_filter_value($asset, $fieldKey);
+            if ($value === '__blank__' && $currentValue !== '') {
+                return false;
+            }
+            if ($value !== '' && $value !== '__blank__' && strcasecmp($currentValue, $value) !== 0) {
                 return false;
             }
             continue;
         }
-        if ($value !== '' && strcasecmp(asset_filter_value($asset, $fieldKey), $value) !== 0) {
+        $currentValue = asset_filter_value($asset, $fieldKey);
+        if ($value === '__blank__' && $currentValue !== '') {
+            return false;
+        }
+        if ($value !== '' && $value !== '__blank__' && strcasecmp($currentValue, $value) !== 0) {
             return false;
         }
     }
@@ -3663,6 +4300,7 @@ function build_asset_filter_catalog(array $assets, array $fields, ?int $segmentI
                 'secondary_of_field_id' => (int)($field['secondary_of_field_id'] ?? 0),
                 'options' => [],
                 'secondary_options_map' => [],
+                'has_blank' => false,
             ];
             if ($fieldType === 'file') {
                 $extensions = asset_file_extensions_for_asset($asset, $fieldKey);
@@ -3673,11 +4311,36 @@ function build_asset_filter_catalog(array $assets, array $fields, ?int $segmentI
                     $catalog['fields'][$fieldKey]['options'][$ext] = $ext;
                 }
             } elseif ($fieldType === 'conditional') {
+                if (asset_filter_value($asset, $fieldKey) === '') {
+                    $catalog['fields'][$fieldKey]['has_blank'] = true;
+                }
                 foreach (asset_decode_conditional_map($field) as $primary => $children) {
                     $catalog['fields'][$fieldKey]['options'][$primary] = $primary;
                     $catalog['fields'][$fieldKey]['secondary_options_map'][$primary] = $children;
                 }
+                $childField = get_asset_conditional_child_field((int)$field['id'], $segmentId);
+                if ($childField && (int)($childField['active_status'] ?? 0) === 1) {
+                    $childKey = (string)$childField['field_key'];
+                    $catalog['fields'][$childKey] ??= [
+                        'field_key' => $childKey,
+                        'label' => (string)$childField['label'],
+                        'data_type' => (string)($childField['data_type'] ?? 'dropdown'),
+                        'secondary_of_field_id' => (int)($childField['secondary_of_field_id'] ?? 0),
+                        'options' => [],
+                        'secondary_options_map' => [],
+                        'has_blank' => false,
+                    ];
+                    $childValue = asset_filter_value($asset, $childKey);
+                    if ($childValue === '') {
+                        $catalog['fields'][$childKey]['has_blank'] = true;
+                    } else {
+                        $catalog['fields'][$childKey]['options'][$childValue] = $childValue;
+                    }
+                }
             } elseif (in_array($fieldType, ['dropdown', 'yes_no'], true)) {
+                if (asset_filter_value($asset, $fieldKey) === '') {
+                    $catalog['fields'][$fieldKey]['has_blank'] = true;
+                }
                 foreach (get_asset_field_options((int)$field['id']) as $option) {
                     $catalog['fields'][$fieldKey]['options'][(string)$option['option_value']] = (string)$option['option_label'];
                 }
@@ -3688,6 +4351,8 @@ function build_asset_filter_catalog(array $assets, array $fields, ?int $segmentI
                 $value = asset_filter_value($asset, $fieldKey);
                 if ($value !== '') {
                     $catalog['fields'][$fieldKey]['options'][$value] = $value;
+                } else {
+                    $catalog['fields'][$fieldKey]['has_blank'] = true;
                 }
             }
         }
@@ -3853,9 +4518,22 @@ function get_asset_values_for_assets(array $assetIds): array
     $stmt = db()->prepare("SELECT v.*, f.field_key, f.data_type FROM asset_values v JOIN asset_fields f ON f.id = v.field_id WHERE v.asset_id IN ({$placeholders}) ORDER BY f.sort_order ASC, f.id ASC");
     $stmt->execute($assetIds);
     $map = [];
+    $bimhValues = [];
     foreach ($stmt->fetchAll() as $row) {
         $assetId = (int)$row['asset_id'];
-        $map[$assetId][$row['field_key']] = asset_display_value($row);
+        $fieldKey = (string)$row['field_key'];
+        $display = asset_display_value($row);
+        $map[$assetId][$fieldKey] = $display;
+        if ((string)($row['data_type'] ?? '') === 'bimh' && $display !== '') {
+            $bimhValues[$assetId . ':' . $fieldKey] = $display;
+        }
+    }
+    if ($bimhValues) {
+        $nameMap = asset_bimh_lookup_many(array_values($bimhValues));
+        foreach ($bimhValues as $compositeKey => $bimhId) {
+            [$assetId, $fieldKey] = explode(':', $compositeKey, 2);
+            $map[(int)$assetId][$fieldKey . '__est_name'] = $nameMap[$bimhId] ?? 'BIMH ID is not in the Database.';
+        }
     }
     return $map;
 }

@@ -16,11 +16,13 @@
         <a href="index.php?page=board">Information</a>
         <a href="index.php?page=office_orders">Office Orders</a>
         <?php if (is_superadmin()): ?>
-            <a href="index.php?page=admin">Management</a>
-            <a href="index.php?page=offices">Offices</a>
             <a href="index.php?page=declarations">Declarations</a>
-            <a href="index.php?page=user_permissions">User Permissions</a>
-            <a href="index.php?page=interface">Interface</a>
+            <?php if (can_manage_superadmin_scope()): ?>
+                <a href="index.php?page=admin">Management</a>
+                <a href="index.php?page=offices">Offices</a>
+                <a href="index.php?page=user_permissions">User Permissions</a>
+                <a href="index.php?page=interface">Interface</a>
+            <?php endif; ?>
         <?php endif; ?>
         <a href="index.php?page=profile">Profile</a>
         <a href="<?= e((string)($info['video_tutorial_url'] ?? '#')); ?>" target="_blank" rel="noopener">Tutorial</a>
