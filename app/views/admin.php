@@ -9,6 +9,8 @@ $subcategories = get_asset_subcategories(null, true, $activeSegmentId);
 $fields = get_asset_management_fields(true, $activeSegmentId);
 $templateColumns = asset_template_columns($activeSegmentId);
 $uploadedTemplate = asset_template_uploaded_info($activeSegmentId);
+$templateSource = asset_template_source($activeSegmentId);
+$templateSourceOptions = asset_template_source_options($activeSegmentId);
 $subcategoryEnabled = asset_subcategory_enabled($activeSegmentId);
 $categorySelectionEnabled = asset_category_selection_enabled($activeSegmentId);
 $assetNumberVisibleToUsers = asset_number_visible_to_users($activeSegmentId);
@@ -98,12 +100,25 @@ $numberRuleExamples = asset_number_format_rule_examples();
 <section class="card">
     <h2>Excel Template</h2>
     <?php if ($activeSegment): ?><p class="muted">Active segment: <?= e((string)$activeSegment['segment_name']); ?></p><?php endif; ?>
-    <p class="hint">Serial No stays first and Instruction stays last. The middle columns are driven by active import fields.</p>
+    <p class="hint">Serial No stays first and Instruction stays last. The middle columns are driven by active import fields. Uploaded template validation checks only the `data` sheet column count and applies `info` sheet category/sub-category logic if that sheet exists.</p>
     <?php if ($uploadedTemplate): ?>
         <p class="muted">Custom template uploaded at <?= e($uploadedTemplate['updated_at']); ?>.</p>
     <?php else: ?>
         <p class="muted">No custom template uploaded yet. Default generated template will be used.</p>
     <?php endif; ?>
+    <form method="post" action="index.php" class="inline-form">
+        <?= csrf_input(); ?>
+        <input type="hidden" name="action" value="save_asset_template_source">
+        <input type="hidden" name="segment_id" value="<?= e((string)$activeSegmentId); ?>">
+        <label>Template users will download
+            <select name="template_source">
+                <?php foreach ($templateSourceOptions as $value => $label): ?>
+                    <option value="<?= e($value); ?>" <?= $templateSource === $value ? 'selected' : ''; ?>><?= e($label); ?></option>
+                <?php endforeach; ?>
+            </select>
+        </label>
+        <button type="submit">Save</button>
+    </form>
     <div class="table-wrap">
         <table>
             <thead>
@@ -129,7 +144,11 @@ $numberRuleExamples = asset_number_format_rule_examples();
         </label>
         <div class="toolbar-row">
             <button type="submit">Upload Template</button>
-            <a href="asset_template.php?<?= e(http_build_query(['segment_id' => $activeSegmentId])); ?>" class="button-link">Download Current Template</a>
+            <?php if ($uploadedTemplate): ?>
+                <a href="asset_template.php?<?= e(http_build_query(['mode' => 'uploaded', 'segment_id' => $activeSegmentId])); ?>" class="button-link">Uploaded Template</a>
+            <?php else: ?>
+                <span class="button-link is-disabled" aria-disabled="true">Uploaded Template</span>
+            <?php endif; ?>
             <a href="asset_template.php?<?= e(http_build_query(['mode' => 'auto', 'segment_id' => $activeSegmentId])); ?>" class="button-link">Download Auto Template</a>
         </div>
     </form>
