@@ -311,6 +311,66 @@ if ($action === 'save_asset_data_provider_visibility') {
     $adminRedirect();
 }
 
+if ($action === 'save_asset_download_settings') {
+    if (!can_manage_superadmin_scope()) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
+    try {
+        save_asset_download_settings($_POST['download_default_filters'] ?? [], input_str('download_naming_tokens_text', ''));
+        flash('success', 'Download settings updated.');
+    } catch (Throwable $e) {
+        flash('error', $e->getMessage());
+    }
+    $adminRedirect();
+}
+
+if ($action === 'save_download_manager_level1') {
+    if (!can_manage_superadmin_scope()) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
+    try {
+        save_asset_download_level1_labels($_POST['level1_labels'] ?? []);
+        flash('success', 'Level 1 download fields updated.');
+    } catch (Throwable $e) {
+        flash('error', $e->getMessage());
+    }
+    redirect('index.php?page=download_manager');
+}
+
+if ($action === 'save_download_manager_matrix') {
+    if (!can_manage_superadmin_scope()) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
+    try {
+        save_asset_download_segment_matrix($_POST['download_matrix'] ?? []);
+        flash('success', 'Download filter, sort, and token fields updated.');
+    } catch (Throwable $e) {
+        flash('error', $e->getMessage());
+    }
+    redirect('index.php?page=download_manager');
+}
+
+if ($action === 'save_download_manager_naming_template') {
+    if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
+        http_response_code(405);
+        exit('Method not allowed.');
+    }
+    if (!is_superadmin()) {
+        flash('error', 'Only superadmin can update download naming settings.');
+        redirect('index.php?page=board');
+    }
+    try {
+        save_asset_download_naming_template(input_str('download_naming_template', ''));
+        flash('success', 'Download file naming template updated.');
+    } catch (Throwable $e) {
+        flash('error', 'Unable to update download file naming template.');
+    }
+    redirect('index.php?page=download_manager');
+}
+
 if ($action === 'create_asset_field' || $action === 'update_asset_field') {
     if (!can_manage_superadmin_scope()) {
         http_response_code(403);
@@ -804,7 +864,6 @@ if ($action === 'asset_import_cancel') {
 if ($action === 'asset_download_data') {
     $user = current_user();
     $officeViewScope = input_str('office_view_scope', 'my_office');
-    $segmentId = input_int('segment_id');
     if (is_superadmin()) {
         if (!$user) {
             http_response_code(403);
@@ -815,34 +874,7 @@ if ($action === 'asset_download_data') {
         exit('Not allowed.');
     }
     try {
-        if (is_superadmin()) {
-            $scope = input_str('office_scope', 'zone');
-            $filters = [
-                'category_id' => input_int('category_id'),
-                'condition_value' => input_str('condition_value', ''),
-            ];
-            if (asset_subcategory_enabled($segmentId)) {
-                $filters['subcategory_id'] = input_int('subcategory_id');
-            }
-            if ($scope === 'zone') {
-                $filters['office_type'] = 2;
-                $filters['office_id'] = input_int('zone_id');
-            } elseif ($scope === 'circle') {
-                $filters['office_type'] = 3;
-                $filters['office_id'] = input_int('circle_id');
-            } elseif ($scope === 'division') {
-                $filters['office_type'] = 4;
-                $filters['office_id'] = input_int('division_id');
-            } elseif ($scope === 'subdivision') {
-                $filters['office_type'] = 5;
-                $filters['office_id'] = input_int('subdivision_id');
-            }
-            $filters['segment_id'] = $segmentId;
-            export_asset_data_excel($filters, $user, true);
-        } else {
-            $filters = ['office_view_scope' => $officeViewScope, 'segment_id' => $segmentId];
-            export_asset_data_excel($filters, $user, $officeViewScope === 'office_under_me');
-        }
+        asset_handle_hierarchical_download($_POST, $user, $officeViewScope);
     } catch (Throwable $e) {
         flash('error', 'Download failed: ' . $e->getMessage());
         $boardRedirect();
@@ -1206,6 +1238,15 @@ if ($page === 'admin') {
         exit('Not allowed.');
     }
     require __DIR__ . '/app/views/admin.php';
+    exit;
+}
+
+if ($page === 'download_manager') {
+    if (!can_manage_superadmin_scope()) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
+    require __DIR__ . '/app/views/download_manager.php';
     exit;
 }
 

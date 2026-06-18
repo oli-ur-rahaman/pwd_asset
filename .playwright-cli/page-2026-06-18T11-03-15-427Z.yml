@@ -1,0 +1,41 @@
+- generic [ref=e2]:
+  - img [ref=e5]
+  - heading "Survey Website" [level=1] [ref=e7]
+  - generic [ref=e8]:
+    - generic [ref=e10]:
+      - generic [ref=e11]: Login
+      - generic [ref=e12]: Email
+      - textbox "Enter PWD Official email" [ref=e13]
+      - generic [ref=e14]: Password
+      - textbox "The Password" [ref=e15]
+      - generic [ref=e16]:
+        - button "Sign in" [ref=e17] [cursor=pointer]
+        - generic [ref=e18]:
+          - link "Forget Password" [ref=e19] [cursor=pointer]:
+            - /url: "#"
+          - link "Video Tutorial" [ref=e20] [cursor=pointer]:
+            - /url: https://www.youtube.com/watch?v=0xDtouznUAE
+    - note "Login instructions" [ref=e23]:
+      - heading "Login Instructions" [level=3] [ref=e24]
+      - list [ref=e25]:
+        - listitem [ref=e26]:
+          - text: ✓ Enter your
+          - generic [ref=e27]: registered User ID
+          - text: and
+          - generic [ref=e28]: Password
+          - text: .
+        - listitem [ref=e29]:
+          - text: ✓ Make sure
+          - generic [ref=e30]: Caps Lock
+          - text: is turned off while typing.
+        - listitem [ref=e31]:
+          - text: ✓ Click
+          - generic [ref=e32]: Login
+          - text: to access the system dashboard.
+        - listitem [ref=e33]:
+          - text: ✓ If you face any issue, contact the
+          - generic [ref=e34]: System Administrator
+          - text: .
+      - generic [ref=e35]:
+        - generic [ref=e36]: Tip
+        - text: Use a secure device and avoid saving passwords on shared computers.

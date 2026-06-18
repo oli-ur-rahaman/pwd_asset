@@ -473,6 +473,7 @@ $numberRuleExamples = asset_number_format_rule_examples();
         <label><input type="checkbox" name="is_displayed" value="1" checked> Show in tables</label>
         <label><input type="checkbox" name="is_import_enabled" value="1" checked> Allow in import</label>
         <label><input type="checkbox" name="is_unique" value="1"> Unique value</label>
+        <label><input type="checkbox" name="is_download_token" value="1"> Declare as download token</label>
         <label>Filter Scope
             <select name="filter_scope">
                 <?php foreach ($filterScopeOptions as $scopeValue => $scopeLabel): ?>
@@ -609,6 +610,7 @@ $numberRuleExamples = asset_number_format_rule_examples();
                                     <label class="inline-check"><input form="<?= e($formId); ?>" type="checkbox" name="is_displayed" value="1" <?= (int)$field['is_displayed'] === 1 ? 'checked' : ''; ?>> Display</label>
                                     <label class="inline-check"><input form="<?= e($formId); ?>" type="checkbox" name="is_import_enabled" value="1" <?= (int)$field['is_import_enabled'] === 1 ? 'checked' : ''; ?> <?= in_array($field['data_type'], ['file'], true) ? 'disabled' : ''; ?>> Import</label>
                                     <label class="inline-check"><input form="<?= e($formId); ?>" type="checkbox" name="is_unique" value="1" <?= (int)($field['is_unique'] ?? 0) === 1 ? 'checked' : ''; ?> <?= in_array($field['data_type'], ['file', 'conditional'], true) ? 'disabled' : ''; ?>> Unique</label>
+                                    <label class="inline-check"><input form="<?= e($formId); ?>" type="checkbox" name="is_download_token" value="1" <?= (int)($field['is_download_token'] ?? 0) === 1 ? 'checked' : ''; ?>> Token</label>
                                     <label>Filter Scope
                                         <select form="<?= e($formId); ?>" class="inline-edit" name="filter_scope">
                                             <?php foreach ($filterScopeOptions as $scopeValue => $scopeLabel): ?>

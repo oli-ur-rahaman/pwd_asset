@@ -1,0 +1,133 @@
+- generic [active] [ref=e1]:
+  - navigation [ref=e2]:
+    - generic [ref=e3]: Survey Website
+    - generic [ref=e4]:
+      - link "Information" [ref=e5] [cursor=pointer]:
+        - /url: index.php?page=board
+      - link "Office Orders" [ref=e6] [cursor=pointer]:
+        - /url: index.php?page=office_orders
+      - link "Profile" [ref=e7] [cursor=pointer]:
+        - /url: index.php?page=profile
+      - link "Tutorial" [ref=e8] [cursor=pointer]:
+        - /url: https://www.youtube.com/watch?v=0xDtouznUAE
+      - button "Logout" [ref=e10] [cursor=pointer]
+  - main [ref=e11]:
+    - generic [ref=e13]:
+      - generic [ref=e14]:
+        - heading "Survey Website" [level=2] [ref=e15]
+        - paragraph [ref=e16]: "Office: Sylhet PWD Division | User: ee_syl@pwd.gov.bd"
+      - generic [ref=e17]:
+        - generic [ref=e18]:
+          - generic [ref=e19]:
+            - strong [ref=e20]: Last Sent
+            - text: Never
+          - generic [ref=e21]:
+            - strong [ref=e22]: Last Update
+            - text: No updates yet
+        - button "Declare as Completed" [ref=e24] [cursor=pointer]
+    - generic [ref=e26]:
+      - link "General Information" [ref=e27] [cursor=pointer]:
+        - /url: index.php?page=board&segment_id=3&office_view_scope=my_office
+      - link "Civil Related" [ref=e28] [cursor=pointer]:
+        - /url: index.php?page=board&segment_id=4&office_view_scope=my_office
+      - link "Water Supply and Sanitation" [ref=e29] [cursor=pointer]:
+        - /url: index.php?page=board&segment_id=5&office_view_scope=my_office
+      - link "Ancillary Civil Items" [ref=e30] [cursor=pointer]:
+        - /url: index.php?page=board&segment_id=6&office_view_scope=my_office
+      - link "Electromechanical Items" [ref=e31] [cursor=pointer]:
+        - /url: index.php?page=board&segment_id=7&office_view_scope=my_office
+      - link "External Electrification" [ref=e32] [cursor=pointer]:
+        - /url: index.php?page=board&segment_id=8&office_view_scope=my_office
+      - link "Ancillary EM Items" [ref=e33] [cursor=pointer]:
+        - /url: index.php?page=board&segment_id=9&office_view_scope=my_office
+    - generic [ref=e35]:
+      - link "My Office" [ref=e36] [cursor=pointer]:
+        - /url: index.php?page=board&office_view_scope=my_office&segment_id=9
+      - link "Office Under Me" [ref=e37] [cursor=pointer]:
+        - /url: index.php?page=board&office_view_scope=office_under_me&segment_id=9
+    - generic [ref=e39]:
+      - button "+Add Info" [ref=e40] [cursor=pointer]
+      - button "Bulk Entry" [ref=e41] [cursor=pointer]
+      - link "Excel Template" [ref=e42] [cursor=pointer]:
+        - /url: asset_template.php?segment_id=9
+      - button "Download Data" [ref=e43] [cursor=pointer]
+    - generic [ref=e45]:
+      - generic [ref=e46]:
+        - heading "Ancillary EM Items" [level=2] [ref=e47]
+        - generic [ref=e48]:
+          - generic [ref=e49]: 0 row(s)
+          - link "Refresh" [ref=e50] [cursor=pointer]:
+            - /url: index.php?page=board&office_view_scope=my_office&segment_id=9
+          - button "Columns" [ref=e51] [cursor=pointer]
+      - table [ref=e53]:
+        - rowgroup [ref=e54]:
+          - row "SL No Asset Number District Name * Upazilla * Name of the Hospital * Presence of Medical Gas System * Presence of Compound and Security Light * Presence of Sound and PA System * Presence of computer networks * Presence of PABX System * Presence of CCTV system * Number of Neon Poly sign board * Requirement of any ancillary items (Describe in detail) Remarks Action" [ref=e55]:
+            - columnheader [ref=e56]:
+              - checkbox [ref=e57]
+            - columnheader "SL No" [ref=e58]:
+              - link "SL No" [ref=e59] [cursor=pointer]:
+                - /url: index.php?page=board&office_view_scope=my_office&segment_id=9&sort_col=__sl&sort_dir=asc
+            - columnheader "Asset Number" [ref=e60]:
+              - link "Asset Number" [ref=e61] [cursor=pointer]:
+                - /url: index.php?page=board&office_view_scope=my_office&segment_id=9&sort_col=asset_number&sort_dir=asc
+            - columnheader "District Name *" [ref=e62]:
+              - link "District Name *" [ref=e64] [cursor=pointer]:
+                - /url: index.php?page=board&office_view_scope=my_office&segment_id=9&sort_col=district_name&sort_dir=asc
+                - text: District Name
+                - generic [ref=e65]: "*"
+            - columnheader "Upazilla *" [ref=e66]:
+              - link "Upazilla *" [ref=e68] [cursor=pointer]:
+                - /url: index.php?page=board&office_view_scope=my_office&segment_id=9&sort_col=upazilla&sort_dir=asc
+                - text: Upazilla
+                - generic [ref=e69]: "*"
+            - columnheader "Name of the Hospital *" [ref=e70]:
+              - link "Name of the Hospital *" [ref=e72] [cursor=pointer]:
+                - /url: index.php?page=board&office_view_scope=my_office&segment_id=9&sort_col=name_of_the_hospital&sort_dir=asc
+                - text: Name of the Hospital
+                - generic [ref=e73]: "*"
+            - columnheader "Presence of Medical Gas System *" [ref=e74]:
+              - link "Presence of Medical Gas System *" [ref=e76] [cursor=pointer]:
+                - /url: index.php?page=board&office_view_scope=my_office&segment_id=9&sort_col=presence_of_medical_gas_system&sort_dir=asc
+                - text: Presence of Medical Gas System
+                - generic [ref=e77]: "*"
+            - columnheader "Presence of Compound and Security Light *" [ref=e78]:
+              - link "Presence of Compound and Security Light *" [ref=e80] [cursor=pointer]:
+                - /url: index.php?page=board&office_view_scope=my_office&segment_id=9&sort_col=presence_of_stage_lighting&sort_dir=asc
+                - text: Presence of Compound and Security Light
+                - generic [ref=e81]: "*"
+            - columnheader "Presence of Sound and PA System *" [ref=e82]:
+              - link "Presence of Sound and PA System *" [ref=e84] [cursor=pointer]:
+                - /url: index.php?page=board&office_view_scope=my_office&segment_id=9&sort_col=presence_of_sound_system&sort_dir=asc
+                - text: Presence of Sound and PA System
+                - generic [ref=e85]: "*"
+            - columnheader "Presence of computer networks *" [ref=e86]:
+              - link "Presence of computer networks *" [ref=e88] [cursor=pointer]:
+                - /url: index.php?page=board&office_view_scope=my_office&segment_id=9&sort_col=presence_of_computer_networks&sort_dir=asc
+                - text: Presence of computer networks
+                - generic [ref=e89]: "*"
+            - columnheader "Presence of PABX System *" [ref=e90]:
+              - link "Presence of PABX System *" [ref=e92] [cursor=pointer]:
+                - /url: index.php?page=board&office_view_scope=my_office&segment_id=9&sort_col=presence_of_pabx_system&sort_dir=asc
+                - text: Presence of PABX System
+                - generic [ref=e93]: "*"
+            - columnheader "Presence of CCTV system *" [ref=e94]:
+              - link "Presence of CCTV system *" [ref=e96] [cursor=pointer]:
+                - /url: index.php?page=board&office_view_scope=my_office&segment_id=9&sort_col=presence_of_cctv_system&sort_dir=asc
+                - text: Presence of CCTV system
+                - generic [ref=e97]: "*"
+            - columnheader "Number of Neon Poly sign board *" [ref=e98]:
+              - link "Number of Neon Poly sign board *" [ref=e100] [cursor=pointer]:
+                - /url: index.php?page=board&office_view_scope=my_office&segment_id=9&sort_col=number_of_neon_poly_sign_board&sort_dir=asc
+                - text: Number of Neon Poly sign board
+                - generic [ref=e101]: "*"
+            - columnheader "Requirement of any ancillary items (Describe in detail)" [ref=e102]:
+              - link "Requirement of any ancillary items (Describe in detail)" [ref=e104] [cursor=pointer]:
+                - /url: index.php?page=board&office_view_scope=my_office&segment_id=9&sort_col=requirement_of_any_ancillary_items_describe_in_detail&sort_dir=asc
+            - columnheader "Remarks" [ref=e105]:
+              - link "Remarks" [ref=e107] [cursor=pointer]:
+                - /url: index.php?page=board&office_view_scope=my_office&segment_id=9&sort_col=remarks&sort_dir=asc
+            - columnheader "Action" [ref=e108]
+        - rowgroup [ref=e109]:
+          - row "No assets found." [ref=e110]:
+            - cell "No assets found." [ref=e111]
+    - button "Soft Delete Selected" [ref=e113] [cursor=pointer]

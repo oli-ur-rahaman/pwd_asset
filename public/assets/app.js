@@ -253,6 +253,55 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    const syncDownloadChip = (chip) => {
+        const input = chip.querySelector('[data-download-chip-input]');
+        if (!input) {
+            return;
+        }
+        chip.classList.toggle('is-active', input.checked);
+        chip.classList.toggle('is-removed', !input.checked);
+    };
+
+    document.querySelectorAll('[data-download-chip]').forEach((chip) => {
+        syncDownloadChip(chip);
+        const removeButton = chip.querySelector('[data-download-chip-remove]');
+        const input = chip.querySelector('[data-download-chip-input]');
+        if (removeButton && input) {
+            removeButton.addEventListener('click', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                input.checked = false;
+                syncDownloadChip(chip);
+            });
+        }
+    });
+
+    document.querySelectorAll('[data-download-cell-refresh]').forEach((button) => {
+        button.addEventListener('click', () => {
+            const cell = button.closest('[data-download-cell]');
+            if (!cell) {
+                return;
+            }
+            cell.querySelectorAll('[data-download-chip-input]').forEach((input) => {
+                input.checked = true;
+                syncDownloadChip(input.closest('[data-download-chip]'));
+            });
+        });
+    });
+
+    document.querySelectorAll('[data-download-cell-disable-all]').forEach((button) => {
+        button.addEventListener('click', () => {
+            const cell = button.closest('[data-download-cell]');
+            if (!cell) {
+                return;
+            }
+            cell.querySelectorAll('[data-download-chip-input]').forEach((input) => {
+                input.checked = false;
+                syncDownloadChip(input.closest('[data-download-chip]'));
+            });
+        });
+    });
+
     document.querySelectorAll('[data-modal]').forEach((button) => {
         button.addEventListener('click', () => {
             const modalId = button.getAttribute('data-modal');

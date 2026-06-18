@@ -1,342 +1,267 @@
-# Hierarchical Download Module Redesign
+# Download Module Redesign Roadmap
 
-## Summary
-Redesign the download module into a **hierarchical 3-layer system**.
+## Status
+- Current status: **Runtime refactor in active progress**
+- Existing state: the revised 3-page runtime modal is now partially implemented and wired to backend parsing/export rules
+- This roadmap now reflects the **new target structure**
+- Last update: `2026-06-18` (token policy revision applied)
 
-1. **Layer 1: Supreme Level**
-   - superadmin decides which fields are available as level-1 choices
-   - user chooses **one** level-1 field for the run
-   - user then chooses **all / one / multiple** values of that level-1 field
-   - this level controls:
-     - PDF page separation
-     - Excel sheet separation
-     - ZIP top-level folder separation
+## Revised Core Idea
+The download flow will be reorganized into **three pages inside one download experience**. The UI should feel like moving through separate pages inside the same modal, with a clear top bar or folder-style navigation:
 
-2. **Layer 2: Segments**
-   - segment becomes the fixed second level
-   - user chooses **all / one / multiple** segments
-   - for each selected segment, user separately chooses which fields/columns are considered in output
-   - each segment stays separate; no merged cross-segment table
+1. `Level_1`
+2. `Level_2`
+3. `Level_3`
 
-3. **Layer 3: Segment Filters + Sort**
-   - each selected segment has its own filter block
-   - filters decide which rows of that segment are included
-   - sort decides row order inside that segment’s output table
-   - sort does **not** apply to level 1 or segment ordering
+This same concept should also be reflected in the superadmin `Download Manager` page so the planning and runtime flow stay aligned.
 
-The redesigned module supports:
-- **Excel**
-- **PDF**
-- **ZIP of files**
+## Revised Page Design
 
-## Key Changes
+### Page `Level_1`
+This page controls the **common fields across all segments** plus **Office**.
 
-### 1. Level 1 model
-Add a dedicated superadmin setting: **available as first level**.
+Purpose:
+- user selects exactly one field, or `Office`, as the `Level_1` grouping field
+- user chooses the items/values under that Level_1 field
+- user defines which other common fields should appear in the report table
+- user can define the sequence/order of those common fields
+- user can define ascending/descending sorting for those common fields
+- the field selected as `Level_1` must not appear again in the remaining sort/filter choices
 
-Rules:
-- level 1 options are chosen only from **common fields**
-- common-field identity is **manual**, not inferred
-- level 1 is a **single selected field** per download run
-- level 1 is the **supreme grouping key**
-- level 1 is **not reused** in:
-  - segment table columns
-  - sort chains
-- if level-1 value is missing in data, it is treated as **Blank**
+Expected contents:
+- one selector for `Level_1` field
+- available options:
+  - all common fields across active segments
+  - `Office`
+- one item-selection area for the chosen Level_1 field
+- one sequence/ordering area for the remaining common fields
+- one compact sort setup area for the remaining common fields
 
-Level-1 output behavior:
-- **PDF**: one new page group per selected level-1 item
-- **Excel**: one sheet per selected level-1 item
-- **ZIP**: one top-level folder per selected level-1 item
+Notes:
+- this page defines the cross-segment/common part of the report
+- these common fields should not be shown again in `Level_2`
 
-### 2. Level 2 segment model
-After level 1 is chosen, user selects:
-- all segments
-- one segment
-- multiple segments
+### Page `Level_2`
+This page controls the **segment-specific fields** that appear in the report/table.
 
-For each selected segment:
-- user gets a separate configuration block
-- user chooses which fields/columns of that segment are included
-- existing field serial/order defines column order
-- no download-only column reorder in v1
-
-Output behavior:
-- each selected segment is rendered as a **separate table/section**
-- segment is fixed as **level 2**
-- segment ordering is outside sorting logic
-
-Format behavior:
-- **Excel**:
-  - inside each level-1 sheet, render separate segment tables one after another
-- **PDF**:
-  - inside each level-1 page group, render separate segment tables one after another
-- **ZIP**:
-  - inside each level-1 folder, create separate segment folders
-
-### 3. Layer 3 filters
-Each selected segment has its own independent filter block.
-
-Filter sources:
-- default download filters, if superadmin enabled them:
-  - office hierarchy
-  - category
-  - sub-category
-- superadmin-declared segment filter fields:
-  - dropdown
-  - yes/no
-  - conditional fields
-  - other allowed fields
+Purpose:
+- user selects the segments to include
+- user selects the fields inside those selected segments
+- common fields are excluded here because they are managed in `Level_1`
 
 Rules:
-- filter fields are configured **per segment**
-- filter values are always **all / one / multiple**
-- filter options are generated from data by:
-  - grab
-  - sort
-  - duplicate remove
-- blank values are included as **Blank** where present
+- for `PDF` and `Excel`, all eligible segment fields may appear
+- for `ZIP`, only file fields should appear
+- for `PDF`/`Excel`, file fields should render as summaries like:
+  - `1 dwg, 4 pdf`
 
-Filter semantics:
-- Layer 3 filters only decide **which rows** of that segment are considered
-- filters do not affect:
-  - level-1 grouping
-  - segment ordering
-  - selected output columns
+Expected contents:
+- selected segment list
+- per-segment field list
+- common fields excluded from these lists
 
-### 4. Layer 3 sorting
-Sorting is configured only from superadmin-enabled sort fields.
+### Page `Level_3`
+This page controls **filters only**.
 
-Rules:
-- sort applies **inside each segment table only**
-- level 1 and level 2 are outside sorting logic
-- user can define **multi-level sort**
-- each sort level has:
-  - one field
-  - asc / desc
-
-Example:
-- if sort is `infrastructure_condition > office > subcategory > category`
-- rows inside each selected segment table are ordered by that chain only
-
-### 5. Output format behavior
-
-#### Excel
-Structure:
-- workbook
-- one sheet per selected level-1 item
-- inside each sheet:
-  - separate table for each selected segment
-  - each segment uses its own selected columns
-  - each segment applies its own filters
-  - each segment rows are sorted by the chosen sort chain
-
-#### PDF
-Structure:
-- one PDF
-- one page/section group per selected level-1 item
-- inside each level-1 group:
-  - separate table for each selected segment
-  - each segment uses its own selected columns
-  - each segment applies its own filters
-  - each segment rows are sorted by the chosen sort chain
-
-#### ZIP
-Structure:
-- one ZIP archive
-- top level: one folder per selected level-1 item
-- next level: one folder per selected segment
-- inside each segment folder:
-  - apply segment-specific filters
-  - include only selected file fields of that segment
-  - use ZIP hierarchy rules if needed below segment level
-  - if extra ZIP hierarchy is added later, it sits **below segment**
-
-### 6. Download settings model
-Add a dedicated download configuration layer.
-
-Superadmin settings must support:
-- mark field as **common field**
-- mark field as **available as first level**
-- enable default filters globally
-- enable download filters per segment
-- enable download sort fields per segment
-- enable ZIP-eligible file fields per segment
-- maintain naming token settings globally
-
-This configuration is separate from current board/table filter settings.
-
-### 7. Naming model
-Use token-builder naming, not free-text parsing.
-
-Naming applies to:
-- Excel filename
-- PDF filename
-- ZIP filename
-- ZIP internal file names
-- ZIP folder labels where appropriate
-
-Minimum token set:
-- level1_field_name
-- level1_value
-- segment_name
-- office_name
-- office_type
-- category
-- subcategory
-- field_name
-- district
-- upazila_thana
-- division
-- circle
-- zone
-- asset_number
-- serial_no
-- bimh_id
-- date_stamp
+Purpose:
+- user selects the segment field values to use as filters
+- no sorting UI is required here in the revised model
 
 Rules:
-- join non-empty tokens only
-- sanitize for filesystem safety
-- handle duplicate ZIP file names safely
+- filter UI is segment-wise
+- filter fields are shown as compact collapsible controls
+- a 4-column compact layout is preferred
+- all filter fields are selected/openable by default
+- if a field is the chosen `Level_1`, it must not appear here
 
-## Implementation Task Mapping
+Expected contents:
+- per-segment filter sections
+- collapsible compact filter cards/buttons
+- 4-column layout where possible
 
-### Phase 1: configuration foundation
-- add download-specific field metadata:
-  - `is_common_download_field`
-  - `is_download_level1`
-  - `is_download_filter`
-  - `is_download_sort`
-  - `is_download_zip_file_selectable`
-- add global download settings storage for:
-  - enabled default filters
-  - naming token order
-- add backend helpers to resolve:
-  - common fields
-  - level-1 eligible fields
-  - per-segment download filters
-  - per-segment sort fields
-  - per-segment ZIP-selectable file fields
-- update superadmin UI to maintain these settings
+## Revised Output Rules
 
-### Phase 2: request contract and domain model
-- define one canonical download request payload containing:
-  - output type
-  - chosen level-1 field
-  - chosen level-1 values
-  - selected segments
-  - selected fields per segment
-  - selected filters per segment
-  - selected sort chain per segment
-  - selected ZIP file fields per segment
-- build backend validation for the payload
-- reject invalid combinations cleanly:
-  - no level-1 field
-  - no segment
-  - no fields selected for a segment
-  - ZIP selected with no file field chosen
+### PDF
+- one new page per `Level_1` item
+- inside that Level_1 page:
+  - separate table per segment
+- default first column: `SL`
 
-### Phase 3: download modal redesign
-- redesign the current modal into 3 blocks:
-  - Layer 1 selector block
-  - Layer 2 segment and field-selection block
-  - Layer 3 per-segment filter and sort block
-- preselect current segment when modal opens from a segment page
-- allow segment selection to expand to all / one / multiple
-- render one segment configuration block per selected segment
-- keep current dependency logic for:
-  - office hierarchy
-  - category/sub-category
-  - conditional fields
-- make Layer 3 filters multi-select
+### Excel
+- separate sheet per segment
+- default first column: `SL`
+- second column: chosen `Level_1`
 
-### Phase 4: data extraction pipeline
-- implement a hierarchical fetch pipeline:
-  1. resolve selected level-1 values
-  2. iterate each selected level-1 item
-  3. iterate each selected segment
-  4. fetch that segment’s assets
-  5. apply per-segment filters
-  6. keep only rows matching the current level-1 item
-  7. sort inside the segment table
-  8. project only selected fields for that segment
-- ensure no segment merging happens in output
-- ensure blank level-1 values map to `Blank`
+### ZIP
+- file only
+- only file fields are eligible
 
-### Phase 5: excel export
-- create workbook builder for:
-  - one sheet per selected level-1 item
-  - separate segment tables inside each sheet
-- preserve selected segment order
-- preserve selected field order from existing field serial
-- include segment/table headings clearly
+## Download Manager Alignment
+The superadmin `Download Manager` page should now mirror the revised structure using a top navigation/tab/folder style:
 
-### Phase 6: pdf export
-- create report renderer for:
-  - one PDF
-  - one section/page group per selected level-1 item
-  - separate segment tables inside each group
-- use same filtered/sorted/projected dataset as Excel
-- keep layout table-based, not card-based
+1. `Level_1`
+2. `Level_2`
+3. `Level_3`
 
-### Phase 7: zip export
-- create ZIP builder for:
-  - one folder per selected level-1 item
-  - one folder per selected segment under it
-  - selected file fields only
-- map matching rows/files into ZIP structure
-- use naming token builder for archive file names and internal file names
-- implement duplicate-safe file renaming
+Its purpose is to keep planning/configuration understandable before or while the runtime modal is refactored.
 
-### Phase 8: naming/token builder
-- implement token resolution service
-- support all required tokens
-- skip empty token values
-- sanitize filesystem-invalid characters
-- provide stable duplicate handling for repeated names
+### Download Manager page expectations
 
-### Phase 9: regression and acceptance hardening
-- verify current permissions still gate downloads correctly
-- verify segment-aware access still holds
-- verify board filters and normal asset workflows are untouched
-- verify view-only users retain intended download access
+#### `Level_1` tab
+- show common fields across active segments
+- also show `Office`
+- allow choosing candidate Level_1 field(s)
+- show that future sequence and sort controls belong here
 
-## Test Plan
+#### `Level_2` tab
+- show segment-wise non-common fields
+- exclude common fields from the displayed lists
+- communicate that this page corresponds to segment/field appearance in report output
 
-### Core scenarios
-- one level-1 field, one level-1 value, one segment, Excel
-- one level-1 field, multiple level-1 values, one segment, PDF
-- one level-1 field, multiple level-1 values, multiple segments, Excel
-- one level-1 field, multiple level-1 values, multiple segments, PDF
-- one level-1 field, multiple level-1 values, multiple segments, ZIP
-- different selected columns per segment in the same run
-- different filters per segment in the same run
-- multi-select filter values per segment
-- multi-level sort inside each segment table
+#### `Level_3` tab
+- keep segment-wise filter/sort field management visible here for now
+- add segment-wise token management
+- current persistence of field disabling/enabling must keep working after refresh
+- common fields must appear as token candidates by default
 
-### Edge cases
-- level-1 blank values produce `Blank` sheet/page/folder
-- segment with no matching rows after filtering under a level-1 item
-- selected segment with no selected file field in ZIP mode
-- duplicate file names inside ZIP
-- conditional filters with multi-select values
-- category/sub-category linked behavior inside per-segment filter blocks
+## Revised Task Mapping
 
-### Regression
-- current permission boundaries remain unchanged
-- current segment-aware access rules remain unchanged
-- view-only users keep download access consistent with current behavior
-- existing board filters and table behavior remain unchanged
+### Task 1: roadmap alignment
+Status: **Completed**
+- rewrite roadmap to match the revised 3-page structure
+- explicitly separate:
+  - common-field controls
+  - segment-field controls
+  - filter controls
 
-## Assumptions and Defaults
-- level 1 is chosen from manually marked common fields only
-- level 1 is one field per run
-- level 1 is supreme and is not shown again in table columns or sorting
-- level-1 missing values are grouped as `Blank`
-- segment is always fixed as level 2
-- user may choose all / one / multiple segments
-- each segment has separate selected columns
-- each segment has separate filter controls
-- sorting applies only inside each segment table
-- multiple segments are never merged into one table in v1
+### Task 2: Download Manager UI redesign
+Status: **Completed**
+- convert page into top-tab / folder-like multi-page layout
+- add:
+  - `Level_1` tab
+  - `Level_2` tab
+  - `Level_3` tab
+- preserve current working save actions while improving structure
+
+### Task 3: Download Manager data presentation update
+Status: **Completed**
+- `Level_1`:
+  - show common fields
+  - include `Office`
+- `Level_2`:
+  - show segment-wise non-common fields
+- `Level_3`:
+  - keep current filter/sort configuration surface visible
+
+### Task 4: runtime download modal refactor
+Status: **Completed**
+- refactor the actual download modal to match the same 3-page structure
+- keep `Download` / `Cancel` as shared modal actions outside the page bodies
+- move sort responsibility out of `Level_3`
+- add runtime `Level_1` sections for:
+  - file format
+  - Level_1 field/value selection
+  - common columns
+  - common sorting
+- update `Level_2` so it now shows **segment-specific fields only**
+- keep `Level_3` filters-only in the runtime modal
+- fix the runtime bug where the selected `Level_1` field could still reappear in `Level_2`
+
+### Task 5: runtime export alignment
+Status: **In Progress**
+- ensure Excel follows:
+  - one sheet per segment
+  - first column `SL`
+  - second column chosen `Level_1`
+- ensure PDF follows:
+  - one new page per Level_1 item
+  - separate segment tables
+- ensure ZIP follows:
+  - file-only logic
+- completed in this phase:
+  - `Office` is now available as a runtime `Level_1` option
+  - common columns selected in `Level_1` are now carried into export headers/rows
+  - common sorting selected in `Level_1` now drives row ordering inside each segment output
+  - `Level_2` no longer forces common fields to be selected as segment fields
+  - PDF renderer updated toward the revised structure:
+    - landscape output
+    - one Level_1 group per page section
+    - separate table per segment
+    - wrapped cell content
+    - repeating table header support
+    - page numbering
+  - ZIP builder updated toward the revised structure:
+    - `Level_1 → selected common fields → segment → file field → file`
+    - file names now use the superadmin-configurable naming template
+    - zero-file ZIP runs now return a valid archive instead of a corrupted response
+  - naming token system upgraded:
+    - default hardcoded tokens reduced to:
+      - `office_name`
+      - `sub-division`
+      - `division`
+      - `circle`
+      - `zone`
+      - `segment`
+      - `field_name`
+      - `office_type`
+      - `asset_number`
+    - common labels across all active segments now become token candidates by default
+    - superadmin-declared token fields are included through field-level token selection
+    - `Download Manager` Level_3 now manages:
+      - filter fields
+      - sort fields
+      - token fields
+    - token placeholders now support hyphenated names like `{sub-division}`
+- still to verify carefully:
+  - actual Excel/PDF/ZIP output files against all revised scenarios
+  - any remaining gaps between export naming/layout and the final revised spec
+
+### Task 6: regression verification
+Status: **In Progress**
+- confirm `Download Manager` save behavior survives refresh
+- confirm no existing board features break
+- confirm the later runtime refactor does not break permissions or export structure
+- completed in this phase:
+  - syntax checks passed for `app/lib/asset.php` and `app/views/board.php`
+  - browser check completed with `ee_syl@pwd.gov.bd`
+  - verified runtime modal now shows:
+    - `Level_1` common columns/sorting
+    - `Level_2` segment-specific fields only
+  - direct HTTP download verification completed:
+    - PDF response confirmed as valid `%PDF`
+    - ZIP response confirmed as valid `PK` archive
+- still pending:
+  - targeted export-file verification for Excel/PDF/ZIP
+  - broader regression sweep after export verification
+
+## What To Check Now
+
+### Download Manager structure
+- top tab/folder navigation appears clearly
+- clicking each tab feels like moving to a separate page inside one surface
+- active tab is visually obvious
+
+### `Level_1` tab
+- common fields are shown
+- `Office` is shown
+- page communicates future sequence/sort responsibility clearly
+
+### `Level_2` tab
+- fields are shown segment-wise
+- common fields are excluded from segment field lists
+
+### `Level_3` tab
+- current filter/sort disabling still saves
+- current token disabling still saves
+- removed fields stay removed after refresh
+- common labels appear as token candidates by default before the first save
+- naming helper shows only:
+  - default tokens
+  - common-token labels
+  - superadmin-declared token labels
+
+## Next Implementation Focus
+The next major coding task should now be:
+
+1. finish **runtime export verification and edge-case hardening**
+2. then close the remaining gaps in Excel/PDF/ZIP layout/naming behavior against the revised spec

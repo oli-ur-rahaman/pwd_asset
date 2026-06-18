@@ -1,0 +1,407 @@
+- generic [ref=e1]:
+  - navigation [ref=e2]:
+    - generic [ref=e3]: Survey Website
+    - generic [ref=e4]:
+      - link "Information" [ref=e5] [cursor=pointer]:
+        - /url: index.php?page=board
+      - link "Office Orders" [ref=e6] [cursor=pointer]:
+        - /url: index.php?page=office_orders
+      - link "Profile" [ref=e7] [cursor=pointer]:
+        - /url: index.php?page=profile
+      - link "Tutorial" [ref=e8] [cursor=pointer]:
+        - /url: https://www.youtube.com/watch?v=0xDtouznUAE
+      - button "Logout" [ref=e10] [cursor=pointer]
+  - main [ref=e11]:
+    - text: ✓ ✓ ✓ ✓
+    - generic [ref=e30]:
+      - generic [ref=e31]:
+        - generic [ref=e32]:
+          - heading "Survey Website" [level=2] [ref=e33]
+          - paragraph [ref=e34]: "Office: Sylhet PWD Division | User: ee_syl@pwd.gov.bd"
+        - generic [ref=e35]:
+          - generic [ref=e36]:
+            - generic [ref=e37]:
+              - strong [ref=e38]: Last Sent
+              - text: 8 days ago
+            - generic [ref=e39]:
+              - strong [ref=e40]: Last Update
+              - text: No updates yet
+          - button "Declare as Completed" [disabled] [ref=e42]
+      - paragraph [ref=e43]: "Declared at: 2026-06-09 18:46:42"
+    - generic [ref=e45]:
+      - link "General Information" [ref=e46] [cursor=pointer]:
+        - /url: index.php?page=board&segment_id=3&office_view_scope=my_office
+      - link "Civil Related" [ref=e47] [cursor=pointer]:
+        - /url: index.php?page=board&segment_id=4&office_view_scope=my_office
+      - link "Water Supply and Sanitation" [ref=e48] [cursor=pointer]:
+        - /url: index.php?page=board&segment_id=5&office_view_scope=my_office
+      - link "Ancillary Civil Items" [ref=e49] [cursor=pointer]:
+        - /url: index.php?page=board&segment_id=6&office_view_scope=my_office
+      - link "Electromechanical Items" [ref=e50] [cursor=pointer]:
+        - /url: index.php?page=board&segment_id=7&office_view_scope=my_office
+      - link "External Electrification" [ref=e51] [cursor=pointer]:
+        - /url: index.php?page=board&segment_id=8&office_view_scope=my_office
+      - link "Ancillary EM Items" [ref=e52] [cursor=pointer]:
+        - /url: index.php?page=board&segment_id=9&office_view_scope=my_office
+    - generic [ref=e54]:
+      - button "+Add Info" [ref=e55] [cursor=pointer]
+      - button "Download Data" [ref=e56] [cursor=pointer]
+    - generic [ref=e58]:
+      - generic [ref=e59]:
+        - heading "General Information and File Uploading" [level=2] [ref=e60]
+        - generic [ref=e61]:
+          - generic [ref=e62]: 0 row(s)
+          - link "Refresh" [ref=e63] [cursor=pointer]:
+            - /url: index.php?page=board&office_view_scope=my_office&segment_id=3
+          - button "Columns" [ref=e64] [cursor=pointer]
+      - table [ref=e66]:
+        - rowgroup [ref=e67]:
+          - row "SL No District Name * Upazilla * Name of the Hospital * Number of Beds of Existing Hospital Building * Digital Survey Map (CAD and PDF) Soil Test Report Field information As Built Arc Drawing of Existing Hospital Building (Floor Plans) Field information Layout of Hospital (At least Hand Drawn) Field information Master Plan of Campus (Demarking Visually Vulnerable Buildings) Field information Visual Evidence of the area (Image or video) Remarks (Additional Information) Action" [ref=e68]:
+            - columnheader [ref=e69]:
+              - checkbox [ref=e70]
+            - columnheader "SL No" [ref=e71]:
+              - link "SL No" [ref=e72] [cursor=pointer]:
+                - /url: index.php?page=board&office_view_scope=my_office&segment_id=3&sort_col=__sl&sort_dir=asc
+            - columnheader "District Name *" [ref=e73]:
+              - link "District Name *" [ref=e75] [cursor=pointer]:
+                - /url: index.php?page=board&office_view_scope=my_office&segment_id=3&sort_col=district&sort_dir=asc
+                - text: District Name
+                - generic [ref=e76]: "*"
+            - columnheader "Upazilla *" [ref=e77]:
+              - link "Upazilla *" [ref=e79] [cursor=pointer]:
+                - /url: index.php?page=board&office_view_scope=my_office&segment_id=3&sort_col=upazilla&sort_dir=asc
+                - text: Upazilla
+                - generic [ref=e80]: "*"
+            - columnheader "Name of the Hospital *" [ref=e81]:
+              - link "Name of the Hospital *" [ref=e83] [cursor=pointer]:
+                - /url: index.php?page=board&office_view_scope=my_office&segment_id=3&sort_col=name_of_the_hospital&sort_dir=asc
+                - text: Name of the Hospital
+                - generic [ref=e84]: "*"
+            - columnheader "Number of Beds of Existing Hospital Building *" [ref=e85]:
+              - link "Number of Beds of Existing Hospital Building *" [ref=e87] [cursor=pointer]:
+                - /url: index.php?page=board&office_view_scope=my_office&segment_id=3&sort_col=number_of_beds&sort_dir=asc
+                - text: Number of Beds of Existing Hospital Building
+                - generic [ref=e88]: "*"
+            - columnheader "Digital Survey Map (CAD and PDF)" [ref=e89]:
+              - link "Digital Survey Map (CAD and PDF)" [ref=e91] [cursor=pointer]:
+                - /url: index.php?page=board&office_view_scope=my_office&segment_id=3&sort_col=digitalsurvey&sort_dir=asc
+            - columnheader "Soil Test Report Field information" [ref=e92]:
+              - generic [ref=e93]:
+                - link "Soil Test Report" [ref=e94] [cursor=pointer]:
+                  - /url: index.php?page=board&office_view_scope=my_office&segment_id=3&sort_col=soiltest&sort_dir=asc
+                - button "Field information" [ref=e95] [cursor=pointer]: i
+            - columnheader "As Built Arc Drawing of Existing Hospital Building (Floor Plans) Field information" [ref=e96]:
+              - generic [ref=e97]:
+                - link "As Built Arc Drawing of Existing Hospital Building (Floor Plans)" [ref=e98] [cursor=pointer]:
+                  - /url: index.php?page=board&office_view_scope=my_office&segment_id=3&sort_col=archospital&sort_dir=asc
+                - button "Field information" [ref=e99] [cursor=pointer]: i
+            - columnheader "Layout of Hospital (At least Hand Drawn) Field information" [ref=e100]:
+              - generic [ref=e101]:
+                - link "Layout of Hospital (At least Hand Drawn)" [ref=e102] [cursor=pointer]:
+                  - /url: index.php?page=board&office_view_scope=my_office&segment_id=3&sort_col=layout&sort_dir=asc
+                - button "Field information" [ref=e103] [cursor=pointer]: i
+            - columnheader "Master Plan of Campus (Demarking Visually Vulnerable Buildings) Field information" [ref=e104]:
+              - generic [ref=e105]:
+                - link "Master Plan of Campus (Demarking Visually Vulnerable Buildings)" [ref=e106] [cursor=pointer]:
+                  - /url: index.php?page=board&office_view_scope=my_office&segment_id=3&sort_col=masterplan&sort_dir=asc
+                - button "Field information" [ref=e107] [cursor=pointer]: i
+            - columnheader "Visual Evidence of the area (Image or video)" [ref=e108]:
+              - link "Visual Evidence of the area (Image or video)" [ref=e110] [cursor=pointer]:
+                - /url: index.php?page=board&office_view_scope=my_office&segment_id=3&sort_col=image_or_video&sort_dir=asc
+            - columnheader "Remarks (Additional Information)" [ref=e111]:
+              - link "Remarks (Additional Information)" [ref=e113] [cursor=pointer]:
+                - /url: index.php?page=board&office_view_scope=my_office&segment_id=3&sort_col=remarks_additional_information&sort_dir=asc
+            - columnheader "Action" [ref=e114]
+        - rowgroup [ref=e115]:
+          - row "No assets found." [ref=e116]:
+            - cell "No assets found." [ref=e117]
+    - button "Soft Delete Selected" [ref=e119] [cursor=pointer]
+    - dialog "Download Data" [ref=e121]:
+      - generic [ref=e122]:
+        - heading "Download Data" [level=3] [ref=e123]
+        - button "Close" [ref=e124] [cursor=pointer]: ×
+      - generic [ref=e125]:
+        - tablist "Download Pages" [ref=e126]:
+          - button "Level_1" [ref=e127] [cursor=pointer]
+          - button "Level_2" [active] [ref=e128] [cursor=pointer]
+          - button "Level_3" [ref=e129] [cursor=pointer]
+        - generic [ref=e219]:
+          - generic [ref=e220]:
+            - heading "Level 2 Segment And Field Selection" [level=4] [ref=e221]
+            - paragraph [ref=e222]: For ZIP, only segments with file fields and only file fields should remain visible. For PDF and Excel, all segment fields are available. File fields in data output show summaries like 1 dwg, 4 pdf.
+          - generic [ref=e223]:
+            - strong [ref=e224]: Segments
+            - button "Select All" [ref=e225] [cursor=pointer]
+          - generic [ref=e226]:
+            - generic [ref=e227]:
+              - checkbox "General Information" [checked] [ref=e228]
+              - generic [ref=e229]: General Information
+            - generic [ref=e230]:
+              - checkbox "Civil Related" [checked] [ref=e231]
+              - generic [ref=e232]: Civil Related
+            - generic [ref=e233]:
+              - checkbox "Water Supply and Sanitation" [checked] [ref=e234]
+              - generic [ref=e235]: Water Supply and Sanitation
+            - generic [ref=e236]:
+              - checkbox "Ancillary Civil Items" [checked] [ref=e237]
+              - generic [ref=e238]: Ancillary Civil Items
+            - generic [ref=e239]:
+              - checkbox "Electromechanical Items" [checked] [ref=e240]
+              - generic [ref=e241]: Electromechanical Items
+            - generic [ref=e242]:
+              - checkbox "External Electrification" [checked] [ref=e243]
+              - generic [ref=e244]: External Electrification
+            - generic [ref=e245]:
+              - checkbox "Ancillary EM Items" [checked] [ref=e246]
+              - generic [ref=e247]: Ancillary EM Items
+          - generic [ref=e248]:
+            - generic [ref=e249]:
+              - strong [ref=e250]: General Information
+              - button "Select All Fields" [ref=e251] [cursor=pointer]
+            - generic [ref=e252]:
+              - generic [ref=e253]:
+                - checkbox "Number of Beds of Existing Hospital Building" [checked] [ref=e254]
+                - generic [ref=e255]: Number of Beds of Existing Hospital Building
+              - generic [ref=e256]:
+                - checkbox "Digital Survey Map (CAD and PDF) (file)" [checked] [ref=e257]
+                - generic [ref=e258]: Digital Survey Map (CAD and PDF) (file)
+              - generic [ref=e259]:
+                - checkbox "Soil Test Report (file)" [checked] [ref=e260]
+                - generic [ref=e261]: Soil Test Report (file)
+              - generic [ref=e262]:
+                - checkbox "As Built Arc Drawing of Existing Hospital Building (Floor Plans) (file)" [checked] [ref=e263]
+                - generic [ref=e264]: As Built Arc Drawing of Existing Hospital Building (Floor Plans) (file)
+              - generic [ref=e265]:
+                - checkbox "Layout of Hospital (At least Hand Drawn) (file)" [checked] [ref=e266]
+                - generic [ref=e267]: Layout of Hospital (At least Hand Drawn) (file)
+              - generic [ref=e268]:
+                - checkbox "Master Plan of Campus (Demarking Visually Vulnerable Buildings) (file)" [checked] [ref=e269]
+                - generic [ref=e270]: Master Plan of Campus (Demarking Visually Vulnerable Buildings) (file)
+              - generic [ref=e271]:
+                - checkbox "Visual Evidence of the area (Image or video) (file)" [checked] [ref=e272]
+                - generic [ref=e273]: Visual Evidence of the area (Image or video) (file)
+              - generic [ref=e274]:
+                - checkbox "Remarks (Additional Information)" [checked] [ref=e275]
+                - generic [ref=e276]: Remarks (Additional Information)
+          - generic [ref=e277]:
+            - generic [ref=e278]:
+              - strong [ref=e279]: Civil Related
+              - button "Select All Fields" [ref=e280] [cursor=pointer]
+            - generic [ref=e281]:
+              - generic [ref=e282]:
+                - checkbox "Building Height (PL to Top in ft)" [checked] [ref=e283]
+                - generic [ref=e284]: Building Height (PL to Top in ft)
+              - generic [ref=e285]:
+                - checkbox "PL Height (EGL to PL in ft)" [checked] [ref=e286]
+                - generic [ref=e287]: PL Height (EGL to PL in ft)
+              - generic [ref=e288]:
+                - checkbox "Existing Floor Number" [checked] [ref=e289]
+                - generic [ref=e290]: Existing Floor Number
+              - generic [ref=e291]:
+                - checkbox "Foundation Type" [checked] [ref=e292]
+                - generic [ref=e293]: Foundation Type
+              - generic [ref=e294]:
+                - checkbox "Foundation Capacity (floor number)" [checked] [ref=e295]
+                - generic [ref=e296]: Foundation Capacity (floor number)
+              - generic [ref=e297]:
+                - checkbox "Structure Type" [checked] [ref=e298]
+                - generic [ref=e299]: Structure Type
+              - generic [ref=e300]:
+                - checkbox "Condition of roof (Describe)" [checked] [ref=e301]
+                - generic [ref=e302]: Condition of roof (Describe)
+              - generic [ref=e303]:
+                - checkbox "Vertical Extension (possible or not-possible)" [checked] [ref=e304]
+                - generic [ref=e305]: Vertical Extension (possible or not-possible)
+              - generic [ref=e306]:
+                - checkbox "Remarks (Additional Inforamtion)" [checked] [ref=e307]
+                - generic [ref=e308]: Remarks (Additional Inforamtion)
+          - generic [ref=e309]:
+            - generic [ref=e310]:
+              - strong [ref=e311]: Water Supply and Sanitation
+              - button "Select All Fields" [ref=e312] [cursor=pointer]
+            - generic [ref=e313]:
+              - generic [ref=e314]:
+                - checkbox "Existing Under Ground Water Reservoir (gal)" [checked] [ref=e315]
+                - generic [ref=e316]: Existing Under Ground Water Reservoir (gal)
+              - generic [ref=e317]:
+                - checkbox "Number of Deep Tubewell" [checked] [ref=e318]
+                - generic [ref=e319]: Number of Deep Tubewell
+              - generic [ref=e320]:
+                - checkbox "Additional Water Supply Facility (Describe)" [checked] [ref=e321]
+                - generic [ref=e322]: Additional Water Supply Facility (Describe)
+              - generic [ref=e323]:
+                - checkbox "Sewage or Waste Management Facility" [checked] [ref=e324]
+                - generic [ref=e325]: Sewage or Waste Management Facility
+              - generic [ref=e326]:
+                - checkbox "Capacity of Sewerage or waste management (cft)" [checked] [ref=e327]
+                - generic [ref=e328]: Capacity of Sewerage or waste management (cft)
+              - generic [ref=e329]:
+                - checkbox "Presence of Rainwater Harvesting Facility" [checked] [ref=e330]
+                - generic [ref=e331]: Presence of Rainwater Harvesting Facility
+              - generic [ref=e332]:
+                - checkbox "Capacity of Rain Water Harvesting (gal)" [checked] [ref=e333]
+                - generic [ref=e334]: Capacity of Rain Water Harvesting (gal)
+              - generic [ref=e335]:
+                - checkbox "Existing Drainage Facility (Describe)" [checked] [ref=e336]
+                - generic [ref=e337]: Existing Drainage Facility (Describe)
+              - generic [ref=e338]:
+                - checkbox "Required Drainage Facility (Describe)" [checked] [ref=e339]
+                - generic [ref=e340]: Required Drainage Facility (Describe)
+              - generic [ref=e341]:
+                - checkbox "Nearest Waste & Water Disposal Location (Describe)" [checked] [ref=e342]
+                - generic [ref=e343]: Nearest Waste & Water Disposal Location (Describe)
+              - generic [ref=e344]:
+                - checkbox "Remarks (Any other issues will be Described here)" [checked] [ref=e345]
+                - generic [ref=e346]: Remarks (Any other issues will be Described here)
+          - generic [ref=e347]:
+            - generic [ref=e348]:
+              - strong [ref=e349]: Ancillary Civil Items
+              - button "Select All Fields" [ref=e350] [cursor=pointer]
+            - generic [ref=e351]:
+              - generic [ref=e352]:
+                - checkbox "Existing boundary wall with retaining wall (ft)" [checked] [ref=e353]
+                - generic [ref=e354]: Existing boundary wall with retaining wall (ft)
+              - generic [ref=e355]:
+                - checkbox "Existing boundary wall without retaining wall (ft)" [checked] [ref=e356]
+                - generic [ref=e357]: Existing boundary wall without retaining wall (ft)
+              - generic [ref=e358]:
+                - checkbox "Additionally Required boundary wall with retaining wall (ft)" [checked] [ref=e359]
+                - generic [ref=e360]: Additionally Required boundary wall with retaining wall (ft)
+              - generic [ref=e361]:
+                - checkbox "Additionally Required boundary wall without retaining wall (ft)" [checked] [ref=e362]
+                - generic [ref=e363]: Additionally Required boundary wall without retaining wall (ft)
+              - generic [ref=e364]:
+                - checkbox "Width of The Main Road (Municipality or City Corp) In front of Hospital (ft)" [checked] [ref=e365]
+                - generic [ref=e366]: Width of The Main Road (Municipality or City Corp) In front of Hospital (ft)
+              - generic [ref=e367]:
+                - checkbox "Internal Road Scenario (Describe)" [checked] [ref=e368]
+                - generic [ref=e369]: Internal Road Scenario (Describe)
+              - generic [ref=e370]:
+                - checkbox "Existence of Link Corridor" [checked] [ref=e371]
+                - generic [ref=e372]: Existence of Link Corridor
+              - generic [ref=e373]:
+                - checkbox "Requirement of Site Improvement" [checked] [ref=e374]
+                - generic [ref=e375]: Requirement of Site Improvement
+              - generic [ref=e376]:
+                - checkbox "Remarks (additional information)" [checked] [ref=e377]
+                - generic [ref=e378]: Remarks (additional information)
+          - generic [ref=e379]:
+            - generic [ref=e380]:
+              - strong [ref=e381]: Electromechanical Items
+              - button "Select All Fields" [ref=e382] [cursor=pointer]
+            - generic [ref=e383]:
+              - generic [ref=e384]:
+                - checkbox "Present Number of Lift" [checked] [ref=e385]
+                - generic [ref=e386]: Present Number of Lift
+              - generic [ref=e387]:
+                - checkbox "Number of Usable Lift (if present)" [checked] [ref=e388]
+                - generic [ref=e389]: Number of Usable Lift (if present)
+              - generic [ref=e390]:
+                - checkbox "Lift Related Additional Info (If any)" [checked] [ref=e391]
+                - generic [ref=e392]: Lift Related Additional Info (If any)
+              - generic [ref=e393]:
+                - checkbox "Present AC Capacity (Ton)" [checked] [ref=e394]
+                - generic [ref=e395]: Present AC Capacity (Ton)
+              - generic [ref=e396]:
+                - checkbox "Additional AC Requirement (Ton)" [checked] [ref=e397]
+                - generic [ref=e398]: Additional AC Requirement (Ton)
+              - generic [ref=e399]:
+                - checkbox "AC Related Additional Info (If any)" [checked] [ref=e400]
+                - generic [ref=e401]: AC Related Additional Info (If any)
+              - generic [ref=e402]:
+                - checkbox "Present Situtaion of Fire Detection and Protection System" [checked] [ref=e403]
+                - generic [ref=e404]: Present Situtaion of Fire Detection and Protection System
+              - generic [ref=e405]:
+                - checkbox "Present Total HP of Submersible Pump" [checked] [ref=e406]
+                - generic [ref=e407]: Present Total HP of Submersible Pump
+              - generic [ref=e408]:
+                - checkbox "Present Total HP of Centrifugal Pump" [checked] [ref=e409]
+                - generic [ref=e410]: Present Total HP of Centrifugal Pump
+              - generic [ref=e411]:
+                - checkbox "Pump Related Additional Info (Demand, Repair need etc)" [checked] [ref=e412]
+                - generic [ref=e413]: Pump Related Additional Info (Demand, Repair need etc)
+              - generic [ref=e414]:
+                - checkbox "Medical Waste Management System" [checked] [ref=e415]
+                - generic [ref=e416]: Medical Waste Management System
+              - generic [ref=e417]:
+                - checkbox "Medical Waste Related Additional info (Capacity, Demand etc)" [checked] [ref=e418]
+                - generic [ref=e419]: Medical Waste Related Additional info (Capacity, Demand etc)
+          - generic [ref=e420]:
+            - generic [ref=e421]:
+              - strong [ref=e422]: External Electrification
+              - button "Select All Fields" [ref=e423] [cursor=pointer]
+            - generic [ref=e424]:
+              - generic [ref=e425]:
+                - checkbox "Connection Provider" [checked] [ref=e426]
+                - generic [ref=e427]: Connection Provider
+              - generic [ref=e428]:
+                - checkbox "Can Provider Provide Apprx 1250 kVA Load?" [checked] [ref=e429]
+                - generic [ref=e430]: Can Provider Provide Apprx 1250 kVA Load?
+              - generic [ref=e431]:
+                - checkbox "Existing Actual Usage of Power or Load (kVA)" [checked] [ref=e432]
+                - generic [ref=e433]: Existing Actual Usage of Power or Load (kVA)
+              - generic [ref=e434]:
+                - checkbox "Present Total KVA Capacity of Substation" [checked] [ref=e435]
+                - generic [ref=e436]: Present Total KVA Capacity of Substation
+              - generic [ref=e437]:
+                - checkbox "Reusable KVA of substation" [checked] [ref=e438]
+                - generic [ref=e439]: Reusable KVA of substation
+              - generic [ref=e440]:
+                - checkbox "Situation of Substation Components (LT HT PFI MDB etc)" [checked] [ref=e441]
+                - generic [ref=e442]: Situation of Substation Components (LT HT PFI MDB etc)
+              - generic [ref=e443]:
+                - checkbox "Existing Total KVA Capacity of Generator" [checked] [ref=e444]
+                - generic [ref=e445]: Existing Total KVA Capacity of Generator
+              - generic [ref=e446]:
+                - checkbox "Additional Requirement of Generator (KVA)" [checked] [ref=e447]
+                - generic [ref=e448]: Additional Requirement of Generator (KVA)
+              - generic [ref=e449]:
+                - checkbox "Present Usable Capacity of on grid solar (kWp)" [checked] [ref=e450]
+                - generic [ref=e451]: Present Usable Capacity of on grid solar (kWp)
+              - generic [ref=e452]:
+                - checkbox "Present Capacity of Ring Main Unit (number of out going connection)" [checked] [ref=e453]
+                - generic [ref=e454]: Present Capacity of Ring Main Unit (number of out going connection)
+              - generic [ref=e455]:
+                - checkbox "Detailed Description of incoming Service Cable (RM, Type and Length of HT or LT)" [checked] [ref=e456]
+                - generic [ref=e457]: Detailed Description of incoming Service Cable (RM, Type and Length of HT or LT)
+              - generic [ref=e458]:
+                - checkbox "Detailed Description of Service Cable (RM and Length for FDB, MDB, ELT, NLT etc)" [checked] [ref=e459]
+                - generic [ref=e460]: Detailed Description of Service Cable (RM and Length for FDB, MDB, ELT, NLT etc)
+              - generic [ref=e461]:
+                - checkbox "Remarks (Provide any additional information here)" [checked] [ref=e462]
+                - generic [ref=e463]: Remarks (Provide any additional information here)
+          - generic [ref=e464]:
+            - generic [ref=e465]:
+              - strong [ref=e466]: Ancillary EM Items
+              - button "Select All Fields" [ref=e467] [cursor=pointer]
+            - generic [ref=e468]:
+              - generic [ref=e469]:
+                - checkbox "Presence of Medical Gas System" [checked] [ref=e470]
+                - generic [ref=e471]: Presence of Medical Gas System
+              - generic [ref=e472]:
+                - checkbox "Presence of Compound and Security Light" [checked] [ref=e473]
+                - generic [ref=e474]: Presence of Compound and Security Light
+              - generic [ref=e475]:
+                - checkbox "Presence of Sound and PA System" [checked] [ref=e476]
+                - generic [ref=e477]: Presence of Sound and PA System
+              - generic [ref=e478]:
+                - checkbox "Presence of computer networks" [checked] [ref=e479]
+                - generic [ref=e480]: Presence of computer networks
+              - generic [ref=e481]:
+                - checkbox "Presence of PABX System" [checked] [ref=e482]
+                - generic [ref=e483]: Presence of PABX System
+              - generic [ref=e484]:
+                - checkbox "Presence of CCTV system" [checked] [ref=e485]
+                - generic [ref=e486]: Presence of CCTV system
+              - generic [ref=e487]:
+                - checkbox "Number of Neon Poly sign board" [checked] [ref=e488]
+                - generic [ref=e489]: Number of Neon Poly sign board
+              - generic [ref=e490]:
+                - checkbox "Requirement of any ancillary items (Describe in detail)" [checked] [ref=e491]
+                - generic [ref=e492]: Requirement of any ancillary items (Describe in detail)
+              - generic [ref=e493]:
+                - checkbox "Remarks" [checked] [ref=e494]
+                - generic [ref=e495]: Remarks
+        - generic [ref=e215]:
+          - button "Download" [ref=e216] [cursor=pointer]
+          - button "Cancel" [ref=e217] [cursor=pointer]

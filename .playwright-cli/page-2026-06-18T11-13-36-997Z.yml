@@ -1,0 +1,118 @@
+- generic [active] [ref=e1]:
+  - navigation [ref=e2]:
+    - generic [ref=e3]: Survey Website
+    - generic [ref=e4]:
+      - link "Information" [ref=e5] [cursor=pointer]:
+        - /url: index.php?page=board
+      - link "Office Orders" [ref=e6] [cursor=pointer]:
+        - /url: index.php?page=office_orders
+      - link "Profile" [ref=e7] [cursor=pointer]:
+        - /url: index.php?page=profile
+      - link "Tutorial" [ref=e8] [cursor=pointer]:
+        - /url: https://www.youtube.com/watch?v=0xDtouznUAE
+      - button "Logout" [ref=e10] [cursor=pointer]
+  - main [ref=e11]:
+    - text: ✓ ✓ ✓ ✓
+    - generic [ref=e30]:
+      - generic [ref=e31]:
+        - generic [ref=e32]:
+          - heading "Survey Website" [level=2] [ref=e33]
+          - paragraph [ref=e34]: "Office: Sylhet PWD Division | User: ee_syl@pwd.gov.bd"
+        - generic [ref=e35]:
+          - generic [ref=e36]:
+            - generic [ref=e37]:
+              - strong [ref=e38]: Last Sent
+              - text: 8 days ago
+            - generic [ref=e39]:
+              - strong [ref=e40]: Last Update
+              - text: No updates yet
+          - button "Declare as Completed" [disabled] [ref=e42]
+      - paragraph [ref=e43]: "Declared at: 2026-06-09 18:46:42"
+    - generic [ref=e45]:
+      - link "General Information" [ref=e46] [cursor=pointer]:
+        - /url: index.php?page=board&segment_id=3&office_view_scope=my_office
+      - link "Civil Related" [ref=e47] [cursor=pointer]:
+        - /url: index.php?page=board&segment_id=4&office_view_scope=my_office
+      - link "Water Supply and Sanitation" [ref=e48] [cursor=pointer]:
+        - /url: index.php?page=board&segment_id=5&office_view_scope=my_office
+      - link "Ancillary Civil Items" [ref=e49] [cursor=pointer]:
+        - /url: index.php?page=board&segment_id=6&office_view_scope=my_office
+      - link "Electromechanical Items" [ref=e50] [cursor=pointer]:
+        - /url: index.php?page=board&segment_id=7&office_view_scope=my_office
+      - link "External Electrification" [ref=e51] [cursor=pointer]:
+        - /url: index.php?page=board&segment_id=8&office_view_scope=my_office
+      - link "Ancillary EM Items" [ref=e52] [cursor=pointer]:
+        - /url: index.php?page=board&segment_id=9&office_view_scope=my_office
+    - generic [ref=e54]:
+      - button "+Add Info" [ref=e55] [cursor=pointer]
+      - button "Download Data" [ref=e56] [cursor=pointer]
+    - generic [ref=e58]:
+      - generic [ref=e59]:
+        - heading "General Information and File Uploading" [level=2] [ref=e60]
+        - generic [ref=e61]:
+          - generic [ref=e62]: 0 row(s)
+          - link "Refresh" [ref=e63] [cursor=pointer]:
+            - /url: index.php?page=board&office_view_scope=my_office&segment_id=3
+          - button "Columns" [ref=e64] [cursor=pointer]
+      - table [ref=e66]:
+        - rowgroup [ref=e67]:
+          - row "SL No District Name * Upazilla * Name of the Hospital * Number of Beds of Existing Hospital Building * Digital Survey Map (CAD and PDF) Soil Test Report Field information As Built Arc Drawing of Existing Hospital Building (Floor Plans) Field information Layout of Hospital (At least Hand Drawn) Field information Master Plan of Campus (Demarking Visually Vulnerable Buildings) Field information Visual Evidence of the area (Image or video) Remarks (Additional Information) Action" [ref=e68]:
+            - columnheader [ref=e69]:
+              - checkbox [ref=e70]
+            - columnheader "SL No" [ref=e71]:
+              - link "SL No" [ref=e72] [cursor=pointer]:
+                - /url: index.php?page=board&office_view_scope=my_office&segment_id=3&sort_col=__sl&sort_dir=asc
+            - columnheader "District Name *" [ref=e73]:
+              - link "District Name *" [ref=e75] [cursor=pointer]:
+                - /url: index.php?page=board&office_view_scope=my_office&segment_id=3&sort_col=district&sort_dir=asc
+                - text: District Name
+                - generic [ref=e76]: "*"
+            - columnheader "Upazilla *" [ref=e77]:
+              - link "Upazilla *" [ref=e79] [cursor=pointer]:
+                - /url: index.php?page=board&office_view_scope=my_office&segment_id=3&sort_col=upazilla&sort_dir=asc
+                - text: Upazilla
+                - generic [ref=e80]: "*"
+            - columnheader "Name of the Hospital *" [ref=e81]:
+              - link "Name of the Hospital *" [ref=e83] [cursor=pointer]:
+                - /url: index.php?page=board&office_view_scope=my_office&segment_id=3&sort_col=name_of_the_hospital&sort_dir=asc
+                - text: Name of the Hospital
+                - generic [ref=e84]: "*"
+            - columnheader "Number of Beds of Existing Hospital Building *" [ref=e85]:
+              - link "Number of Beds of Existing Hospital Building *" [ref=e87] [cursor=pointer]:
+                - /url: index.php?page=board&office_view_scope=my_office&segment_id=3&sort_col=number_of_beds&sort_dir=asc
+                - text: Number of Beds of Existing Hospital Building
+                - generic [ref=e88]: "*"
+            - columnheader "Digital Survey Map (CAD and PDF)" [ref=e89]:
+              - link "Digital Survey Map (CAD and PDF)" [ref=e91] [cursor=pointer]:
+                - /url: index.php?page=board&office_view_scope=my_office&segment_id=3&sort_col=digitalsurvey&sort_dir=asc
+            - columnheader "Soil Test Report Field information" [ref=e92]:
+              - generic [ref=e93]:
+                - link "Soil Test Report" [ref=e94] [cursor=pointer]:
+                  - /url: index.php?page=board&office_view_scope=my_office&segment_id=3&sort_col=soiltest&sort_dir=asc
+                - button "Field information" [ref=e95] [cursor=pointer]: i
+            - columnheader "As Built Arc Drawing of Existing Hospital Building (Floor Plans) Field information" [ref=e96]:
+              - generic [ref=e97]:
+                - link "As Built Arc Drawing of Existing Hospital Building (Floor Plans)" [ref=e98] [cursor=pointer]:
+                  - /url: index.php?page=board&office_view_scope=my_office&segment_id=3&sort_col=archospital&sort_dir=asc
+                - button "Field information" [ref=e99] [cursor=pointer]: i
+            - columnheader "Layout of Hospital (At least Hand Drawn) Field information" [ref=e100]:
+              - generic [ref=e101]:
+                - link "Layout of Hospital (At least Hand Drawn)" [ref=e102] [cursor=pointer]:
+                  - /url: index.php?page=board&office_view_scope=my_office&segment_id=3&sort_col=layout&sort_dir=asc
+                - button "Field information" [ref=e103] [cursor=pointer]: i
+            - columnheader "Master Plan of Campus (Demarking Visually Vulnerable Buildings) Field information" [ref=e104]:
+              - generic [ref=e105]:
+                - link "Master Plan of Campus (Demarking Visually Vulnerable Buildings)" [ref=e106] [cursor=pointer]:
+                  - /url: index.php?page=board&office_view_scope=my_office&segment_id=3&sort_col=masterplan&sort_dir=asc
+                - button "Field information" [ref=e107] [cursor=pointer]: i
+            - columnheader "Visual Evidence of the area (Image or video)" [ref=e108]:
+              - link "Visual Evidence of the area (Image or video)" [ref=e110] [cursor=pointer]:
+                - /url: index.php?page=board&office_view_scope=my_office&segment_id=3&sort_col=image_or_video&sort_dir=asc
+            - columnheader "Remarks (Additional Information)" [ref=e111]:
+              - link "Remarks (Additional Information)" [ref=e113] [cursor=pointer]:
+                - /url: index.php?page=board&office_view_scope=my_office&segment_id=3&sort_col=remarks_additional_information&sort_dir=asc
+            - columnheader "Action" [ref=e114]
+        - rowgroup [ref=e115]:
+          - row "No assets found." [ref=e116]:
+            - cell "No assets found." [ref=e117]
+    - button "Soft Delete Selected" [ref=e119] [cursor=pointer]

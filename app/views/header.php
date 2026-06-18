@@ -19,6 +19,7 @@
             <a href="index.php?page=declarations">Declarations</a>
             <?php if (can_manage_superadmin_scope()): ?>
                 <a href="index.php?page=admin">Management</a>
+                <a href="index.php?page=download_manager">Download Manager</a>
                 <a href="index.php?page=offices">Offices</a>
                 <a href="index.php?page=user_permissions">User Permissions</a>
                 <a href="index.php?page=interface">Interface</a>
