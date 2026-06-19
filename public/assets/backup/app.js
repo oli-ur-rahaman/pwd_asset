@@ -302,72 +302,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    const closeModalById = (modalId) => {
-        const modal = document.getElementById(modalId);
-        if (!modal) {
-            return;
-        }
-        modal.classList.remove('open');
-        modal.setAttribute('aria-hidden', 'true');
-        if (modalId === 'asset-modal' && window.location.search.includes('edit_asset=')) {
-            window.location.href = 'index.php?page=board';
-        }
-        if (modalId === 'asset-history-modal' && window.location.search.includes('asset_history=')) {
-            window.location.href = 'index.php?page=board';
-        }
-        if (modalId === 'field-help-modal') {
-            const iframe = document.getElementById('field-help-iframe');
-            if (iframe) {
-                iframe.src = '';
-            }
-        }
-    };
-
-    const loadDownloadModalContent = (modal) => {
-        const body = modal ? modal.querySelector('.download-modal-async-body[data-download-modal-url]') : null;
-        if (!body || body.getAttribute('data-download-loaded') === '1' || body.getAttribute('data-download-loading') === '1') {
-            return;
-        }
-        const url = body.getAttribute('data-download-modal-url') || '';
-        if (!url) {
-            return;
-        }
-        body.setAttribute('data-download-loading', '1');
-        fetch(url, {
-            headers: {
-                'X-Requested-With': 'XMLHttpRequest',
-            },
-            credentials: 'same-origin',
-        })
-            .then((response) => {
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}`);
-                }
-                return response.text();
-            })
-            .then((html) => {
-                const temp = document.createElement('div');
-                temp.innerHTML = html;
-                const bodyFragment = temp.querySelector('[data-download-fragment-body]');
-                const commonFragment = temp.querySelector('[data-download-fragment-common]');
-                if (bodyFragment) {
-                    body.innerHTML = bodyFragment.innerHTML;
-                    body.setAttribute('data-download-loaded', '1');
-                } else {
-                    body.innerHTML = '<p class="error-text">Failed to load download options.</p>';
-                }
-                if (typeof window.initializeDownloadModalUi === 'function') {
-                    window.initializeDownloadModalUi();
-                }
-            })
-            .catch(() => {
-                body.innerHTML = '<p class="error-text">Failed to load download options.</p>';
-            })
-            .finally(() => {
-                body.removeAttribute('data-download-loading');
-            });
-    };
-
     document.querySelectorAll('[data-modal]').forEach((button) => {
         button.addEventListener('click', () => {
             const modalId = button.getAttribute('data-modal');
@@ -377,25 +311,31 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             modal.classList.add('open');
             modal.setAttribute('aria-hidden', 'false');
-            if (modalId === 'download-data-modal') {
-                loadDownloadModalContent(modal);
-            }
         });
     });
 
     document.querySelectorAll('[data-close]').forEach((button) => {
         button.addEventListener('click', () => {
-            closeModalById(button.getAttribute('data-close'));
+            const modalId = button.getAttribute('data-close');
+            const modal = document.getElementById(modalId);
+            if (!modal) {
+                return;
+            }
+            modal.classList.remove('open');
+            modal.setAttribute('aria-hidden', 'true');
+            if (modalId === 'asset-modal' && window.location.search.includes('edit_asset=')) {
+                window.location.href = 'index.php?page=board';
+            }
+            if (modalId === 'asset-history-modal' && window.location.search.includes('asset_history=')) {
+                window.location.href = 'index.php?page=board';
+            }
+            if (modalId === 'field-help-modal') {
+                const iframe = document.getElementById('field-help-iframe');
+                if (iframe) {
+                    iframe.src = '';
+                }
+            }
         });
-    });
-
-    document.addEventListener('click', (event) => {
-        const button = event.target.closest('[data-close]');
-        if (!button) {
-            return;
-        }
-        event.preventDefault();
-        closeModalById(button.getAttribute('data-close'));
     });
 
     document.querySelectorAll('[data-field-help]').forEach((button) => {

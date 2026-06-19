@@ -101,12 +101,41 @@ $editingAsset = ($editingAsset && (int)($editingAsset['segment_id'] ?? 0) === $a
 $editValues = $editingAsset['values'] ?? [];
 $editFiles = $editingAsset['files'] ?? [];
 $review = $_SESSION['asset_import_review'] ?? null;
-$downloadModuleReady = !empty(asset_download_level1_fields()) && !empty(get_asset_segments(false));
-$downloadModalUrl = 'index.php?' . http_build_query([
-    'page' => 'download_modal_fragment',
-    'segment_id' => $activeSegmentId,
-    'office_view_scope' => $currentOfficeViewScope,
-]);
+$downloadLevel1Catalog = asset_download_level1_catalog($user, $currentOfficeViewScope);
+$downloadCommonLabelCandidates = asset_download_common_label_candidates();
+$downloadCommonOptionMap = asset_download_common_option_map();
+$downloadCommonFilterCatalog = asset_download_common_field_catalog($user, $currentOfficeViewScope);
+$downloadNamingTokens = array_values(array_unique(array_merge(
+    asset_download_available_naming_tokens(),
+    asset_download_dynamic_naming_tokens()
+)));
+$downloadAvailableSegments = get_asset_segments(false);
+$downloadModuleReady = !empty($downloadAvailableSegments);
+$downloadSegmentConfigs = [];
+foreach ($downloadAvailableSegments as $downloadSegment) {
+    $downloadSegmentId = (int)$downloadSegment['id'];
+    $downloadSegmentFields = array_values(array_filter(
+        get_asset_fields(false, $downloadSegmentId),
+        static fn(array $field): bool => (int)($field['active_status'] ?? 0) === 1
+    ));
+    $downloadSegmentAssets = asset_download_accessible_assets_for_segment($downloadSegmentId, $user, $currentOfficeViewScope);
+    $downloadCatalog = build_asset_filter_catalog($downloadSegmentAssets, $downloadSegmentFields, $downloadSegmentId, false);
+    $downloadFilterFieldMap = [];
+    foreach (asset_download_effective_filter_fields($downloadSegmentId) as $filterField) {
+        $downloadFilterFieldMap[(string)$filterField['field_key']] = $filterField;
+    }
+    $downloadSegmentConfigs[$downloadSegmentId] = [
+        'segment' => $downloadSegment,
+        'fields' => $downloadSegmentFields,
+        'segment_fields_only' => array_values(array_filter(
+            $downloadSegmentFields,
+            static fn(array $field): bool => !in_array(trim((string)($field['label'] ?? '')), $downloadCommonLabelCandidates, true)
+        )),
+        'catalog' => $downloadCatalog,
+        'filter_fields' => $downloadFilterFieldMap,
+        'sort_options' => asset_download_sort_option_map($downloadSegmentId),
+    ];
+}
 
 $zones = db()->query('SELECT id, office_name FROM zones ORDER BY office_name')->fetchAll();
 $circles = db()->query('SELECT id, office_name, zone_id FROM circles ORDER BY office_name')->fetchAll();
@@ -197,6 +226,21 @@ foreach ($fields as $field) {
         }
     }
 }
+$downloadFilters = [
+    'segment_id' => $activeSegmentId,
+    'office_type' => $selectedOfficeType,
+    'office_id' => $selectedOfficeId,
+    'category_id' => (int)($filters['category_id'] ?? 0),
+    'office_view_scope' => $currentOfficeViewScope,
+    'zone_id' => $selectedZone,
+    'circle_id' => $selectedCircle,
+    'division_id' => $selectedDivision,
+    'subdivision_id' => $selectedSubdivision,
+];
+if ($subcategoryEnabled) {
+    $downloadFilters['subcategory_id'] = (int)($filters['subcategory_id'] ?? 0);
+}
+$downloadFilters = array_merge($downloadFilters, $fieldFilterSelections);
 $defaultCategoryId = !$editingAsset && count($categories) === 1 ? (int)$categories[0]['id'] : 0;
 $historyAssetId = (int)request_str('asset_history', '0');
 $historyAsset = $historyAssetId > 0 ? get_asset($historyAssetId, true) : null;
@@ -1382,7 +1426,6 @@ if (is_superadmin()) {
 </div>
 <?php endif; ?>
 
-<?php if (false): ?>
 <div class="modal-backdrop" id="download-data-modal" aria-hidden="true">
     <div class="modal-card modal-wide download-data-modal-card" role="dialog" aria-modal="true" aria-labelledby="download-data-title">
         <div class="flash-modal-head">
@@ -1905,45 +1948,6 @@ if (is_superadmin()) {
         </div>
     </div>
 </div>
-<?php endif; ?>
-
-<div class="modal-backdrop" id="download-data-modal" aria-hidden="true">
-    <div class="modal-card modal-wide download-data-modal-card" role="dialog" aria-modal="true" aria-labelledby="download-data-title">
-        <div class="flash-modal-head">
-            <h3 id="download-data-title">Download Data</h3>
-            <button type="button" class="welcome-modal-close modal-close" data-close="download-data-modal" aria-label="Close">×</button>
-        </div>
-        <div class="download-modal-async-body" data-download-modal-url="<?= e($downloadModalUrl); ?>" data-download-loaded="0">
-            <p class="muted">Loading download options when needed...</p>
-        </div>
-    </div>
-</div>
-
-<div class="modal-backdrop" id="download-common-filter-modal" aria-hidden="true">
-    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="download-common-filter-title">
-        <div class="flash-modal-head">
-            <h3 id="download-common-filter-title">Level 1 Field Filter</h3>
-            <button type="button" class="welcome-modal-close modal-close" data-close="download-common-filter-modal" aria-label="Close">×</button>
-        </div>
-        <div class="download-common-filter-async-body">
-            <p class="muted">Loading filters...</p>
-        </div>
-    </div>
-</div>
-
-<iframe name="download-target-frame" id="download-target-frame" class="download-hidden-frame" title="Download Target"></iframe>
-
-<div class="modal-backdrop" id="download-wait-modal" aria-hidden="true">
-    <div class="modal-card download-wait-modal-card" role="dialog" aria-modal="true" aria-labelledby="download-wait-title">
-        <div class="flash-modal-head">
-            <h3 id="download-wait-title">Preparing Download</h3>
-        </div>
-        <p id="download-wait-text">The file is being prepared. Large exports may take some time. Please wait.</p>
-        <div class="download-wait-progress" aria-hidden="true">
-            <div class="download-wait-progress-bar" id="download-wait-progress-bar"></div>
-        </div>
-    </div>
-</div>
 
 <script type="application/json" id="bimh-picker-meta"><?= json_encode([
     'lookup_url' => 'index.php?page=bimh_lookup',
@@ -2074,12 +2078,7 @@ if (is_superadmin()) {
 <?php endif; ?>
 
 <script>
-window.initializeDownloadModalUi = function () {
-    var form = document.getElementById('download-data-form');
-    if (!form || form.getAttribute('data-download-ui-bound') === '1') {
-        return;
-    }
-    form.setAttribute('data-download-ui-bound', '1');
+document.addEventListener('DOMContentLoaded', function () {
     var level1Select = document.getElementById('download-level1-label');
     var level1Choices = Array.from(document.querySelectorAll('[data-download-level1-choice]'));
     var outputSelect = document.getElementById('download-output-select');
@@ -2087,144 +2086,6 @@ window.initializeDownloadModalUi = function () {
     var commonFilterModal = document.getElementById('download-common-filter-modal');
     var modalPageTabs = Array.from(document.querySelectorAll('[data-download-modal-page-tab]'));
     var modalPages = Array.from(document.querySelectorAll('[data-download-modal-page]'));
-    var level3AsyncBody = document.querySelector('.download-level3-async-body[data-download-level3-url]');
-    var commonFilterAsyncBody = document.querySelector('#download-common-filter-modal .download-common-filter-async-body');
-    var waitModal = document.getElementById('download-wait-modal');
-    var waitProgressBar = document.getElementById('download-wait-progress-bar');
-    var waitText = document.getElementById('download-wait-text');
-    var downloadFrame = document.getElementById('download-target-frame');
-    var waitInterval = null;
-    var downloadInFlight = false;
-    var level3LoadingPromise = null;
-    var closeWaitModal = function () {
-        if (waitInterval) {
-            clearInterval(waitInterval);
-            waitInterval = null;
-        }
-        if (waitProgressBar) {
-            waitProgressBar.style.width = '0%';
-        }
-        if (waitModal) {
-            waitModal.classList.remove('open');
-            waitModal.setAttribute('aria-hidden', 'true');
-        }
-        downloadInFlight = false;
-        form.querySelectorAll('[data-download-disabled-by-wait="1"]').forEach(function (field) {
-            field.disabled = false;
-            field.removeAttribute('data-download-disabled-by-wait');
-        });
-    };
-    var openWaitModal = function () {
-        if (!waitModal) {
-            return;
-        }
-        if (waitText) {
-            waitText.textContent = 'The file is being prepared. Large exports may take some time. Please wait.';
-        }
-        if (waitProgressBar) {
-            waitProgressBar.style.width = '12%';
-        }
-        waitModal.classList.add('open');
-        waitModal.setAttribute('aria-hidden', 'false');
-        if (waitInterval) {
-            clearInterval(waitInterval);
-        }
-        var percent = 12;
-        waitInterval = window.setInterval(function () {
-            percent = percent >= 88 ? 24 : percent + 8;
-            if (waitProgressBar) {
-                waitProgressBar.style.width = percent + '%';
-            }
-        }, 700);
-    };
-    var extractDownloadFailureText = function () {
-        if (!downloadFrame) {
-            return '';
-        }
-        try {
-            var responseDoc = downloadFrame.contentDocument || (downloadFrame.contentWindow ? downloadFrame.contentWindow.document : null);
-            if (!responseDoc || !responseDoc.body) {
-                return '';
-            }
-            var responseText = (responseDoc.body.textContent || '').replace(/\s+/g, ' ').trim();
-            if (responseText === '') {
-                return '';
-            }
-            var failureMarkers = [
-                'fatal error',
-                'warning',
-                'notice',
-                'csrf',
-                'gateway time-out',
-                'internal server error',
-                'failed to',
-                'runtimeexception',
-                'uncaught',
-                'exception',
-            ];
-            var lowerText = responseText.toLowerCase();
-            for (var i = 0; i < failureMarkers.length; i++) {
-                if (lowerText.indexOf(failureMarkers[i]) !== -1) {
-                    return responseText;
-                }
-            }
-        } catch (error) {
-            return '';
-        }
-        return '';
-    };
-    var loadLevel3Content = function () {
-        if (!level3AsyncBody) {
-            return Promise.resolve();
-        }
-        if (level3AsyncBody.getAttribute('data-download-level3-loaded') === '1') {
-            return Promise.resolve();
-        }
-        if (level3LoadingPromise) {
-            return level3LoadingPromise;
-        }
-        var url = level3AsyncBody.getAttribute('data-download-level3-url') || '';
-        if (!url) {
-            return Promise.resolve();
-        }
-        level3AsyncBody.setAttribute('data-download-level3-loading', '1');
-        level3LoadingPromise = fetch(url, {
-            headers: { 'X-Requested-With': 'XMLHttpRequest' },
-            credentials: 'same-origin'
-        })
-            .then(function (response) {
-                if (!response.ok) {
-                    throw new Error('HTTP ' + response.status);
-                }
-                return response.text();
-            })
-            .then(function (html) {
-                var temp = document.createElement('div');
-                temp.innerHTML = html;
-                var level3Fragment = temp.querySelector('[data-download-fragment-level3]');
-                var commonFragment = temp.querySelector('[data-download-fragment-common]');
-                if (level3Fragment) {
-                    level3AsyncBody.innerHTML = level3Fragment.innerHTML;
-                    level3AsyncBody.setAttribute('data-download-level3-loaded', '1');
-                } else {
-                    level3AsyncBody.innerHTML = '<p class=\"error-text\">Failed to load filters.</p>';
-                }
-                if (commonFilterAsyncBody && commonFragment) {
-                    commonFilterAsyncBody.innerHTML = commonFragment.innerHTML;
-                }
-                if (typeof window.initializeDownloadModalUi === 'function') {
-                    window.initializeDownloadModalUi();
-                }
-            })
-            .catch(function () {
-                level3AsyncBody.innerHTML = '<p class=\"error-text\">Failed to load filters.</p>';
-            })
-            .finally(function () {
-                level3AsyncBody.removeAttribute('data-download-level3-loading');
-                level3LoadingPromise = null;
-            });
-        return level3LoadingPromise;
-    };
     var activateModalPage = function (pageKey) {
         modalPageTabs.forEach(function (tab) {
             tab.classList.toggle('is-active', tab.getAttribute('data-download-modal-page-tab') === pageKey);
@@ -2232,9 +2093,6 @@ window.initializeDownloadModalUi = function () {
         modalPages.forEach(function (page) {
             page.classList.toggle('hidden', page.getAttribute('data-download-modal-page') !== pageKey);
         });
-        if (pageKey === 'level3') {
-            loadLevel3Content();
-        }
     };
     var selectedLevel1Label = function () {
         var checked = level1Choices.find(function (input) { return input.checked; });
@@ -2502,53 +2360,18 @@ window.initializeDownloadModalUi = function () {
     document.querySelectorAll('[data-download-field-checkbox]').forEach(function (input) {
         input.addEventListener('change', syncLevel3FieldFilters);
     });
-    if (downloadFrame && !downloadFrame.getAttribute('data-download-frame-bound')) {
-        downloadFrame.setAttribute('data-download-frame-bound', '1');
-        downloadFrame.addEventListener('load', function () {
-            if (!downloadInFlight) {
-                return;
-            }
-            if (waitProgressBar) {
-                waitProgressBar.style.width = '100%';
-            }
-            window.setTimeout(function () {
-                var responseText = extractDownloadFailureText();
-                closeWaitModal();
-                if (responseText !== '') {
-                    alert(responseText.substring(0, 1200));
-                }
-            }, 300);
-        });
-    }
-    form.addEventListener('submit', function () {
-        if (downloadInFlight) {
-            return;
-        }
-        form.target = 'download-target-frame';
-        downloadInFlight = true;
-        form.querySelectorAll('button, input, select, textarea').forEach(function (field) {
-            if (field.disabled || field.type === 'hidden') {
-                return;
-            }
-            field.disabled = true;
-            field.setAttribute('data-download-disabled-by-wait', '1');
-        });
-        openWaitModal();
-    });
     document.querySelectorAll('[data-common-filter-open]').forEach(function (button) {
         button.addEventListener('click', function () {
             var identifier = button.getAttribute('data-common-filter-open');
             if (!commonFilterModal) {
                 return;
             }
-            loadLevel3Content().finally(function () {
-                commonFilterModal.setAttribute('aria-hidden', 'false');
-                commonFilterModal.classList.add('open');
-                commonFilterModal.querySelectorAll('[data-common-filter-panel]').forEach(function (panel) {
-                    panel.classList.toggle('hidden', panel.getAttribute('data-common-filter-panel') !== identifier);
-                });
-                syncHierarchyTrees();
+            commonFilterModal.setAttribute('aria-hidden', 'false');
+            commonFilterModal.classList.add('open');
+            commonFilterModal.querySelectorAll('[data-common-filter-panel]').forEach(function (panel) {
+                panel.classList.toggle('hidden', panel.getAttribute('data-common-filter-panel') !== identifier);
             });
+            syncHierarchyTrees();
         });
     });
     document.addEventListener('change', function (event) {
@@ -2572,10 +2395,6 @@ window.initializeDownloadModalUi = function () {
     activateModalPage('level1');
     syncLevel3FieldFilters();
     syncHierarchyTrees();
-};
-
-document.addEventListener('DOMContentLoaded', function () {
-    window.initializeDownloadModalUi();
 });
 </script>
 

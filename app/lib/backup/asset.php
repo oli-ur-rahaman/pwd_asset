@@ -280,6 +280,73 @@ function ensure_asset_schema(): void
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
     );
 
+    db()->exec(
+        "CREATE TABLE IF NOT EXISTS bimh_data (
+            bimh_id VARCHAR(100) NOT NULL PRIMARY KEY,
+            establishment_name VARCHAR(500) DEFAULT NULL,
+            project_name TEXT DEFAULT NULL,
+            concerned_ministry VARCHAR(255) DEFAULT NULL,
+            establishment_type VARCHAR(255) DEFAULT NULL,
+            constructed_by VARCHAR(255) DEFAULT NULL,
+            division_name VARCHAR(255) DEFAULT NULL,
+            district VARCHAR(255) DEFAULT NULL,
+            upazila_thana VARCHAR(255) DEFAULT NULL,
+            union_ward VARCHAR(255) DEFAULT NULL,
+            pwd_civil_zone VARCHAR(255) DEFAULT NULL,
+            pwd_civil_circle VARCHAR(255) DEFAULT NULL,
+            pwd_civil_division VARCHAR(255) DEFAULT NULL,
+            pwd_civil_subdivision VARCHAR(255) DEFAULT NULL,
+            pwd_mechanical_zone VARCHAR(255) DEFAULT NULL,
+            pwd_mechanical_circle VARCHAR(255) DEFAULT NULL,
+            pwd_mechanical_division VARCHAR(255) DEFAULT NULL,
+            pwd_mechanical_subdivision VARCHAR(255) DEFAULT NULL,
+            latitude VARCHAR(100) DEFAULT NULL,
+            longitude VARCHAR(100) DEFAULT NULL,
+            structural_drawing_id VARCHAR(255) DEFAULT NULL,
+            architectural_drawing_id VARCHAR(255) DEFAULT NULL,
+            year_of_construction VARCHAR(50) DEFAULT NULL,
+            approximately VARCHAR(255) DEFAULT NULL,
+            uses_of_establishment TEXT DEFAULT NULL,
+            civil_other_information TEXT DEFAULT NULL,
+            establishment_height VARCHAR(100) DEFAULT NULL,
+            boundary_height VARCHAR(100) DEFAULT NULL,
+            boundary_length VARCHAR(100) DEFAULT NULL,
+            drainage_length VARCHAR(100) DEFAULT NULL,
+            park_area VARCHAR(100) DEFAULT NULL,
+            road_length VARCHAR(100) DEFAULT NULL,
+            road_area VARCHAR(100) DEFAULT NULL,
+            above_ground VARCHAR(100) DEFAULT NULL,
+            under_ground VARCHAR(100) DEFAULT NULL,
+            plinth_area VARCHAR(100) DEFAULT NULL,
+            total_floor_area VARCHAR(100) DEFAULT NULL,
+            structure_type VARCHAR(255) DEFAULT NULL,
+            foundation_type VARCHAR(255) DEFAULT NULL,
+            foundation_design_for TEXT DEFAULT NULL,
+            details TEXT DEFAULT NULL,
+            lift_no VARCHAR(100) DEFAULT NULL,
+            ac_no VARCHAR(100) DEFAULT NULL,
+            ac_capacity VARCHAR(100) DEFAULT NULL,
+            motor_no VARCHAR(100) DEFAULT NULL,
+            motor_capacity VARCHAR(100) DEFAULT NULL,
+            substation_no VARCHAR(100) DEFAULT NULL,
+            substation_capacity VARCHAR(100) DEFAULT NULL,
+            generator_no VARCHAR(100) DEFAULT NULL,
+            generator_capacity VARCHAR(100) DEFAULT NULL,
+            fire_detection_system VARCHAR(255) DEFAULT NULL,
+            fire_protection_system VARCHAR(255) DEFAULT NULL,
+            em_other_info TEXT DEFAULT NULL,
+            pwd_civil_division_key VARCHAR(255) DEFAULT NULL,
+            pwd_mechanical_division_key VARCHAR(255) DEFAULT NULL,
+            address_key VARCHAR(255) DEFAULT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT NULL,
+            KEY idx_bimh_civil_division_key (pwd_civil_division_key),
+            KEY idx_bimh_mechanical_division_key (pwd_mechanical_division_key),
+            KEY idx_bimh_address_key (address_key),
+            KEY idx_bimh_establishment_name (establishment_name(191))
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    );
+
     asset_ensure_column('zones', 'active_status', 'TINYINT NOT NULL DEFAULT 1');
     asset_ensure_column('zones', 'allow_office_user_management', 'TINYINT NOT NULL DEFAULT 1');
     asset_ensure_column('circles', 'active_status', 'TINYINT NOT NULL DEFAULT 1');
@@ -296,6 +363,8 @@ function ensure_asset_schema(): void
     asset_ensure_column('info', 'asset_subcategory_enabled', 'TINYINT NOT NULL DEFAULT 1');
     asset_ensure_column('info', 'asset_number_visible_to_users', 'TINYINT NOT NULL DEFAULT 1');
     asset_ensure_column('info', 'asset_filter_distinct_threshold', 'INT NOT NULL DEFAULT 20');
+    asset_ensure_column('info', 'download_default_filters_json', 'LONGTEXT DEFAULT NULL');
+    asset_ensure_column('info', 'download_naming_tokens_text', 'LONGTEXT DEFAULT NULL');
     asset_ensure_column('segments', 'asset_subcategory_enabled', 'TINYINT NOT NULL DEFAULT 1');
     asset_ensure_column('segments', 'show_office_scope_switch', 'TINYINT NOT NULL DEFAULT 1');
     asset_ensure_column('segments', 'show_filter_card', 'TINYINT NOT NULL DEFAULT 1');
@@ -304,6 +373,10 @@ function ensure_asset_schema(): void
     asset_ensure_column('segments', 'allow_bulk_import', 'TINYINT NOT NULL DEFAULT 1');
     asset_ensure_column('segments', 'asset_number_visible_to_users', 'TINYINT NOT NULL DEFAULT 1');
     asset_ensure_column('segments', 'show_data_provider_superadmin', 'TINYINT NOT NULL DEFAULT 1');
+    asset_ensure_column('segments', 'template_source', "VARCHAR(20) NOT NULL DEFAULT 'autogenerated'");
+    asset_ensure_column('segments', 'download_filter_configured', 'TINYINT NOT NULL DEFAULT 0');
+    asset_ensure_column('segments', 'download_sort_configured', 'TINYINT NOT NULL DEFAULT 0');
+    asset_ensure_column('segments', 'download_token_configured', 'TINYINT NOT NULL DEFAULT 0');
     asset_ensure_column('asset_fields', 'is_unique', 'TINYINT NOT NULL DEFAULT 0');
     asset_ensure_column('asset_fields', 'is_filter_enabled', 'TINYINT NOT NULL DEFAULT 0');
     asset_ensure_column('asset_fields', 'filter_scope', 'TINYINT NOT NULL DEFAULT 0');
@@ -314,6 +387,12 @@ function ensure_asset_schema(): void
     asset_ensure_column('asset_fields', 'text_max_length', 'INT DEFAULT NULL');
     asset_ensure_column('asset_fields', 'secondary_of_field_id', 'INT DEFAULT NULL');
     asset_ensure_column('asset_fields', 'conditional_map_json', 'LONGTEXT DEFAULT NULL');
+    asset_ensure_column('asset_fields', 'is_common_download_field', 'TINYINT NOT NULL DEFAULT 0');
+    asset_ensure_column('asset_fields', 'is_download_level1', 'TINYINT NOT NULL DEFAULT 0');
+    asset_ensure_column('asset_fields', 'is_download_filter', 'TINYINT NOT NULL DEFAULT 0');
+    asset_ensure_column('asset_fields', 'is_download_sort', 'TINYINT NOT NULL DEFAULT 0');
+    asset_ensure_column('asset_fields', 'is_download_zip_file_selectable', 'TINYINT NOT NULL DEFAULT 0');
+    asset_ensure_column('asset_fields', 'is_download_token', 'TINYINT NOT NULL DEFAULT 0');
     asset_ensure_column('asset_categories', 'segment_id', 'INT DEFAULT NULL');
     asset_ensure_column('asset_subcategories', 'segment_id', 'INT DEFAULT NULL');
     asset_ensure_column('asset_fields', 'segment_id', 'INT DEFAULT NULL');
@@ -322,12 +401,19 @@ function ensure_asset_schema(): void
     asset_ensure_column('asset_import_batches', 'segment_id', 'INT DEFAULT NULL');
     asset_ensure_column('asset_activity_logs', 'segment_id', 'INT DEFAULT NULL');
     asset_ensure_column('asset_table_column_preferences', 'segment_id', 'INT DEFAULT NULL');
+    asset_ensure_column('bimh_data', 'pwd_civil_division_key', 'VARCHAR(255) DEFAULT NULL');
+    asset_ensure_column('bimh_data', 'pwd_mechanical_division_key', 'VARCHAR(255) DEFAULT NULL');
+    asset_ensure_column('bimh_data', 'address_key', 'VARCHAR(255) DEFAULT NULL');
     asset_ensure_segment_indexes();
+    asset_ensure_index('bimh_data', 'idx_bimh_civil_division_key', ['pwd_civil_division_key']);
+    asset_ensure_index('bimh_data', 'idx_bimh_mechanical_division_key', ['pwd_mechanical_division_key']);
+    asset_ensure_index('bimh_data', 'idx_bimh_address_key', ['address_key']);
     asset_relax_category_requirement();
     asset_relax_subcategory_requirement();
     asset_backfill_segment_assignments();
     asset_backfill_filter_scopes();
     asset_backfill_mandatory_scopes();
+    asset_bimh_backfill_helper_keys();
 
     asset_seed_default_fields();
     asset_backfill_office_user_access_levels();
@@ -340,7 +426,13 @@ function asset_ensure_column(string $table, string $column, string $definition):
     if ($stmt->fetch()) {
         return;
     }
-    db()->exec("ALTER TABLE {$table} ADD COLUMN {$column} {$definition}");
+    try {
+        db()->exec("ALTER TABLE {$table} ADD COLUMN {$column} {$definition}");
+    } catch (PDOException $e) {
+        if ((string)$e->getCode() !== '42S21' && (int)($e->errorInfo[1] ?? 0) !== 1060) {
+            throw $e;
+        }
+    }
 }
 
 function asset_index_exists(string $table, string $indexName): bool
@@ -735,7 +827,7 @@ function asset_seed_default_fields(): void
 
 function asset_supported_data_types(): array
 {
-    return ['text', 'number', 'date', 'dropdown', 'yes_no', 'file', 'conditional'];
+    return ['text', 'number', 'date', 'dropdown', 'yes_no', 'file', 'conditional', 'bimh'];
 }
 
 function asset_mandatory_scope_optional(): int
@@ -1076,6 +1168,528 @@ function asset_format_number_display(?string $value): string
         return $value;
     }
     return rtrim(rtrim($value, '0'), '.');
+}
+
+function asset_bimh_workbook_path(): ?string
+{
+    $root = dirname(__DIR__, 2);
+    $candidates = [
+        asset_bimh_uploaded_path(),
+        $root . '/[edited] Establishment All Bangladesh.xlsx',
+        $root . '/Establishment All Bangladesh.xlsx',
+    ];
+    foreach ($candidates as $path) {
+        if (is_file($path)) {
+            return $path;
+        }
+    }
+    return null;
+}
+
+function asset_bimh_storage_dir(): string
+{
+    return dirname(__DIR__, 2) . '/storage/bimh';
+}
+
+function asset_bimh_uploaded_path(): string
+{
+    return asset_bimh_storage_dir() . '/bimh_source_latest.xlsx';
+}
+
+function asset_bimh_normalize_division_key(?string $value): string
+{
+    $value = trim((string)$value);
+    if ($value === '') {
+        return '';
+    }
+    $parts = explode(',', $value, 2);
+    $value = trim((string)($parts[0] ?? ''));
+    $value = mb_strtolower($value, 'UTF-8');
+    return preg_replace('/[^[:alnum:]]+/u', '', $value) ?? '';
+}
+
+function asset_bimh_normalize_address_key(?string $value): string
+{
+    $value = trim((string)$value);
+    if ($value === '') {
+        return '';
+    }
+    $parts = explode(',', $value, 2);
+    $value = trim((string)($parts[1] ?? ''));
+    if ($value === '') {
+        return '';
+    }
+    $value = mb_strtolower($value, 'UTF-8');
+    return preg_replace('/[^[:alnum:]]+/u', '', $value) ?? '';
+}
+
+function asset_bimh_normalize_scope_address_key(?string $value): string
+{
+    $value = trim((string)$value);
+    if ($value === '') {
+        return '';
+    }
+    $value = mb_strtolower($value, 'UTF-8');
+    return preg_replace('/[^[:alnum:]]+/u', '', $value) ?? '';
+}
+
+function asset_bimh_build_address_key(?string $civilDivision, ?string $mechanicalDivision): string
+{
+    $civilKey = asset_bimh_normalize_address_key($civilDivision);
+    if ($civilKey !== '') {
+        return $civilKey;
+    }
+    return asset_bimh_normalize_address_key($mechanicalDivision);
+}
+
+function asset_bimh_backfill_helper_keys(): void
+{
+    static $done = false;
+    if ($done) {
+        return;
+    }
+    $done = true;
+
+    try {
+        $rows = db()->query('SELECT bimh_id, pwd_civil_division, pwd_mechanical_division, pwd_civil_division_key, pwd_mechanical_division_key, address_key FROM bimh_data')->fetchAll();
+        if (!$rows) {
+            return;
+        }
+
+        $stmt = db()->prepare('UPDATE bimh_data SET pwd_civil_division_key = ?, pwd_mechanical_division_key = ?, address_key = ? WHERE bimh_id = ?');
+        db()->beginTransaction();
+        foreach ($rows as $row) {
+            $civilKey = asset_bimh_normalize_division_key((string)($row['pwd_civil_division'] ?? ''));
+            $mechanicalKey = asset_bimh_normalize_division_key((string)($row['pwd_mechanical_division'] ?? ''));
+            $addressKey = asset_bimh_build_address_key(
+                $row['pwd_civil_division'] ?? null,
+                $row['pwd_mechanical_division'] ?? null
+            );
+
+            if (
+                (string)($row['pwd_civil_division_key'] ?? '') === $civilKey
+                && (string)($row['pwd_mechanical_division_key'] ?? '') === $mechanicalKey
+                && (string)($row['address_key'] ?? '') === $addressKey
+            ) {
+                continue;
+            }
+
+            $stmt->execute([$civilKey !== '' ? $civilKey : null, $mechanicalKey !== '' ? $mechanicalKey : null, $addressKey !== '' ? $addressKey : null, (string)$row['bimh_id']]);
+        }
+        db()->commit();
+    } catch (Throwable $e) {
+        if (db()->inTransaction()) {
+            db()->rollBack();
+        }
+    }
+}
+
+function asset_bimh_sheet_column_map(): array
+{
+    return [
+        'BIMH ID' => 'bimh_id',
+        'Establishment Name' => 'establishment_name',
+        'Project Name' => 'project_name',
+        'Concerned Ministry' => 'concerned_ministry',
+        'Establishment Type' => 'establishment_type',
+        'Constructed By' => 'constructed_by',
+        'Division' => 'division_name',
+        'District' => 'district',
+        'Upazila/Thana' => 'upazila_thana',
+        'Union/Ward' => 'union_ward',
+        'PWD Civil Zone' => 'pwd_civil_zone',
+        'PWD Civil Circle' => 'pwd_civil_circle',
+        'PWD Civil Division' => 'pwd_civil_division',
+        'PWD Civil Subdivision' => 'pwd_civil_subdivision',
+        'PWD Mechanical Zone' => 'pwd_mechanical_zone',
+        'PWD Mechanical Circle' => 'pwd_mechanical_circle',
+        'PWD Mechanical Division' => 'pwd_mechanical_division',
+        'PWD Mechanical Subdivision' => 'pwd_mechanical_subdivision',
+        'Latitude' => 'latitude',
+        'Longitude' => 'longitude',
+        'Structural Drawing ID' => 'structural_drawing_id',
+        'Architectural Drawing ID' => 'architectural_drawing_id',
+        'Year Of Construction' => 'year_of_construction',
+        'Approximately' => 'approximately',
+        'Uses Of Establishment' => 'uses_of_establishment',
+        'Civil Other Information' => 'civil_other_information',
+        'Establishment Height' => 'establishment_height',
+        'Boundary Height' => 'boundary_height',
+        'Boundary Length' => 'boundary_length',
+        'Drainage Length' => 'drainage_length',
+        'Park Area' => 'park_area',
+        'Road Length' => 'road_length',
+        'Road Area' => 'road_area',
+        'Above Ground' => 'above_ground',
+        'Under Ground' => 'under_ground',
+        'Plinth Area' => 'plinth_area',
+        'Total Floor Area' => 'total_floor_area',
+        'Structure Type' => 'structure_type',
+        'Foundation Type' => 'foundation_type',
+        'Foundation Design For' => 'foundation_design_for',
+        'Details' => 'details',
+        'Lift No' => 'lift_no',
+        'AC No' => 'ac_no',
+        'AC Capacity' => 'ac_capacity',
+        'Motor No' => 'motor_no',
+        'Motor Capacity' => 'motor_capacity',
+        'Substation No' => 'substation_no',
+        'Substation Capacity' => 'substation_capacity',
+        'Generator No' => 'generator_no',
+        'Generator Capacity' => 'generator_capacity',
+        'Fire Detection System' => 'fire_detection_system',
+        'Fire Protection System' => 'fire_protection_system',
+        'E/M Other Info' => 'em_other_info',
+    ];
+}
+
+function asset_bimh_sync_from_workbook(?string $path = null): array
+{
+    $path = $path && is_file($path) ? $path : asset_bimh_workbook_path();
+    if (!$path || !is_file($path)) {
+        throw new RuntimeException('BIMH workbook file was not found.');
+    }
+
+    ensure_library('PhpOffice\\PhpSpreadsheet\\IOFactory', 'PhpSpreadsheet is not installed.');
+    $reader = \PhpOffice\PhpSpreadsheet\IOFactory::createReaderForFile($path);
+    $reader->setReadDataOnly(true);
+    if (method_exists($reader, 'setReadEmptyCells')) {
+        $reader->setReadEmptyCells(false);
+    }
+    $spreadsheet = $reader->load($path);
+    $sheet = $spreadsheet->getSheetByName('Sheet1') ?: $spreadsheet->getActiveSheet();
+    $rows = $sheet->toArray(null, false, false, false);
+    if (!$rows) {
+        throw new RuntimeException('BIMH workbook is empty.');
+    }
+
+    $headers = array_map(static fn($value): string => trim((string)$value), array_values($rows[0] ?? []));
+    $columnMap = asset_bimh_sheet_column_map();
+    $headerIndexes = [];
+    foreach ($headers as $index => $header) {
+        if (isset($columnMap[$header])) {
+            $headerIndexes[$columnMap[$header]] = $index;
+        }
+    }
+    if (!array_key_exists('bimh_id', $headerIndexes) || !array_key_exists('establishment_name', $headerIndexes)) {
+        throw new RuntimeException('BIMH workbook Sheet1 headers do not match the expected structure.');
+    }
+
+    $dbColumns = array_values($columnMap);
+    $dbColumns[] = 'pwd_civil_division_key';
+    $dbColumns[] = 'pwd_mechanical_division_key';
+    $dbColumns[] = 'address_key';
+    $dbColumns[] = 'updated_at';
+    $placeholderSql = implode(', ', array_fill(0, count($dbColumns), '?'));
+    $updateSql = implode(', ', array_map(static fn(string $column): string => $column . ' = VALUES(' . $column . ')', array_filter($dbColumns, static fn(string $column): bool => $column !== 'bimh_id')));
+    $stmt = db()->prepare('INSERT INTO bimh_data (' . implode(', ', $dbColumns) . ') VALUES (' . $placeholderSql . ') ON DUPLICATE KEY UPDATE ' . $updateSql);
+    $existingIds = array_fill_keys(array_map(
+        static fn(array $row): string => (string)$row['bimh_id'],
+        db()->query('SELECT bimh_id FROM bimh_data')->fetchAll()
+    ), true);
+
+    $imported = 0;
+    $inserted = 0;
+    $updated = 0;
+    db()->beginTransaction();
+    try {
+        foreach (array_slice($rows, 1) as $row) {
+            $record = [];
+            foreach ($columnMap as $excelHeader => $dbColumn) {
+                $columnIndex = $headerIndexes[$dbColumn] ?? null;
+                $record[$dbColumn] = $columnIndex === null ? null : trim((string)($row[$columnIndex] ?? ''));
+                if ($record[$dbColumn] === '') {
+                    $record[$dbColumn] = null;
+                }
+            }
+            $bimhId = trim((string)($record['bimh_id'] ?? ''));
+            if ($bimhId === '') {
+                continue;
+            }
+            $wasExisting = isset($existingIds[$bimhId]);
+            $record['bimh_id'] = $bimhId;
+            $record['pwd_civil_division_key'] = asset_bimh_normalize_division_key((string)($record['pwd_civil_division'] ?? ''));
+            $record['pwd_mechanical_division_key'] = asset_bimh_normalize_division_key((string)($record['pwd_mechanical_division'] ?? ''));
+            $record['address_key'] = asset_bimh_build_address_key(
+                $record['pwd_civil_division'] ?? null,
+                $record['pwd_mechanical_division'] ?? null
+            );
+            $record['updated_at'] = date('Y-m-d H:i:s');
+            $params = [];
+            foreach ($dbColumns as $column) {
+                $params[] = $record[$column] ?? null;
+            }
+            $stmt->execute($params);
+            $imported++;
+            if ($wasExisting) {
+                $updated++;
+            } else {
+                $inserted++;
+                $existingIds[$bimhId] = true;
+            }
+        }
+        db()->commit();
+    } catch (Throwable $e) {
+        if (db()->inTransaction()) {
+            db()->rollBack();
+        }
+        throw $e;
+    }
+
+    return ['imported' => $imported, 'inserted' => $inserted, 'updated' => $updated, 'path' => $path];
+}
+
+function asset_bimh_bootstrap_if_empty(): void
+{
+    static $bootstrapped = false;
+    if ($bootstrapped) {
+        return;
+    }
+    $bootstrapped = true;
+    try {
+        $count = (int)db()->query('SELECT COUNT(*) FROM bimh_data')->fetchColumn();
+        if ($count > 0) {
+            return;
+        }
+        $path = asset_bimh_workbook_path();
+        if (!$path) {
+            return;
+        }
+        asset_bimh_sync_from_workbook($path);
+    } catch (Throwable $e) {
+    }
+}
+
+function save_uploaded_bimh_workbook(array $file): array
+{
+    if (empty($file['tmp_name']) || !is_uploaded_file($file['tmp_name'])) {
+        throw new RuntimeException('Please choose a valid BIMH Excel file.');
+    }
+    $extension = strtolower(pathinfo((string)($file['name'] ?? ''), PATHINFO_EXTENSION));
+    if (!in_array($extension, ['xlsx', 'xls'], true)) {
+        throw new RuntimeException('BIMH file must be an Excel file.');
+    }
+
+    $summary = asset_bimh_sync_from_workbook((string)$file['tmp_name']);
+
+    $dir = asset_bimh_storage_dir();
+    if (!is_dir($dir) && !mkdir($dir, 0777, true) && !is_dir($dir)) {
+        throw new RuntimeException('Unable to create BIMH storage directory.');
+    }
+    $target = asset_bimh_uploaded_path();
+    if (!move_uploaded_file((string)$file['tmp_name'], $target)) {
+        throw new RuntimeException('BIMH data imported but the uploaded source file could not be saved.');
+    }
+
+    return $summary + ['stored_path' => $target];
+}
+
+function asset_bimh_lookup_many(array $ids): array
+{
+    asset_bimh_bootstrap_if_empty();
+    $normalizedIds = [];
+    foreach ($ids as $id) {
+        $value = trim((string)$id);
+        if ($value !== '') {
+            $normalizedIds[$value] = $value;
+        }
+    }
+    if (!$normalizedIds) {
+        return [];
+    }
+    $placeholders = implode(',', array_fill(0, count($normalizedIds), '?'));
+    $stmt = db()->prepare("SELECT bimh_id, establishment_name FROM bimh_data WHERE bimh_id IN ({$placeholders})");
+    $stmt->execute(array_values($normalizedIds));
+    $map = [];
+    foreach ($stmt->fetchAll() as $row) {
+        $map[(string)$row['bimh_id']] = trim((string)($row['establishment_name'] ?? ''));
+    }
+    return $map;
+}
+
+function asset_bimh_lookup(string $bimhId): ?array
+{
+    $bimhId = trim($bimhId);
+    if ($bimhId === '') {
+        return null;
+    }
+    asset_bimh_bootstrap_if_empty();
+    $stmt = db()->prepare('SELECT * FROM bimh_data WHERE bimh_id = ? LIMIT 1');
+    $stmt->execute([$bimhId]);
+    $row = $stmt->fetch();
+    return $row ?: null;
+}
+
+function asset_bimh_est_name_for_id(?string $bimhId): string
+{
+    $bimhId = trim((string)$bimhId);
+    if ($bimhId === '') {
+        return '';
+    }
+    $row = asset_bimh_lookup($bimhId);
+    if (!$row) {
+        return 'BIMH ID is not in the Database.';
+    }
+    return trim((string)($row['establishment_name'] ?? '')) ?: 'BIMH ID is not in the Database.';
+}
+
+function asset_bimh_accessible_divisions(array $user): array
+{
+    $officeType = (int)($user['office_type'] ?? 0);
+    if (is_superadmin()) {
+        return db()->query('SELECT id, office_name, office_address, zone_id, circle_id FROM divisions ORDER BY office_name ASC')->fetchAll();
+    }
+    if ($officeType === 5 && !empty($user['subdivision_id'])) {
+        $subdivision = find_subdivision_with_hierarchy((int)$user['subdivision_id']);
+        if (!$subdivision || empty($subdivision['division_id'])) {
+            return [];
+        }
+        $stmt = db()->prepare('SELECT id, office_name, office_address, zone_id, circle_id FROM divisions WHERE id = ?');
+        $stmt->execute([(int)$subdivision['division_id']]);
+        return $stmt->fetchAll();
+    }
+    return get_divisions_for_user($user);
+}
+
+function asset_bimh_picker_scope(array $user): array
+{
+    return match ((int)($user['office_type'] ?? 0)) {
+        2 => ['show_circle_filter' => true, 'show_division_filter' => true],
+        3 => ['show_circle_filter' => false, 'show_division_filter' => true],
+        default => ['show_circle_filter' => false, 'show_division_filter' => false],
+    };
+}
+
+function asset_bimh_picker_rows(array $user): array
+{
+    asset_bimh_bootstrap_if_empty();
+    $divisions = asset_bimh_accessible_divisions($user);
+    if (!$divisions) {
+        return [];
+    }
+
+    $divisionKeyMap = [];
+    $addressDivisionKeyMap = [];
+    $addressKeys = [];
+    $blankAddressDivisionKeys = [];
+    foreach ($divisions as $division) {
+        $divisionKey = asset_bimh_normalize_division_key((string)($division['office_name'] ?? ''));
+        if ($divisionKey === '') {
+            continue;
+        }
+        $divisionMeta = [
+            'division_id' => (int)($division['id'] ?? 0),
+            'division_name' => (string)($division['office_name'] ?? ''),
+            'circle_id' => (int)($division['circle_id'] ?? 0),
+            'zone_id' => (int)($division['zone_id'] ?? 0),
+            'address_key' => asset_bimh_normalize_scope_address_key((string)($division['office_address'] ?? '')),
+        ];
+        $divisionKeyMap[$divisionKey] = $divisionMeta;
+        if ($divisionMeta['address_key'] !== '') {
+            $addressKeys[$divisionMeta['address_key']] = $divisionMeta['address_key'];
+            $addressDivisionKeyMap[$divisionMeta['address_key']][$divisionKey] = $divisionMeta;
+        } else {
+            $blankAddressDivisionKeys[$divisionKey] = $divisionKey;
+        }
+    }
+    if (!$divisionKeyMap) {
+        return [];
+    }
+
+    $keys = array_keys($divisionKeyMap);
+    $rows = [];
+    $collectRows = static function (array $resultSet, string $source) use (&$rows, $addressDivisionKeyMap, $divisionKeyMap): void {
+        foreach ($resultSet as $row) {
+            $bimhId = trim((string)($row['bimh_id'] ?? ''));
+            if ($bimhId === '') {
+                continue;
+            }
+            if (isset($rows[$bimhId]) && $rows[$bimhId]['match_source'] === 'mechanical') {
+                continue;
+            }
+            $rowAddressKey = trim((string)($row['address_key'] ?? ''));
+            $matchedKey = trim((string)($row['matched_key'] ?? ''));
+            $divisionMeta = null;
+            if ($rowAddressKey !== '' && isset($addressDivisionKeyMap[$rowAddressKey][$matchedKey])) {
+                $divisionMeta = $addressDivisionKeyMap[$rowAddressKey][$matchedKey];
+            } elseif (isset($divisionKeyMap[$matchedKey])) {
+                $divisionMeta = $divisionKeyMap[$matchedKey];
+            }
+            if (!$divisionMeta) {
+                continue;
+            }
+            $rows[$bimhId] = [
+                'bimh_id' => $bimhId,
+                'est_name' => trim((string)($row['establishment_name'] ?? '')),
+                'upazila_thana' => trim((string)($row['upazila_thana'] ?? '')),
+                'district' => trim((string)($row['district'] ?? '')),
+                'circle_id' => (int)($divisionMeta['circle_id'] ?? 0),
+                'division_id' => (int)($divisionMeta['division_id'] ?? 0),
+                'circle_name' => trim((string)($row['matched_circle'] ?? '')),
+                'division_name' => trim((string)($divisionMeta['division_name'] ?? ($row['matched_division'] ?? ''))),
+                'match_source' => $source,
+            ];
+        }
+    };
+
+    $runQuerySet = static function (string $divisionColumn, string $circleColumn, string $divisionKeyColumn, array $divisionKeys, ?array $filterAddressKeys = null): array {
+        if (!$divisionKeys) {
+            return [];
+        }
+        $divisionPlaceholders = implode(',', array_fill(0, count($divisionKeys), '?'));
+        $params = array_values($divisionKeys);
+        $where = "{$divisionKeyColumn} IN ({$divisionPlaceholders})";
+        if ($filterAddressKeys !== null && $filterAddressKeys) {
+            $addressPlaceholders = implode(',', array_fill(0, count($filterAddressKeys), '?'));
+            $where .= " AND address_key IN ({$addressPlaceholders})";
+            $params = array_merge($params, array_values($filterAddressKeys));
+        }
+        $sql = "SELECT bimh_id, establishment_name, upazila_thana, district, address_key, {$circleColumn} AS matched_circle, {$divisionColumn} AS matched_division, {$divisionKeyColumn} AS matched_key FROM bimh_data WHERE {$where} ORDER BY establishment_name ASC, bimh_id ASC";
+        $stmt = db()->prepare($sql);
+        $stmt->execute($params);
+        return $stmt->fetchAll();
+    };
+
+    $mechanicalRows = [];
+    $civilRows = [];
+    if ($addressKeys) {
+        $mechanicalRows = array_merge(
+            $mechanicalRows,
+            $runQuerySet('pwd_mechanical_division', 'pwd_mechanical_circle', 'pwd_mechanical_division_key', $keys, $addressKeys)
+        );
+        $civilRows = array_merge(
+            $civilRows,
+            $runQuerySet('pwd_civil_division', 'pwd_civil_circle', 'pwd_civil_division_key', $keys, $addressKeys)
+        );
+    }
+    if ($blankAddressDivisionKeys) {
+        $fallbackKeys = array_values($blankAddressDivisionKeys);
+        $mechanicalRows = array_merge(
+            $mechanicalRows,
+            $runQuerySet('pwd_mechanical_division', 'pwd_mechanical_circle', 'pwd_mechanical_division_key', $fallbackKeys)
+        );
+        $civilRows = array_merge(
+            $civilRows,
+            $runQuerySet('pwd_civil_division', 'pwd_civil_circle', 'pwd_civil_division_key', $fallbackKeys)
+        );
+    }
+
+    foreach ([['mechanical', $mechanicalRows], ['civil', $civilRows]] as [$source, $resultSet]) {
+        if (!is_array($resultSet)) {
+            continue;
+        }
+        $collectRows($resultSet, $source);
+    }
+
+    uasort($rows, static function (array $a, array $b): int {
+        $nameCompare = strnatcasecmp((string)($a['est_name'] ?? ''), (string)($b['est_name'] ?? ''));
+        if ($nameCompare !== 0) {
+            return $nameCompare;
+        }
+        return strnatcasecmp((string)($a['bimh_id'] ?? ''), (string)($b['bimh_id'] ?? ''));
+    });
+
+    return array_values($rows);
 }
 
 function asset_number_format_error(string $label, array $parsedRule): string
@@ -1493,6 +2107,59 @@ function set_asset_data_provider_visible(int $status, ?int $segmentId = null): v
     ]);
 }
 
+function asset_template_source_autogenerated(): string
+{
+    return 'autogenerated';
+}
+
+function asset_template_source_uploaded(): string
+{
+    return 'uploaded';
+}
+
+function asset_template_source_options(?int $segmentId = null): array
+{
+    $options = [
+        asset_template_source_autogenerated() => 'Autogenerated Template',
+    ];
+    if (asset_template_uploaded_info($segmentId)) {
+        $options[asset_template_source_uploaded()] = 'Uploaded Template';
+    }
+    return $options;
+}
+
+function asset_template_source(?int $segmentId = null): string
+{
+    $segment = get_asset_segment(asset_normalize_segment_id($segmentId));
+    $source = strtolower(trim((string)($segment['template_source'] ?? asset_template_source_autogenerated())));
+    if ($source !== asset_template_source_uploaded()) {
+        return asset_template_source_autogenerated();
+    }
+    return asset_template_uploaded_info($segmentId)
+        ? asset_template_source_uploaded()
+        : asset_template_source_autogenerated();
+}
+
+function set_asset_template_source(string $source, ?int $segmentId = null): void
+{
+    $normalizedSource = strtolower(trim($source));
+    if ($normalizedSource === asset_template_source_uploaded() && !asset_template_uploaded_info($segmentId)) {
+        $normalizedSource = asset_template_source_autogenerated();
+    }
+    if ($normalizedSource !== asset_template_source_uploaded()) {
+        $normalizedSource = asset_template_source_autogenerated();
+    }
+    db()->prepare('UPDATE segments SET template_source = ?, updated_at = NOW() WHERE id = ?')->execute([
+        $normalizedSource,
+        asset_normalize_segment_id($segmentId),
+    ]);
+}
+
+function asset_template_prefers_uploaded(?int $segmentId = null): bool
+{
+    return asset_template_source($segmentId) === asset_template_source_uploaded();
+}
+
 function asset_filter_scope_none(): int
 {
     return 0;
@@ -1526,6 +2193,479 @@ function asset_normalize_filter_scope(int|string|null $value): int
     return $scope;
 }
 
+function asset_download_default_filter_options(): array
+{
+    return [
+        'office_hierarchy' => 'Office hierarchy',
+        'category' => 'Category',
+        'subcategory' => 'Sub-category',
+    ];
+}
+
+function asset_download_default_filters(): array
+{
+    $info = get_info_row() ?? [];
+    $raw = (string)($info['download_default_filters_json'] ?? '');
+    if ($raw === '') {
+        return ['office_hierarchy', 'category', 'subcategory'];
+    }
+    $decoded = json_decode($raw, true);
+    if (!is_array($decoded)) {
+        return ['office_hierarchy', 'category', 'subcategory'];
+    }
+    $allowed = array_keys(asset_download_default_filter_options());
+    $selected = [];
+    foreach ($decoded as $value) {
+        $value = (string)$value;
+        if (in_array($value, $allowed, true)) {
+            $selected[] = $value;
+        }
+    }
+    return array_values(array_unique($selected));
+}
+
+function asset_download_available_naming_tokens(): array
+{
+    return [
+        'office_name',
+        'sub-division',
+        'division',
+        'circle',
+        'zone',
+        'segment',
+        'field_name',
+        'office_type',
+        'asset_number',
+    ];
+}
+
+function asset_download_token_key_from_label(string $label): string
+{
+    $token = strtolower(trim($label));
+    $token = preg_replace('/[^a-z0-9]+/i', '_', $token);
+    $token = trim((string)$token, '_');
+    return $token !== '' ? $token : 'field';
+}
+
+function asset_download_declared_field_token_map(): array
+{
+    static $cache = null;
+    if ($cache !== null) {
+        return $cache;
+    }
+    $map = [];
+    $used = [];
+    foreach (asset_download_selected_token_labels() as $label) {
+        if ($label === '' || isset($map[$label])) {
+            continue;
+        }
+        $base = asset_download_token_key_from_label($label);
+        $token = $base;
+        $suffix = 2;
+        while (isset($used[$token])) {
+            $token = $base . '_' . $suffix;
+            $suffix++;
+        }
+        $used[$token] = true;
+        $map[$label] = $token;
+    }
+    return $cache = $map;
+}
+
+function asset_download_dynamic_naming_tokens(): array
+{
+    return array_values(asset_download_declared_field_token_map());
+}
+
+function asset_download_selected_token_labels(): array
+{
+    $labels = [];
+    foreach (get_asset_segments(false) as $segment) {
+        $segmentId = (int)$segment['id'];
+        $selectedIds = array_flip(asset_download_segment_selected_field_ids($segmentId, 'token'));
+        foreach (get_asset_fields(false, $segmentId) as $field) {
+            $fieldId = (int)$field['id'];
+            if (!isset($selectedIds[$fieldId])) {
+                continue;
+            }
+            $label = trim((string)($field['label'] ?? ''));
+            if ($label !== '') {
+                $labels[$label] = true;
+            }
+        }
+    }
+    $result = array_keys($labels);
+    sort($result, SORT_NATURAL | SORT_FLAG_CASE);
+    return $result;
+}
+
+function asset_download_filename_template(): string
+{
+    $info = get_info_row() ?? [];
+    $raw = trim((string)($info['download_naming_tokens_text'] ?? ''));
+    if ($raw === '') {
+        return '{segment}_{field_name}_{office_name}_{asset_number}';
+    }
+    return $raw;
+}
+
+function asset_download_naming_tokens(): array
+{
+    $raw = asset_download_filename_template();
+    $allowed = array_unique(array_merge(
+        asset_download_available_naming_tokens(),
+        asset_download_dynamic_naming_tokens()
+    ));
+    if (str_contains($raw, '{')) {
+        preg_match_all('/\{([a-z0-9_-]+)\}/i', $raw, $matches);
+        $tokens = array_map('strtolower', array_map('trim', $matches[1] ?? []));
+        return array_values(array_filter($tokens, static fn(string $token): bool => in_array($token, $allowed, true)));
+    }
+    $parts = preg_split('/[\r\n,]+/', $raw) ?: [];
+    $tokens = [];
+    foreach ($parts as $part) {
+        $part = trim((string)$part);
+        if ($part !== '' && in_array($part, $allowed, true)) {
+            $tokens[] = $part;
+        }
+    }
+    return $tokens ?: ['segment', 'field_name', 'office_name', 'asset_number'];
+}
+
+function save_asset_download_settings(array $selectedDefaultFilters, string $namingTokensText): void
+{
+    $allowedFilters = array_keys(asset_download_default_filter_options());
+    $filters = [];
+    foreach ($selectedDefaultFilters as $value) {
+        $value = (string)$value;
+        if (in_array($value, $allowedFilters, true)) {
+            $filters[] = $value;
+        }
+    }
+    $filters = array_values(array_unique($filters));
+
+    $info = get_info_row() ?? [];
+    save_info_row(
+        (string)($info['video_tutorial_url'] ?? ''),
+        (string)($info['login_message'] ?? ''),
+        [
+            'site_name' => $info['site_name'] ?? null,
+            'welcome_message' => $info['welcome_message'] ?? null,
+            'ui_theme_key' => $info['ui_theme_key'] ?? asset_default_theme_key(),
+            'asset_subcategory_enabled' => $info['asset_subcategory_enabled'] ?? 1,
+            'asset_number_visible_to_users' => $info['asset_number_visible_to_users'] ?? 1,
+            'asset_filter_distinct_threshold' => $info['asset_filter_distinct_threshold'] ?? 20,
+            'download_default_filters_json' => json_encode($filters, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            'download_naming_tokens_text' => trim($namingTokensText),
+            'i_opr_repair' => $info['i_opr_repair'] ?? null,
+            'i_opr_other' => $info['i_opr_other'] ?? null,
+            'i_dev_pw' => $info['i_dev_pw'] ?? null,
+            'i_opr_min' => $info['i_opr_min'] ?? null,
+            'i_dev_min' => $info['i_dev_min'] ?? null,
+            'i_opr' => $info['i_opr'] ?? null,
+            'i_dev' => $info['i_dev'] ?? null,
+        ]
+    );
+}
+
+function save_asset_download_naming_template(string $template): void
+{
+    $template = trim($template);
+    if ($template === '') {
+        $template = '{segment}_{field_name}_{office_name}_{asset_number}';
+    }
+    $info = get_info_row() ?? [];
+    save_info_row(
+        (string)($info['video_tutorial_url'] ?? ''),
+        (string)($info['login_message'] ?? ''),
+        [
+            'site_name' => $info['site_name'] ?? null,
+            'welcome_message' => $info['welcome_message'] ?? null,
+            'ui_theme_key' => $info['ui_theme_key'] ?? asset_default_theme_key(),
+            'asset_subcategory_enabled' => $info['asset_subcategory_enabled'] ?? 1,
+            'asset_number_visible_to_users' => $info['asset_number_visible_to_users'] ?? 1,
+            'asset_filter_distinct_threshold' => $info['asset_filter_distinct_threshold'] ?? 20,
+            'download_default_filters_json' => $info['download_default_filters_json'] ?? null,
+            'download_naming_tokens_text' => $template,
+            'i_opr_repair' => $info['i_opr_repair'] ?? null,
+            'i_opr_other' => $info['i_opr_other'] ?? null,
+            'i_dev_pw' => $info['i_dev_pw'] ?? null,
+            'i_opr_min' => $info['i_opr_min'] ?? null,
+            'i_dev_min' => $info['i_dev_min'] ?? null,
+            'i_opr' => $info['i_opr'] ?? null,
+            'i_dev' => $info['i_dev'] ?? null,
+        ]
+    );
+}
+
+function asset_download_common_fields(?int $segmentId = null, bool $includeInactive = false): array
+{
+    return array_values(array_filter(
+        get_asset_fields($includeInactive, $segmentId),
+        static fn(array $field): bool => (int)($field['is_common_download_field'] ?? 0) === 1
+            && ($includeInactive || (int)($field['active_status'] ?? 0) === 1)
+    ));
+}
+
+function asset_download_level1_fields(?int $segmentId = null, bool $includeInactive = false): array
+{
+    return array_values(array_filter(
+        get_asset_fields($includeInactive, $segmentId),
+        static fn(array $field): bool => (int)($field['is_common_download_field'] ?? 0) === 1
+            && (int)($field['is_download_level1'] ?? 0) === 1
+            && ($includeInactive || (int)($field['active_status'] ?? 0) === 1)
+    ));
+}
+
+function asset_download_filter_fields(?int $segmentId = null, bool $includeInactive = false): array
+{
+    return array_values(array_filter(
+        get_asset_fields($includeInactive, $segmentId),
+        static fn(array $field): bool => (int)($field['is_download_filter'] ?? 0) === 1
+            && ($includeInactive || (int)($field['active_status'] ?? 0) === 1)
+    ));
+}
+
+function asset_download_effective_filter_fields(?int $segmentId = null, bool $includeInactive = false): array
+{
+    $segmentId = asset_normalize_segment_id($segmentId);
+    $selectedIds = array_flip(asset_download_segment_selected_field_ids($segmentId, 'filter'));
+    if (!$selectedIds) {
+        return [];
+    }
+    return array_values(array_filter(
+        get_asset_fields($includeInactive, $segmentId),
+        static fn(array $field): bool => isset($selectedIds[(int)$field['id']])
+            && ($includeInactive || (int)($field['active_status'] ?? 0) === 1)
+    ));
+}
+
+function asset_download_sort_fields(?int $segmentId = null, bool $includeInactive = false): array
+{
+    return array_values(array_filter(
+        get_asset_fields($includeInactive, $segmentId),
+        static fn(array $field): bool => (int)($field['is_download_sort'] ?? 0) === 1
+            && ($includeInactive || (int)($field['active_status'] ?? 0) === 1)
+    ));
+}
+
+function asset_download_zip_selectable_fields(?int $segmentId = null, bool $includeInactive = false): array
+{
+    return array_values(array_filter(
+        get_asset_fields($includeInactive, $segmentId),
+        static fn(array $field): bool => (string)($field['data_type'] ?? '') === 'file'
+            && (int)($field['is_download_zip_file_selectable'] ?? 0) === 1
+            && ($includeInactive || (int)($field['active_status'] ?? 0) === 1)
+    ));
+}
+
+function asset_download_common_label_candidates(): array
+{
+    $segments = get_asset_segments(false);
+    if (!$segments) {
+        return [];
+    }
+    $segmentCount = count($segments);
+    $labelMap = [];
+    foreach ($segments as $segment) {
+        $seen = [];
+        foreach (get_asset_fields(false, (int)$segment['id']) as $field) {
+            $label = trim((string)($field['label'] ?? ''));
+            if ($label === '' || isset($seen[$label])) {
+                continue;
+            }
+            $seen[$label] = true;
+            if (!isset($labelMap[$label])) {
+                $labelMap[$label] = 0;
+            }
+            $labelMap[$label]++;
+        }
+    }
+    $labels = [];
+    foreach ($labelMap as $label => $count) {
+        if ($count === $segmentCount) {
+            $labels[] = $label;
+        }
+    }
+    sort($labels, SORT_NATURAL | SORT_FLAG_CASE);
+    return $labels;
+}
+
+function asset_download_selected_level1_labels(): array
+{
+    $candidates = asset_download_common_label_candidates();
+    if (!$candidates) {
+        return [];
+    }
+    $selected = [];
+    foreach (get_asset_segments(false) as $segment) {
+        foreach (get_asset_fields(false, (int)$segment['id']) as $field) {
+            $label = trim((string)($field['label'] ?? ''));
+            if ($label === '' || !in_array($label, $candidates, true)) {
+                continue;
+            }
+            if ((int)($field['is_download_level1'] ?? 0) === 1) {
+                $selected[$label] = true;
+            }
+        }
+    }
+    $labels = array_keys($selected);
+    sort($labels, SORT_NATURAL | SORT_FLAG_CASE);
+    return $labels;
+}
+
+function asset_download_common_option_map(): array
+{
+    $options = ['__office__' => 'Office'];
+    foreach (asset_download_common_label_candidates() as $label) {
+        $options[$label] = $label;
+    }
+    return $options;
+}
+
+function save_asset_download_level1_labels(array $labels): void
+{
+    $candidates = asset_download_common_label_candidates();
+    $selected = [];
+    foreach ($labels as $label) {
+        $label = trim((string)$label);
+        if ($label !== '' && in_array($label, $candidates, true)) {
+            $selected[$label] = true;
+        }
+    }
+    db()->beginTransaction();
+    try {
+        foreach (get_asset_segments(false) as $segment) {
+            foreach (get_asset_fields(true, (int)$segment['id']) as $field) {
+                $label = trim((string)($field['label'] ?? ''));
+                $isCommon = in_array($label, $candidates, true) ? 1 : 0;
+                $isLevel1 = $isCommon && isset($selected[$label]) ? 1 : 0;
+                db()->prepare('UPDATE asset_fields SET is_common_download_field = ?, is_download_level1 = ?, updated_at = NOW() WHERE id = ?')
+                    ->execute([$isCommon, $isLevel1, (int)$field['id']]);
+            }
+        }
+        db()->commit();
+    } catch (Throwable $e) {
+        if (db()->inTransaction()) {
+            db()->rollBack();
+        }
+        throw $e;
+    }
+}
+
+function asset_download_segment_selected_field_ids(int $segmentId, string $mode): array
+{
+    $segmentId = asset_normalize_segment_id($segmentId);
+    $flag = match ($mode) {
+        'sort' => 'is_download_sort',
+        'token' => 'is_download_token',
+        default => 'is_download_filter',
+    };
+    $configuredColumn = match ($mode) {
+        'sort' => 'download_sort_configured',
+        'token' => 'download_token_configured',
+        default => 'download_filter_configured',
+    };
+    $fields = get_asset_fields(false, $segmentId);
+    if (!$fields) {
+        return [];
+    }
+    $segment = get_asset_segment($segmentId);
+    $isConfigured = (int)($segment[$configuredColumn] ?? 0) === 1;
+    $selected = [];
+    foreach ($fields as $field) {
+        if ((int)($field[$flag] ?? 0) === 1) {
+            $selected[] = (int)$field['id'];
+        }
+    }
+    if ($selected) {
+        return $selected;
+    }
+    if ($isConfigured) {
+        return $selected;
+    }
+    if ($mode === 'token') {
+        $commonLabels = array_fill_keys(asset_download_common_label_candidates(), true);
+        $defaults = [];
+        foreach ($fields as $field) {
+            $label = trim((string)($field['label'] ?? ''));
+            if ($label !== '' && isset($commonLabels[$label])) {
+                $defaults[] = (int)$field['id'];
+            }
+        }
+        return $defaults;
+    }
+    return array_map(static fn(array $field): int => (int)$field['id'], $fields);
+}
+
+function asset_download_segment_matrix_fields(int $segmentId, string $mode, bool $includeInactive = false): array
+{
+    $segmentId = asset_normalize_segment_id($segmentId);
+    $fields = get_asset_fields($includeInactive, $segmentId);
+    if ($mode !== 'filter') {
+        return $fields;
+    }
+    $commonLabels = array_fill_keys(asset_download_common_label_candidates(), true);
+    return array_values(array_filter(
+        $fields,
+        static function (array $field) use ($commonLabels): bool {
+            $label = trim((string)($field['label'] ?? ''));
+            return $label === '' || !isset($commonLabels[$label]);
+        }
+    ));
+}
+
+function save_asset_download_segment_matrix(array $matrix): void
+{
+    db()->beginTransaction();
+    try {
+        foreach (get_asset_segments(false) as $segment) {
+            $segmentId = (int)$segment['id'];
+            $fields = get_asset_fields(false, $segmentId);
+            $filterEligibleIds = array_fill_keys(
+                array_map(
+                    static fn(array $field): int => (int)$field['id'],
+                    asset_download_segment_matrix_fields($segmentId, 'filter')
+                ),
+                true
+            );
+            $filterSelected = array_flip(array_map('intval', $matrix[$segmentId]['filter'] ?? []));
+            $sortProvided = array_key_exists('sort', $matrix[$segmentId] ?? []);
+            $tokenProvided = array_key_exists('token', $matrix[$segmentId] ?? []);
+            $sortSelected = array_flip(array_map('intval', $matrix[$segmentId]['sort'] ?? []));
+            $tokenSelected = array_flip(array_map('intval', $matrix[$segmentId]['token'] ?? []));
+            foreach ($fields as $field) {
+                $fieldId = (int)$field['id'];
+                $filterValue = (int)($field['is_download_filter'] ?? 0);
+                if (isset($filterEligibleIds[$fieldId])) {
+                    $filterValue = isset($filterSelected[$fieldId]) ? 1 : 0;
+                }
+                $sortValue = $sortProvided ? (isset($sortSelected[$fieldId]) ? 1 : 0) : (int)($field['is_download_sort'] ?? 0);
+                $tokenValue = $tokenProvided ? (isset($tokenSelected[$fieldId]) ? 1 : 0) : (int)($field['is_download_token'] ?? 0);
+                db()->prepare('UPDATE asset_fields SET is_download_filter = ?, is_download_sort = ?, is_download_token = ?, updated_at = NOW() WHERE id = ?')
+                    ->execute([
+                        $filterValue,
+                        $sortValue,
+                        $tokenValue,
+                        $fieldId,
+                    ]);
+            }
+            db()->prepare('UPDATE segments SET download_filter_configured = 1, download_sort_configured = ?, download_token_configured = ?, updated_at = NOW() WHERE id = ?')
+                ->execute([
+                    $sortProvided ? 1 : (int)($segment['download_sort_configured'] ?? 0),
+                    $tokenProvided ? 1 : (int)($segment['download_token_configured'] ?? 0),
+                    $segmentId,
+                ]);
+        }
+        db()->commit();
+    } catch (Throwable $e) {
+        if (db()->inTransaction()) {
+            db()->rollBack();
+        }
+        throw $e;
+    }
+}
+
 function asset_table_preference_category_id(int $categoryId, string $tableScope = 'my_office'): int
 {
     return $tableScope === 'office_under_me' ? $categoryId + 1000000 : $categoryId;
@@ -1555,6 +2695,13 @@ function asset_table_available_columns(array $fields, array $uiFieldLabels, stri
             'label' => (string)($uiFieldLabels[$field['field_key']] ?? $field['label']),
             'type' => 'field',
         ];
+        if ((string)($field['data_type'] ?? '') === 'bimh') {
+            $columns[] = [
+                'key' => (string)$field['field_key'] . '__est_name',
+                'label' => 'Est Name',
+                'type' => 'field',
+            ];
+        }
     }
     return $columns;
 }
@@ -2337,7 +3484,7 @@ function create_asset_field(array $payload): void
     db()->beginTransaction();
     try {
         if (($payload['data_type'] ?? '') === 'conditional') {
-            $stmt = db()->prepare('INSERT INTO asset_fields (segment_id, field_key, label, data_type, field_information, video_tutorial_url, number_format_rule, text_max_length, secondary_of_field_id, conditional_map_json, mandatory_scope, is_required, is_displayed, is_import_enabled, is_unique, is_filter_enabled, filter_scope, active_status, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?, ?, ?, ?, ?, 0, ?, ?, 1, ?, NOW())');
+            $stmt = db()->prepare('INSERT INTO asset_fields (segment_id, field_key, label, data_type, field_information, video_tutorial_url, number_format_rule, text_max_length, secondary_of_field_id, conditional_map_json, mandatory_scope, is_required, is_displayed, is_import_enabled, is_unique, is_filter_enabled, filter_scope, is_common_download_field, is_download_level1, is_download_filter, is_download_sort, is_download_zip_file_selectable, is_download_token, active_status, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, NOW())');
             $stmt->execute([
                 $segmentId,
                 $payload['field_key'],
@@ -2352,12 +3499,18 @@ function create_asset_field(array $payload): void
                 $payload['is_import_enabled'],
                 $payload['is_filter_enabled'],
                 $payload['filter_scope'],
+                $payload['is_common_download_field'],
+                $payload['is_download_level1'],
+                $payload['is_download_filter'],
+                $payload['is_download_sort'],
+                0,
+                $payload['is_download_token'],
                 $fieldSortOrder,
             ]);
             $fieldId = (int)db()->lastInsertId();
             replace_asset_field_options($fieldId, $payload['options'] ?? []);
 
-            $childStmt = db()->prepare('INSERT INTO asset_fields (segment_id, field_key, label, data_type, field_information, video_tutorial_url, number_format_rule, text_max_length, secondary_of_field_id, conditional_map_json, mandatory_scope, is_required, is_displayed, is_import_enabled, is_unique, is_filter_enabled, filter_scope, active_status, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, ?, NULL, ?, ?, ?, ?, 0, ?, ?, 1, ?, NOW())');
+            $childStmt = db()->prepare('INSERT INTO asset_fields (segment_id, field_key, label, data_type, field_information, video_tutorial_url, number_format_rule, text_max_length, secondary_of_field_id, conditional_map_json, mandatory_scope, is_required, is_displayed, is_import_enabled, is_unique, is_filter_enabled, filter_scope, is_common_download_field, is_download_level1, is_download_filter, is_download_sort, is_download_zip_file_selectable, is_download_token, active_status, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, ?, NULL, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, NOW())');
             $childStmt->execute([
                 $segmentId,
                 $payload['secondary_field_key'],
@@ -2372,12 +3525,18 @@ function create_asset_field(array $payload): void
                 $payload['is_import_enabled'],
                 $payload['is_filter_enabled'],
                 $payload['filter_scope'],
+                $payload['is_common_download_field'],
+                0,
+                $payload['is_download_filter'],
+                $payload['is_download_sort'],
+                0,
+                $payload['is_download_token'],
                 $fieldSortOrder + 1,
             ]);
             $childId = (int)db()->lastInsertId();
             replace_asset_field_options($childId, $payload['secondary_options'] ?? []);
         } else {
-            $stmt = db()->prepare('INSERT INTO asset_fields (segment_id, field_key, label, data_type, field_information, video_tutorial_url, number_format_rule, text_max_length, secondary_of_field_id, conditional_map_json, mandatory_scope, is_required, is_displayed, is_import_enabled, is_unique, is_filter_enabled, filter_scope, active_status, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, 1, ?, NOW())');
+            $stmt = db()->prepare('INSERT INTO asset_fields (segment_id, field_key, label, data_type, field_information, video_tutorial_url, number_format_rule, text_max_length, secondary_of_field_id, conditional_map_json, mandatory_scope, is_required, is_displayed, is_import_enabled, is_unique, is_filter_enabled, filter_scope, is_common_download_field, is_download_level1, is_download_filter, is_download_sort, is_download_zip_file_selectable, is_download_token, active_status, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, NOW())');
             $stmt->execute([
                 $segmentId,
                 $payload['field_key'],
@@ -2394,6 +3553,12 @@ function create_asset_field(array $payload): void
                 $payload['is_unique'],
                 $payload['is_filter_enabled'],
                 $payload['filter_scope'],
+                $payload['is_common_download_field'],
+                $payload['is_download_level1'],
+                $payload['is_download_filter'],
+                $payload['is_download_sort'],
+                $payload['is_download_zip_file_selectable'],
+                $payload['is_download_token'],
                 $fieldSortOrder,
             ]);
             $fieldId = (int)db()->lastInsertId();
@@ -2422,7 +3587,7 @@ function update_asset_field(int $id, array $payload): void
     db()->beginTransaction();
     try {
         if (($payload['data_type'] ?? '') === 'conditional') {
-            $stmt = db()->prepare('UPDATE asset_fields SET label = ?, data_type = ?, field_information = ?, video_tutorial_url = ?, number_format_rule = NULL, text_max_length = NULL, conditional_map_json = ?, mandatory_scope = ?, is_required = ?, is_displayed = ?, is_import_enabled = ?, is_unique = 0, is_filter_enabled = ?, filter_scope = ?, sort_order = ?, updated_at = NOW() WHERE id = ?');
+            $stmt = db()->prepare('UPDATE asset_fields SET label = ?, data_type = ?, field_information = ?, video_tutorial_url = ?, number_format_rule = NULL, text_max_length = NULL, conditional_map_json = ?, mandatory_scope = ?, is_required = ?, is_displayed = ?, is_import_enabled = ?, is_unique = 0, is_filter_enabled = ?, filter_scope = ?, is_common_download_field = ?, is_download_level1 = ?, is_download_filter = ?, is_download_sort = ?, is_download_zip_file_selectable = 0, is_download_token = ?, sort_order = ?, updated_at = NOW() WHERE id = ?');
             $stmt->execute([
                 $payload['label'],
                 'conditional',
@@ -2435,6 +3600,11 @@ function update_asset_field(int $id, array $payload): void
                 $payload['is_import_enabled'],
                 $payload['is_filter_enabled'],
                 $payload['filter_scope'],
+                $payload['is_common_download_field'],
+                $payload['is_download_level1'],
+                $payload['is_download_filter'],
+                $payload['is_download_sort'],
+                $payload['is_download_token'],
                 $payload['sort_order'],
                 $id,
             ]);
@@ -2444,7 +3614,7 @@ function update_asset_field(int $id, array $payload): void
             if (!$childField) {
                 throw new RuntimeException('Conditional child field not found.');
             }
-            $childStmt = db()->prepare('UPDATE asset_fields SET label = ?, data_type = ?, field_information = ?, video_tutorial_url = ?, number_format_rule = NULL, text_max_length = NULL, mandatory_scope = ?, is_required = ?, is_displayed = ?, is_import_enabled = ?, is_unique = 0, is_filter_enabled = ?, filter_scope = ?, sort_order = ?, updated_at = NOW() WHERE id = ?');
+            $childStmt = db()->prepare('UPDATE asset_fields SET label = ?, data_type = ?, field_information = ?, video_tutorial_url = ?, number_format_rule = NULL, text_max_length = NULL, mandatory_scope = ?, is_required = ?, is_displayed = ?, is_import_enabled = ?, is_unique = 0, is_filter_enabled = ?, filter_scope = ?, is_common_download_field = ?, is_download_level1 = 0, is_download_filter = ?, is_download_sort = ?, is_download_zip_file_selectable = 0, is_download_token = ?, sort_order = ?, updated_at = NOW() WHERE id = ?');
             $childStmt->execute([
                 $payload['secondary_label'],
                 'dropdown',
@@ -2456,13 +3626,17 @@ function update_asset_field(int $id, array $payload): void
                 $payload['is_import_enabled'],
                 $payload['is_filter_enabled'],
                 $payload['filter_scope'],
+                $payload['is_common_download_field'],
+                $payload['is_download_filter'],
+                $payload['is_download_sort'],
+                $payload['is_download_token'],
                 $payload['sort_order'] + 1,
                 (int)$childField['id'],
             ]);
             replace_asset_field_options((int)$childField['id'], $payload['secondary_options'] ?? []);
             delete_asset_field_file_rule((int)$childField['id']);
         } else {
-            $stmt = db()->prepare('UPDATE asset_fields SET label = ?, data_type = ?, field_information = ?, video_tutorial_url = ?, number_format_rule = ?, text_max_length = ?, conditional_map_json = NULL, mandatory_scope = ?, is_required = ?, is_displayed = ?, is_import_enabled = ?, is_unique = ?, is_filter_enabled = ?, filter_scope = ?, sort_order = ?, updated_at = NOW() WHERE id = ?');
+            $stmt = db()->prepare('UPDATE asset_fields SET label = ?, data_type = ?, field_information = ?, video_tutorial_url = ?, number_format_rule = ?, text_max_length = ?, conditional_map_json = NULL, mandatory_scope = ?, is_required = ?, is_displayed = ?, is_import_enabled = ?, is_unique = ?, is_filter_enabled = ?, filter_scope = ?, is_common_download_field = ?, is_download_level1 = ?, is_download_filter = ?, is_download_sort = ?, is_download_zip_file_selectable = ?, is_download_token = ?, sort_order = ?, updated_at = NOW() WHERE id = ?');
             $stmt->execute([
                 $payload['label'],
                 $payload['data_type'],
@@ -2477,6 +3651,12 @@ function update_asset_field(int $id, array $payload): void
                 $payload['is_unique'],
                 $payload['is_filter_enabled'],
                 $payload['filter_scope'],
+                $payload['is_common_download_field'],
+                $payload['is_download_level1'],
+                $payload['is_download_filter'],
+                $payload['is_download_sort'],
+                $payload['is_download_zip_file_selectable'],
+                $payload['is_download_token'],
                 $payload['sort_order'],
                 $id,
             ]);
@@ -2789,6 +3969,12 @@ function validate_asset_field_definition(array $input, ?int $fieldId = null): ar
     $filterScope = $dataType === 'conditional'
         ? asset_normalize_filter_scope($input['filter_scope'] ?? asset_filter_scope_all())
         : asset_normalize_filter_scope($input['filter_scope'] ?? asset_filter_scope_none());
+    $isCommonDownloadField = !empty($input['is_common_download_field']) ? 1 : 0;
+    $isDownloadLevel1 = $isCommonDownloadField && !empty($input['is_download_level1']) ? 1 : 0;
+    $isDownloadFilter = !empty($input['is_download_filter']) ? 1 : 0;
+    $isDownloadSort = !empty($input['is_download_sort']) ? 1 : 0;
+    $isDownloadZipFileSelectable = $dataType === 'file' && !empty($input['is_download_zip_file_selectable']) ? 1 : 0;
+    $isDownloadToken = !empty($input['is_download_token']) ? 1 : 0;
 
     return [
         'errors' => $errors,
@@ -2808,6 +3994,12 @@ function validate_asset_field_definition(array $input, ?int $fieldId = null): ar
             'is_unique' => in_array($dataType, ['file', 'conditional'], true) ? 0 : (!empty($input['is_unique']) ? 1 : 0),
             'is_filter_enabled' => $filterScope === asset_filter_scope_none() ? 0 : 1,
             'filter_scope' => $filterScope,
+            'is_common_download_field' => $isCommonDownloadField,
+            'is_download_level1' => $isDownloadLevel1,
+            'is_download_filter' => $isDownloadFilter,
+            'is_download_sort' => $isDownloadSort,
+            'is_download_zip_file_selectable' => $isDownloadZipFileSelectable,
+            'is_download_token' => $isDownloadToken,
             'sort_order' => $sortOrder,
             'options' => $options,
             'file_rule' => $fileRule,
@@ -3400,8 +4592,20 @@ function get_asset_values(int $assetId): array
     $stmt->execute([$assetId]);
     $rows = $stmt->fetchAll();
     $map = [];
+    $bimhValues = [];
     foreach ($rows as $row) {
-        $map[$row['field_key']] = asset_display_value($row);
+        $fieldKey = (string)$row['field_key'];
+        $display = asset_display_value($row);
+        $map[$fieldKey] = $display;
+        if ((string)($row['data_type'] ?? '') === 'bimh' && $display !== '') {
+            $bimhValues[$fieldKey] = $display;
+        }
+    }
+    if ($bimhValues) {
+        $nameMap = asset_bimh_lookup_many(array_values($bimhValues));
+        foreach ($bimhValues as $fieldKey => $bimhId) {
+            $map[$fieldKey . '__est_name'] = $nameMap[$bimhId] ?? 'BIMH ID is not in the Database.';
+        }
     }
     return $map;
 }
@@ -3551,24 +4755,40 @@ function asset_matches_dynamic_filters(array $asset, array $filters, array $fiel
                 if ($extensions) {
                     return false;
                 }
+            } elseif ($value === '__blank__') {
+                if ($extensions) {
+                    return false;
+                }
             } elseif ($value !== '' && !in_array(strtolower($value), $extensions, true)) {
                 return false;
             }
             continue;
         }
         if ($fieldType === 'conditional') {
-            if ($value !== '' && strcasecmp(asset_filter_value($asset, $fieldKey), $value) !== 0) {
+            $currentValue = asset_filter_value($asset, $fieldKey);
+            if ($value === '__blank__' && $currentValue !== '') {
+                return false;
+            }
+            if ($value !== '' && $value !== '__blank__' && strcasecmp($currentValue, $value) !== 0) {
                 return false;
             }
             continue;
         }
         if (asset_is_conditional_secondary($field)) {
-            if ($value !== '' && strcasecmp(asset_filter_value($asset, $fieldKey), $value) !== 0) {
+            $currentValue = asset_filter_value($asset, $fieldKey);
+            if ($value === '__blank__' && $currentValue !== '') {
+                return false;
+            }
+            if ($value !== '' && $value !== '__blank__' && strcasecmp($currentValue, $value) !== 0) {
                 return false;
             }
             continue;
         }
-        if ($value !== '' && strcasecmp(asset_filter_value($asset, $fieldKey), $value) !== 0) {
+        $currentValue = asset_filter_value($asset, $fieldKey);
+        if ($value === '__blank__' && $currentValue !== '') {
+            return false;
+        }
+        if ($value !== '' && $value !== '__blank__' && strcasecmp($currentValue, $value) !== 0) {
             return false;
         }
     }
@@ -3600,7 +4820,7 @@ function asset_filter_visible_fields(array $fields, array $assets, ?int $segment
     return $visible;
 }
 
-function build_asset_filter_catalog(array $assets, array $fields, ?int $segmentId = null): array
+function build_asset_filter_catalog(array $assets, array $fields, ?int $segmentId = null, bool $respectBoardFilterVisibility = true): array
 {
     $segmentId = asset_normalize_segment_id($segmentId);
     $catalog = [
@@ -3622,7 +4842,9 @@ function build_asset_filter_catalog(array $assets, array $fields, ?int $segmentI
             'name' => (string)$subcategory['name'],
         ];
     }
-    $visibleFields = asset_filter_visible_fields($fields, $assets, $segmentId);
+    $visibleFields = $respectBoardFilterVisibility
+        ? asset_filter_visible_fields($fields, $assets, $segmentId)
+        : array_fill_keys(array_map(static fn(array $field): string => (string)$field['field_key'], $fields), true);
     foreach ($assets as $asset) {
         $officeType = (int)($asset['office_type'] ?? 0);
         $officeId = (int)($asset['office_id'] ?? 0);
@@ -3660,9 +4882,13 @@ function build_asset_filter_catalog(array $assets, array $fields, ?int $segmentI
                 'field_key' => $fieldKey,
                 'label' => (string)$field['label'],
                 'data_type' => $fieldType,
+                'field_id' => (int)($field['id'] ?? 0),
                 'secondary_of_field_id' => (int)($field['secondary_of_field_id'] ?? 0),
+                'child_key' => null,
+                'child_label' => null,
                 'options' => [],
                 'secondary_options_map' => [],
+                'has_blank' => false,
             ];
             if ($fieldType === 'file') {
                 $extensions = asset_file_extensions_for_asset($asset, $fieldKey);
@@ -3673,21 +4899,56 @@ function build_asset_filter_catalog(array $assets, array $fields, ?int $segmentI
                     $catalog['fields'][$fieldKey]['options'][$ext] = $ext;
                 }
             } elseif ($fieldType === 'conditional') {
-                foreach (asset_decode_conditional_map($field) as $primary => $children) {
-                    $catalog['fields'][$fieldKey]['options'][$primary] = $primary;
-                    $catalog['fields'][$fieldKey]['secondary_options_map'][$primary] = $children;
+                $primaryValue = asset_filter_value($asset, $fieldKey);
+                if ($primaryValue === '') {
+                    $catalog['fields'][$fieldKey]['has_blank'] = true;
+                }
+                $childField = get_asset_conditional_child_field((int)$field['id'], $segmentId);
+                if ($childField && (int)($childField['active_status'] ?? 0) === 1) {
+                    $childKey = (string)$childField['field_key'];
+                    $catalog['fields'][$fieldKey]['child_key'] = $childKey;
+                    $catalog['fields'][$fieldKey]['child_label'] = (string)$childField['label'];
+                    $catalog['fields'][$childKey] ??= [
+                        'field_key' => $childKey,
+                        'label' => (string)$childField['label'],
+                        'data_type' => (string)($childField['data_type'] ?? 'dropdown'),
+                        'field_id' => (int)($childField['id'] ?? 0),
+                        'secondary_of_field_id' => (int)($childField['secondary_of_field_id'] ?? 0),
+                        'parent_field_key' => $fieldKey,
+                        'parent_label' => (string)$field['label'],
+                        'options' => [],
+                        'secondary_options_map' => [],
+                        'has_blank' => false,
+                    ];
+                    $childValue = asset_filter_value($asset, $childKey);
+                    if ($childValue === '') {
+                        $catalog['fields'][$childKey]['has_blank'] = true;
+                    }
+                    if ($primaryValue !== '') {
+                        $catalog['fields'][$fieldKey]['options'][$primaryValue] = $primaryValue;
+                        $catalog['fields'][$fieldKey]['secondary_options_map'][$primaryValue] ??= [];
+                    }
+                    if ($primaryValue !== '' && $childValue !== '') {
+                        $catalog['fields'][$fieldKey]['secondary_options_map'][$primaryValue][$childValue] = $childValue;
+                        $catalog['fields'][$childKey]['options'][$childValue] = $childValue;
+                    }
                 }
             } elseif (in_array($fieldType, ['dropdown', 'yes_no'], true)) {
-                foreach (get_asset_field_options((int)$field['id']) as $option) {
-                    $catalog['fields'][$fieldKey]['options'][(string)$option['option_value']] = (string)$option['option_label'];
+                $value = asset_filter_value($asset, $fieldKey);
+                if ($value === '') {
+                    $catalog['fields'][$fieldKey]['has_blank'] = true;
+                } else {
+                    $catalog['fields'][$fieldKey]['options'][$value] = $value;
                 }
-                if ($fieldType === 'yes_no' && !$catalog['fields'][$fieldKey]['options']) {
+                if ($fieldType === 'yes_no' && !$catalog['fields'][$fieldKey]['options'] && !$catalog['fields'][$fieldKey]['has_blank']) {
                     $catalog['fields'][$fieldKey]['options'] = ['Yes' => 'Yes', 'No' => 'No'];
                 }
             } elseif ($fieldType !== 'date') {
                 $value = asset_filter_value($asset, $fieldKey);
                 if ($value !== '') {
                     $catalog['fields'][$fieldKey]['options'][$value] = $value;
+                } else {
+                    $catalog['fields'][$fieldKey]['has_blank'] = true;
                 }
             }
         }
@@ -3701,6 +4962,156 @@ function build_asset_filter_catalog(array $assets, array $fields, ?int $segmentI
         }
     }
     unset($fieldMeta);
+    return $catalog;
+}
+
+function asset_download_common_field_catalog(array $user, string $viewScope = 'my_office'): array
+{
+    $catalog = [];
+    $allAssetsBySegment = [];
+    foreach (get_asset_segments(false) as $segment) {
+        $segmentId = (int)$segment['id'];
+        $allAssetsBySegment[$segmentId] = asset_download_accessible_assets_for_segment($segmentId, $user, $viewScope);
+    }
+
+    $zoneOptions = [];
+    $circleOptions = [];
+    $divisionOptions = [];
+    $subdivisionOptions = [];
+    foreach ($allAssetsBySegment as $assets) {
+        foreach ($assets as $asset) {
+            $meta = asset_download_office_hierarchy($asset);
+            if ((int)($meta['zone_id'] ?? 0) > 0) {
+                $zoneOptions[(string)$meta['zone_id']] = [
+                    'id' => (string)$meta['zone_id'],
+                    'name' => (string)($meta['zone_name'] ?? ''),
+                ];
+            }
+            if ((int)($meta['circle_id'] ?? 0) > 0) {
+                $circleOptions[(string)$meta['circle_id']] = [
+                    'id' => (string)$meta['circle_id'],
+                    'zone_id' => (string)($meta['zone_id'] ?? ''),
+                    'name' => (string)($meta['circle_name'] ?? ''),
+                ];
+            }
+            if ((int)($meta['division_id'] ?? 0) > 0) {
+                $divisionOptions[(string)$meta['division_id']] = [
+                    'id' => (string)$meta['division_id'],
+                    'zone_id' => (string)($meta['zone_id'] ?? ''),
+                    'circle_id' => (string)($meta['circle_id'] ?? ''),
+                    'name' => (string)($meta['division_name'] ?? ''),
+                ];
+            }
+            if ((int)($meta['subdivision_id'] ?? 0) > 0) {
+                $subdivisionOptions[(string)$meta['subdivision_id']] = [
+                    'id' => (string)$meta['subdivision_id'],
+                    'zone_id' => (string)($meta['zone_id'] ?? ''),
+                    'circle_id' => (string)($meta['circle_id'] ?? ''),
+                    'division_id' => (string)($meta['division_id'] ?? ''),
+                    'name' => (string)($meta['subdivision_name'] ?? ''),
+                ];
+            }
+        }
+    }
+    uasort($zoneOptions, static fn(array $a, array $b): int => strnatcasecmp($a['name'], $b['name']));
+    uasort($circleOptions, static fn(array $a, array $b): int => strnatcasecmp($a['name'], $b['name']));
+    uasort($divisionOptions, static fn(array $a, array $b): int => strnatcasecmp($a['name'], $b['name']));
+    uasort($subdivisionOptions, static fn(array $a, array $b): int => strnatcasecmp($a['name'], $b['name']));
+    $catalog['__office__'] = [
+        'identifier' => '__office__',
+        'label' => 'Office',
+        'data_type' => 'office',
+        'zones' => $zoneOptions,
+        'circles' => $circleOptions,
+        'divisions' => $divisionOptions,
+        'subdivisions' => $subdivisionOptions,
+    ];
+
+    foreach (asset_download_common_label_candidates() as $label) {
+        $fieldMeta = null;
+        $fieldMetaSegmentId = null;
+        $options = [];
+        $secondaryOptionsMap = [];
+        $hasBlank = false;
+        foreach (get_asset_segments(false) as $segment) {
+            $segmentId = (int)$segment['id'];
+            $field = asset_download_field_for_label($label, $segmentId);
+            if (!$field) {
+                continue;
+            }
+            if ($fieldMeta === null) {
+                $fieldMeta = $field;
+                $fieldMetaSegmentId = $segmentId;
+            }
+            foreach ($allAssetsBySegment[$segmentId] ?? [] as $asset) {
+                $fieldKey = (string)$field['field_key'];
+                $fieldType = (string)($field['data_type'] ?? 'text');
+                if ($fieldType === 'file') {
+                    $extensions = asset_file_extensions_for_asset($asset, $fieldKey);
+                    if ($extensions) {
+                        $options['__has_file__'] = 'Have file';
+                    } else {
+                        $options['__no_file__'] = 'No file';
+                    }
+                    continue;
+                }
+                if ($fieldType === 'bimh') {
+                    $value = trim((string)($asset['values'][$fieldKey . '__est_name'] ?? ''));
+                } else {
+                    $value = asset_filter_value($asset, $fieldKey);
+                }
+                if ($fieldType === 'conditional') {
+                    $childField = get_asset_conditional_child_field((int)$field['id'], true, $segmentId);
+                    $childKey = $childField ? (string)$childField['field_key'] : '';
+                    $childValue = $childKey !== '' ? asset_filter_value($asset, $childKey) : '';
+                    if ($value !== '') {
+                        $options[$value] = $value;
+                        $secondaryOptionsMap[$value] ??= [];
+                    }
+                    if ($value !== '' && $childValue !== '') {
+                        $secondaryOptionsMap[$value][$childValue] = $childValue;
+                    }
+                }
+                if ($value === '') {
+                    $hasBlank = true;
+                } elseif (!in_array($fieldType, ['date', 'number', 'conditional'], true)) {
+                    $options[$value] = $value;
+                }
+            }
+        }
+        if ($fieldMeta === null) {
+            continue;
+        }
+        if ($options) {
+            natcasesort($options);
+        }
+        $catalog[$label] = [
+            'identifier' => $label,
+            'label' => $label,
+            'data_type' => (string)($fieldMeta['data_type'] ?? 'text'),
+            'options' => $options,
+            'secondary_options_map' => $secondaryOptionsMap,
+            'has_blank' => $hasBlank,
+        ];
+        if ((string)($fieldMeta['data_type'] ?? '') === 'conditional') {
+            $childField = get_asset_conditional_child_field((int)$fieldMeta['id'], true, $fieldMetaSegmentId);
+            if ($childField) {
+                $catalog[$label]['child_identifier'] = (string)$childField['label'];
+                $catalog[$label]['child_label'] = (string)$childField['label'];
+                $catalog[(string)$childField['label']] = [
+                    'identifier' => (string)$childField['label'],
+                    'label' => (string)$childField['label'],
+                    'data_type' => 'conditional_secondary',
+                    'options' => [],
+                    'secondary_options_map' => $secondaryOptionsMap,
+                    'has_blank' => $hasBlank,
+                    'parent_identifier' => $label,
+                    'parent_label' => $label,
+                ];
+            }
+        }
+    }
+
     return $catalog;
 }
 
@@ -3853,9 +5264,22 @@ function get_asset_values_for_assets(array $assetIds): array
     $stmt = db()->prepare("SELECT v.*, f.field_key, f.data_type FROM asset_values v JOIN asset_fields f ON f.id = v.field_id WHERE v.asset_id IN ({$placeholders}) ORDER BY f.sort_order ASC, f.id ASC");
     $stmt->execute($assetIds);
     $map = [];
+    $bimhValues = [];
     foreach ($stmt->fetchAll() as $row) {
         $assetId = (int)$row['asset_id'];
-        $map[$assetId][$row['field_key']] = asset_display_value($row);
+        $fieldKey = (string)$row['field_key'];
+        $display = asset_display_value($row);
+        $map[$assetId][$fieldKey] = $display;
+        if ((string)($row['data_type'] ?? '') === 'bimh' && $display !== '') {
+            $bimhValues[$assetId . ':' . $fieldKey] = $display;
+        }
+    }
+    if ($bimhValues) {
+        $nameMap = asset_bimh_lookup_many(array_values($bimhValues));
+        foreach ($bimhValues as $compositeKey => $bimhId) {
+            [$assetId, $fieldKey] = explode(':', $compositeKey, 2);
+            $map[(int)$assetId][$fieldKey . '__est_name'] = $nameMap[$bimhId] ?? 'BIMH ID is not in the Database.';
+        }
     }
     return $map;
 }
@@ -4047,6 +5471,1279 @@ function export_asset_data_excel(array $filters = [], ?array $user = null, bool 
     $rows = build_asset_export_rows($filters, $user, $includeOfficeName);
     $suffix = $includeOfficeName ? 'superadmin' : 'office';
     export_excel($rows, $headers, 'asset_data_' . $suffix . '.xlsx', 'Asset Data');
+}
+
+function asset_download_safe_name(string $value, string $fallback = 'Blank'): string
+{
+    $value = trim($value);
+    if ($value === '') {
+        $value = $fallback;
+    }
+    $value = preg_replace('/[\\\\\\/\\:\\*\\?\"\\<\\>\\|]+/', '_', $value);
+    $value = preg_replace('/\\s+/', ' ', (string)$value);
+    $value = trim((string)$value);
+    return $value === '' ? $fallback : $value;
+}
+
+function asset_download_field_for_label(string $label, int $segmentId): ?array
+{
+    foreach (get_asset_fields(false, $segmentId) as $field) {
+        if (trim((string)($field['label'] ?? '')) === $label) {
+            return $field;
+        }
+    }
+    return null;
+}
+
+function asset_download_office_hierarchy(array $asset): array
+{
+    static $zoneCache = [];
+    static $circleCache = [];
+    static $divisionCache = [];
+    static $subdivisionCache = [];
+
+    $officeType = (int)($asset['office_type'] ?? 0);
+    $officeId = (int)($asset['office_id'] ?? 0);
+    $meta = [
+        'zone_id' => 0,
+        'zone_name' => '',
+        'circle_id' => 0,
+        'circle_name' => '',
+        'division_id' => 0,
+        'division_name' => '',
+        'subdivision_id' => 0,
+        'subdivision_name' => '',
+        'office_name' => trim((string)(($asset['office_type_label'] ?? '') . ' - ' . ($asset['office_name'] ?? '')), ' -'),
+    ];
+
+    if ($officeType === 2) {
+        $meta['zone_id'] = $officeId;
+        $meta['zone_name'] = (string)($asset['office_name'] ?? '');
+        return $meta;
+    }
+    if ($officeType === 3) {
+        $circleCache[$officeId] ??= find_circle_with_zone($officeId) ?: [];
+        $circle = $circleCache[$officeId];
+        $meta['zone_id'] = (int)($circle['zone_id'] ?? 0);
+        $meta['zone_name'] = (string)($circle['zone_name'] ?? '');
+        $meta['circle_id'] = $officeId;
+        $meta['circle_name'] = (string)($circle['office_name'] ?? '');
+        return $meta;
+    }
+    if ($officeType === 4) {
+        $divisionCache[$officeId] ??= find_division_with_hierarchy($officeId) ?: [];
+        $division = $divisionCache[$officeId];
+        $meta['zone_id'] = (int)($division['zone_id'] ?? 0);
+        $meta['zone_name'] = (string)($division['zone_name'] ?? '');
+        $meta['circle_id'] = (int)($division['circle_id'] ?? 0);
+        $meta['circle_name'] = (string)($division['circle_name'] ?? '');
+        $meta['division_id'] = $officeId;
+        $meta['division_name'] = (string)($division['office_name'] ?? '');
+        return $meta;
+    }
+    if ($officeType === 5) {
+        $subdivisionCache[$officeId] ??= find_subdivision_with_hierarchy($officeId) ?: [];
+        $subdivision = $subdivisionCache[$officeId];
+        $meta['zone_id'] = (int)($subdivision['zone_id'] ?? 0);
+        $meta['zone_name'] = (string)($subdivision['zone_name'] ?? '');
+        $meta['circle_id'] = (int)($subdivision['circle_id'] ?? 0);
+        $meta['circle_name'] = (string)($subdivision['circle_name'] ?? '');
+        $meta['division_id'] = (int)($subdivision['division_id'] ?? 0);
+        $meta['division_name'] = (string)($subdivision['division_name'] ?? '');
+        $meta['subdivision_id'] = $officeId;
+        $meta['subdivision_name'] = (string)($subdivision['office_name'] ?? '');
+        return $meta;
+    }
+    return $meta;
+}
+
+function asset_download_level1_value_for_asset(array $asset, string $label, int $segmentId): string
+{
+    if ($label === 'Office') {
+        $value = trim((string)(asset_download_office_hierarchy($asset)['office_name'] ?? ''));
+        return $value === '' ? 'Blank' : $value;
+    }
+    $field = asset_download_field_for_label($label, $segmentId);
+    if (!$field) {
+        return 'Blank';
+    }
+    $value = trim((string)($asset['values'][(string)$field['field_key']] ?? ''));
+    return $value === '' ? 'Blank' : $value;
+}
+
+function asset_download_accessible_assets_for_segment(int $segmentId, array $user, string $viewScope = 'my_office'): array
+{
+    $filters = ['segment_id' => $segmentId];
+    if (!is_superadmin()) {
+        $filters['office_view_scope'] = $viewScope;
+    }
+    return get_assets($filters, $user);
+}
+
+function asset_download_level1_catalog(array $user, string $viewScope = 'my_office'): array
+{
+    $catalog = [];
+    $officeValues = [];
+    foreach (get_asset_segments(false) as $segment) {
+        foreach (asset_download_accessible_assets_for_segment((int)$segment['id'], $user, $viewScope) as $asset) {
+            $value = trim((string)(asset_download_office_hierarchy($asset)['office_name'] ?? ''));
+            $value = $value === '' ? 'Blank' : $value;
+            $officeValues[$value] = $value;
+        }
+    }
+    $officeItems = array_values($officeValues);
+    usort($officeItems, 'strnatcasecmp');
+    $catalog['Office'] = $officeItems;
+    foreach (asset_download_selected_level1_labels() as $label) {
+        $values = [];
+        foreach (get_asset_segments(false) as $segment) {
+            $segmentId = (int)$segment['id'];
+            $field = asset_download_field_for_label($label, $segmentId);
+            if (!$field) {
+                continue;
+            }
+            foreach (asset_download_accessible_assets_for_segment($segmentId, $user, $viewScope) as $asset) {
+                $value = asset_download_level1_value_for_asset($asset, $label, $segmentId);
+                $values[$value] = $value;
+            }
+        }
+        $items = array_values($values);
+        usort($items, 'strnatcasecmp');
+        $catalog[$label] = $items;
+    }
+    ksort($catalog, SORT_NATURAL | SORT_FLAG_CASE);
+    return $catalog;
+}
+
+function asset_download_sort_option_map(int $segmentId): array
+{
+    $options = [
+        '__office_name' => 'Office',
+        '__category' => 'Category',
+    ];
+    if (asset_subcategory_enabled($segmentId)) {
+        $options['__subcategory'] = 'Sub-category';
+    }
+    foreach (asset_download_sort_fields($segmentId) as $field) {
+        $options[(string)$field['field_key']] = (string)$field['label'];
+    }
+    return $options;
+}
+
+function asset_download_matches_multi_hierarchy_filters(array $asset, array $filters): bool
+{
+    $meta = asset_download_office_hierarchy($asset);
+    $map = [
+        'zone_ids' => 'zone_id',
+        'circle_ids' => 'circle_id',
+        'division_ids' => 'division_id',
+        'subdivision_ids' => 'subdivision_id',
+    ];
+    foreach ($map as $inputKey => $metaKey) {
+        $values = array_values(array_filter(array_map('intval', (array)($filters[$inputKey] ?? []))));
+        if ($values && !in_array((int)$meta[$metaKey], $values, true)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+function asset_download_matches_segment_filters(array $asset, array $fieldMap, array $filters): bool
+{
+    foreach ($fieldMap as $fieldKey => $field) {
+        $criteria = (array)($filters[$fieldKey] ?? []);
+        $type = (string)($field['data_type'] ?? 'text');
+        $selected = array_values(array_map('strval', (array)($criteria['values'] ?? [])));
+        if ($type === 'date') {
+            $from = trim((string)($criteria['from'] ?? ''));
+            $to = trim((string)($criteria['to'] ?? ''));
+            $allowBlank = !empty($criteria['blank']);
+            $current = asset_filter_value($asset, $fieldKey);
+            if ($current === '') {
+                if ($allowBlank || ($from === '' && $to === '')) {
+                    continue;
+                }
+                return false;
+            }
+            if (!asset_date_in_range($current, $from, $to)) {
+                return false;
+            }
+            continue;
+        }
+        if ($type === 'number') {
+            $from = trim((string)($criteria['from'] ?? ''));
+            $to = trim((string)($criteria['to'] ?? ''));
+            $allowBlank = !empty($criteria['blank']);
+            $current = trim((string)($asset['values'][$fieldKey] ?? ''));
+            if ($current === '') {
+                if ($allowBlank || ($from === '' && $to === '')) {
+                    continue;
+                }
+                return false;
+            }
+            $currentValue = (float)$current;
+            if ($from !== '' && $currentValue < (float)$from) {
+                return false;
+            }
+            if ($to !== '' && $currentValue > (float)$to) {
+                return false;
+            }
+            continue;
+        }
+        if ($type === 'file') {
+            if (!$selected) {
+                continue;
+            }
+            $exts = asset_file_extensions_for_asset($asset, $fieldKey);
+            if (!$exts && in_array('__no_file__', $selected, true)) {
+                continue;
+            }
+            if ($exts && in_array('__has_file__', $selected, true)) {
+                continue;
+            }
+            return false;
+        }
+        $current = $type === 'bimh'
+            ? trim((string)($asset['values'][$fieldKey . '__est_name'] ?? ''))
+            : asset_filter_value($asset, $fieldKey);
+        if ($current === '' && in_array('__blank__', $selected, true)) {
+            continue;
+        }
+        if (!$selected) {
+            continue;
+        }
+        $matched = false;
+        foreach ($selected as $value) {
+            if ($value !== '__blank__' && strcasecmp($current, $value) === 0) {
+                $matched = true;
+                break;
+            }
+        }
+        if (!$matched) {
+            return false;
+        }
+    }
+    return true;
+}
+
+function asset_download_matches_common_filters(array $asset, int $segmentId, array $filters): bool
+{
+    foreach ($filters as $identifier => $criteria) {
+        if (!is_array($criteria)) {
+            continue;
+        }
+        if ($identifier === '__office__') {
+            if (!asset_download_matches_multi_hierarchy_filters($asset, $criteria)) {
+                return false;
+            }
+            continue;
+        }
+        $field = asset_download_field_for_label((string)$identifier, $segmentId);
+        if (!$field) {
+            continue;
+        }
+        $fieldKey = (string)$field['field_key'];
+        $fieldType = (string)($field['data_type'] ?? 'text');
+        $selected = array_values(array_map('strval', (array)($criteria['values'] ?? [])));
+
+        if ($fieldType === 'date') {
+            $from = trim((string)($criteria['from'] ?? ''));
+            $to = trim((string)($criteria['to'] ?? ''));
+            $allowBlank = !empty($criteria['blank']);
+            $current = asset_filter_value($asset, $fieldKey);
+            if ($current === '') {
+                if ($allowBlank || ($from === '' && $to === '')) {
+                    continue;
+                }
+                return false;
+            }
+            if (!asset_date_in_range($current, $from, $to)) {
+                return false;
+            }
+            continue;
+        }
+
+        if ($fieldType === 'number') {
+            $from = trim((string)($criteria['from'] ?? ''));
+            $to = trim((string)($criteria['to'] ?? ''));
+            $allowBlank = !empty($criteria['blank']);
+            $current = trim((string)($asset['values'][$fieldKey] ?? ''));
+            if ($current === '') {
+                if ($allowBlank || ($from === '' && $to === '')) {
+                    continue;
+                }
+                return false;
+            }
+            $currentValue = (float)$current;
+            if ($from !== '' && $currentValue < (float)$from) {
+                return false;
+            }
+            if ($to !== '' && $currentValue > (float)$to) {
+                return false;
+            }
+            continue;
+        }
+
+        if ($fieldType === 'file') {
+            $extensions = asset_file_extensions_for_asset($asset, $fieldKey);
+            if (!$selected) {
+                continue;
+            }
+            if (!$extensions && in_array('__no_file__', $selected, true)) {
+                continue;
+            }
+            if ($extensions && in_array('__has_file__', $selected, true)) {
+                continue;
+            }
+            return false;
+        }
+
+        $current = $fieldType === 'bimh'
+            ? trim((string)($asset['values'][$fieldKey . '__est_name'] ?? ''))
+            : asset_filter_value($asset, $fieldKey);
+        if ($current === '' && in_array('__blank__', $selected, true)) {
+            continue;
+        }
+        if (!$selected) {
+            continue;
+        }
+        $matched = false;
+        foreach ($selected as $value) {
+            if ($value !== '__blank__' && strcasecmp($current, $value) === 0) {
+                $matched = true;
+                break;
+            }
+        }
+        if (!$matched) {
+            return false;
+        }
+    }
+    return true;
+}
+
+function asset_download_sort_value(array $asset, string $key): string
+{
+    return match ($key) {
+        '__office_name' => asset_download_office_hierarchy($asset)['office_name'],
+        '__category' => (string)($asset['category_name'] ?? ''),
+        '__subcategory' => (string)($asset['subcategory_name'] ?? ''),
+        default => trim((string)($asset['values'][$key] ?? '')),
+    };
+}
+
+function asset_download_common_value_for_asset(array $asset, string $identifier, int $segmentId): string
+{
+    if ($identifier === '__office__') {
+        $value = trim((string)(asset_download_office_hierarchy($asset)['office_name'] ?? ''));
+        return $value === '' ? 'Blank' : $value;
+    }
+    $field = asset_download_field_for_label($identifier, $segmentId);
+    if (!$field) {
+        return 'Blank';
+    }
+    $value = trim((string)($asset['values'][(string)$field['field_key']] ?? ''));
+    return $value === '' ? 'Blank' : $value;
+}
+
+function asset_download_sort_assets_by_common(array &$assets, array $sorts, int $segmentId): void
+{
+    if (!$sorts) {
+        return;
+    }
+    usort($assets, static function (array $a, array $b) use ($sorts, $segmentId): int {
+        foreach ($sorts as $sort) {
+            $field = (string)($sort['field'] ?? '');
+            if ($field === '') {
+                continue;
+            }
+            $dir = strtolower((string)($sort['dir'] ?? 'asc')) === 'desc' ? -1 : 1;
+            $left = asset_download_common_value_for_asset($a, $field, $segmentId);
+            $right = asset_download_common_value_for_asset($b, $field, $segmentId);
+            $cmp = strnatcasecmp($left, $right);
+            if ($cmp !== 0) {
+                return $cmp * $dir;
+            }
+        }
+        return 0;
+    });
+}
+
+function asset_download_sort_assets(array &$assets, array $sorts): void
+{
+    if (!$sorts) {
+        return;
+    }
+    usort($assets, static function (array $a, array $b) use ($sorts): int {
+        foreach ($sorts as $sort) {
+            $field = (string)($sort['field'] ?? '');
+            if ($field === '') {
+                continue;
+            }
+            $dir = strtolower((string)($sort['dir'] ?? 'asc')) === 'desc' ? -1 : 1;
+            $left = asset_download_sort_value($a, $field);
+            $right = asset_download_sort_value($b, $field);
+            $cmp = strnatcasecmp($left, $right);
+            if ($cmp !== 0) {
+                return $cmp * $dir;
+            }
+        }
+        return 0;
+    });
+}
+
+function asset_download_filename_tokens(array $asset, int $segmentId, string $fieldName = '', string $level1Label = '', string $level1Value = ''): array
+{
+    $office = asset_download_office_hierarchy($asset);
+    $tokens = [
+        'office_name' => $office['office_name'],
+        'sub-division' => (string)($office['subdivision_name'] ?? ''),
+        'division' => (string)($office['division_name'] ?? ''),
+        'circle' => (string)($office['circle_name'] ?? ''),
+        'zone' => (string)($office['zone_name'] ?? ''),
+        'segment' => asset_template_segment_display_name($segmentId),
+        'office_type' => (string)($asset['office_type_label'] ?? ''),
+        'field_name' => $fieldName,
+        'asset_number' => (string)($asset['asset_number'] ?? ''),
+    ];
+    foreach (asset_download_declared_field_token_map() as $label => $tokenKey) {
+        $tokens[$tokenKey] = asset_download_common_value_for_asset($asset, $label, $segmentId);
+    }
+    return $tokens;
+}
+
+function asset_download_build_name(array $tokens): string
+{
+    $template = asset_download_filename_template();
+    if (str_contains($template, '{')) {
+        $used = false;
+        $rendered = preg_replace_callback('/\{([a-z0-9_-]+)\}/i', static function (array $matches) use ($tokens, &$used): string {
+            $token = strtolower(trim((string)($matches[1] ?? '')));
+            $value = trim((string)($tokens[$token] ?? ''));
+            if ($value === '') {
+                return '';
+            }
+            $used = true;
+            return asset_download_safe_name($value);
+        }, $template);
+        $rendered = preg_replace('/\s+/', ' ', (string)$rendered);
+        $rendered = preg_replace('/[_\-\s]+/', '_', (string)$rendered);
+        $rendered = trim((string)$rendered, '_.- ');
+        if ($used && $rendered !== '') {
+            return $rendered;
+        }
+    }
+    $parts = [];
+    foreach (asset_download_naming_tokens() as $token) {
+        $value = trim((string)($tokens[$token] ?? ''));
+        if ($value !== '') {
+            $parts[] = asset_download_safe_name($value);
+        }
+    }
+    return $parts ? implode('_', $parts) : 'download';
+}
+
+function asset_download_build_folder_parts(string $template, array $tokens): array
+{
+    $template = trim($template);
+    if ($template === '') {
+        return [];
+    }
+    $segments = preg_split('/\s*>\s*/', $template) ?: [];
+    $parts = [];
+    foreach ($segments as $segment) {
+        $segment = trim((string)$segment);
+        if ($segment === '') {
+            continue;
+        }
+        $rendered = preg_replace_callback('/\{([a-z0-9_-]+)\}/i', static function (array $matches) use ($tokens): string {
+            $token = strtolower(trim((string)($matches[1] ?? '')));
+            return trim((string)($tokens[$token] ?? ''));
+        }, $segment);
+        $rendered = trim((string)$rendered);
+        if ($rendered === '') {
+            continue;
+        }
+        $safe = asset_download_safe_name($rendered);
+        if ($safe !== '') {
+            $parts[] = $safe;
+        }
+    }
+    return $parts;
+}
+
+function asset_audit_level_choices(array $user, string $viewScope = 'my_office'): array
+{
+    $choices = ['count' => 'Count'];
+    foreach (asset_download_level1_catalog($user, $viewScope) as $label => $_values) {
+        $key = $label === 'Office' ? '__office__' : $label;
+        $choices[$key] = $label;
+    }
+    return $choices;
+}
+
+function asset_audit_level_value_map(array $user, string $viewScope = 'my_office'): array
+{
+    $valueMap = [];
+    foreach (asset_download_level1_catalog($user, $viewScope) as $label => $values) {
+        $key = $label === 'Office' ? '__office__' : $label;
+        $valueMap[$key] = array_values(array_filter(array_map('strval', $values), static fn(string $value): bool => trim($value) !== ''));
+    }
+    return $valueMap;
+}
+
+function asset_audit_field_has_entry(array $asset, array $field): bool
+{
+    $fieldKey = (string)($field['field_key'] ?? '');
+    $fieldType = (string)($field['data_type'] ?? 'text');
+    if ($fieldType === 'file') {
+        return !empty($asset['files'][$fieldKey]);
+    }
+    return trim((string)($asset['values'][$fieldKey] ?? '')) !== '';
+}
+
+function asset_audit_count_value(array $asset, string $levelKey, int $segmentId): string
+{
+    if ($levelKey === '__office__') {
+        return trim((string)(asset_download_office_hierarchy($asset)['office_name'] ?? ''));
+    }
+    return asset_download_common_value_for_asset($asset, $levelKey, $segmentId);
+}
+
+function asset_audit_count_cell(array $assets, array $field, string $levelKey, array $levelValueMap, int $segmentId): string
+{
+    $fieldKey = (string)($field['field_key'] ?? '');
+    $fieldType = (string)($field['data_type'] ?? 'text');
+    if ($levelKey === 'count') {
+        if ($fieldType === 'file') {
+            $totalFiles = 0;
+            foreach ($assets as $asset) {
+                $totalFiles += count((array)($asset['files'][$fieldKey] ?? []));
+            }
+            return (string)$totalFiles;
+        }
+        $count = 0;
+        foreach ($assets as $asset) {
+            if (asset_audit_field_has_entry($asset, $field)) {
+                $count++;
+            }
+        }
+        return (string)$count;
+    }
+
+    $totalLookup = [];
+    foreach (($levelValueMap[$levelKey] ?? []) as $value) {
+        $value = trim((string)$value);
+        if ($value !== '') {
+            $totalLookup[$value] = true;
+        }
+    }
+    $matched = [];
+    foreach ($assets as $asset) {
+        if (!asset_audit_field_has_entry($asset, $field)) {
+            continue;
+        }
+        $value = trim((string)asset_audit_count_value($asset, $levelKey, $segmentId));
+        if ($value === '' || strcasecmp($value, 'Blank') === 0) {
+            continue;
+        }
+        $matched[$value] = true;
+    }
+    $filledCount = count($matched);
+    return (string)$filledCount;
+}
+
+function asset_audit_segments(array $user, string $viewScope = 'my_office'): array
+{
+    $segments = [];
+    foreach (get_asset_segments(false) as $segment) {
+        $segmentId = (int)$segment['id'];
+        $fields = array_values(array_filter(
+            get_asset_fields(false, $segmentId),
+            static fn(array $field): bool => (int)($field['active_status'] ?? 0) === 1
+        ));
+        $assets = asset_download_accessible_assets_for_segment($segmentId, $user, $viewScope);
+        $segments[] = [
+            'segment' => $segment,
+            'fields' => $fields,
+            'assets' => $assets,
+        ];
+    }
+    return $segments;
+}
+
+function asset_download_normalize_filter_values(array $values, array $allowed): array
+{
+    if (!$allowed) {
+        return [];
+    }
+    $allowedLookup = array_fill_keys(array_map('strval', $allowed), true);
+    $normalized = [];
+    foreach ($values as $value) {
+        $value = (string)$value;
+        if ($value !== '' && isset($allowedLookup[$value])) {
+            $normalized[$value] = $value;
+        }
+    }
+    return array_values($normalized);
+}
+
+function asset_download_normalize_filter_criteria(array $criteria, array $filterMeta): array
+{
+    $type = (string)($filterMeta['data_type'] ?? 'text');
+    if ($type === 'office') {
+        $normalized = [];
+        foreach (['zone_ids', 'circle_ids', 'division_ids', 'subdivision_ids'] as $key) {
+            $ids = array_values(array_filter(array_map('intval', (array)($criteria[$key] ?? [])), static fn(int $id): bool => $id > 0));
+            if ($ids) {
+                $normalized[$key] = array_values(array_unique($ids));
+            }
+        }
+        return $normalized;
+    }
+    if ($type === 'date' || $type === 'number') {
+        $normalized = [];
+        $from = trim((string)($criteria['from'] ?? ''));
+        $to = trim((string)($criteria['to'] ?? ''));
+        if ($from !== '') {
+            $normalized['from'] = $from;
+        }
+        if ($to !== '') {
+            $normalized['to'] = $to;
+        }
+        if (!empty($criteria['blank'])) {
+            $normalized['blank'] = '1';
+        }
+        return $normalized;
+    }
+    if ($type === 'file') {
+        $values = asset_download_normalize_filter_values(
+            (array)($criteria['values'] ?? []),
+            ['__has_file__', '__no_file__']
+        );
+        return $values ? ['values' => $values] : [];
+    }
+
+    $allowed = array_map('strval', array_keys((array)($filterMeta['options'] ?? [])));
+    if (!empty($filterMeta['has_blank'])) {
+        $allowed[] = '__blank__';
+    }
+    $values = asset_download_normalize_filter_values((array)($criteria['values'] ?? []), $allowed);
+    return $values ? ['values' => $values] : [];
+}
+
+function asset_download_normalize_common_filters(array $inputFilters, array $catalog): array
+{
+    $normalized = [];
+    foreach ($catalog as $identifier => $filterMeta) {
+        $criteria = (array)($inputFilters[$identifier] ?? []);
+        if (!$criteria) {
+            continue;
+        }
+        $normalizedCriteria = asset_download_normalize_filter_criteria($criteria, $filterMeta);
+        if ($normalizedCriteria) {
+            $normalized[$identifier] = $normalizedCriteria;
+        }
+    }
+    return $normalized;
+}
+
+function asset_download_normalize_segment_filters(array $inputFilters, array $allowedFieldMap, array $selectedFieldKeys): array
+{
+    $selectedLookup = array_fill_keys(array_map('strval', $selectedFieldKeys), true);
+    $normalized = [];
+    foreach ($allowedFieldMap as $fieldKey => $fieldMeta) {
+        if (!isset($selectedLookup[(string)$fieldKey])) {
+            continue;
+        }
+        $criteria = (array)($inputFilters[$fieldKey] ?? []);
+        if (!$criteria) {
+            continue;
+        }
+        $filterMeta = [
+            'data_type' => (string)($fieldMeta['data_type'] ?? 'text'),
+            'options' => (array)($fieldMeta['options'] ?? []),
+            'has_blank' => !empty($fieldMeta['has_blank']),
+        ];
+        $normalizedCriteria = asset_download_normalize_filter_criteria($criteria, $filterMeta);
+        if ($normalizedCriteria) {
+            $normalized[(string)$fieldKey] = $normalizedCriteria;
+        }
+    }
+    return $normalized;
+}
+
+function asset_download_file_summary(array $asset, string $fieldKey): string
+{
+    $counts = [];
+    foreach (($asset['files'][$fieldKey] ?? []) as $fileRow) {
+        $ext = strtolower(trim((string)($fileRow['file_ext'] ?? '')));
+        $ext = $ext !== '' ? $ext : 'file';
+        if (!isset($counts[$ext])) {
+            $counts[$ext] = 0;
+        }
+        $counts[$ext]++;
+    }
+    if (!$counts) {
+        return 'No file';
+    }
+    ksort($counts, SORT_NATURAL | SORT_FLAG_CASE);
+    $parts = [];
+    foreach ($counts as $ext => $count) {
+        $label = $count === 1 ? $ext : $ext . 's';
+        $parts[] = $count . ' ' . $label;
+    }
+    return implode(', ', $parts);
+}
+
+function asset_download_request_from_input(array $input, array $user, string $viewScope = 'my_office'): array
+{
+    $errors = [];
+    $output = strtolower(trim((string)($input['download_output'] ?? 'excel')));
+    if (!in_array($output, ['excel', 'pdf', 'zip'], true)) {
+        $output = 'excel';
+    }
+    $level1Catalog = asset_download_level1_catalog($user, $viewScope);
+    $level1Label = trim((string)($input['download_level1_label'] ?? ''));
+    if ($output !== 'zip' && ($level1Label === '' || !array_key_exists($level1Label, $level1Catalog))) {
+        $errors[] = 'Valid Level 1 field is required.';
+    }
+    $level1Values = array_values(array_filter(array_map('strval', (array)($input['download_level1_values'] ?? []))));
+    if ($output !== 'zip' && $level1Label !== '' && isset($level1Catalog[$level1Label])) {
+        $allowedValues = $level1Catalog[$level1Label];
+        if ($level1Values) {
+            $level1Values = array_values(array_filter($level1Values, static fn(string $value): bool => in_array($value, $allowedValues, true)));
+        }
+        if (!$level1Values) {
+            $level1Values = $allowedValues;
+        }
+    }
+
+    $commonOptionMap = asset_download_common_option_map();
+    $commonFilterCatalog = asset_download_common_field_catalog($user, $viewScope);
+    $level1CommonKey = $level1Label === 'Office' ? '__office__' : $level1Label;
+    $commonColumns = [];
+    $commonSorts = [];
+    if ($output !== 'zip') {
+        $commonColumnSelections = array_values(array_filter(array_map('strval', (array)($input['download_common_columns'] ?? []))));
+        $commonColumnSelections = array_values(array_filter($commonColumnSelections, static fn(string $value): bool => isset($commonOptionMap[$value])));
+        foreach ($commonColumnSelections as $identifier) {
+            if ($identifier === $level1CommonKey) {
+                continue;
+            }
+            $commonColumns[$identifier] = [
+                'field' => $identifier,
+                'label' => (string)$commonOptionMap[$identifier],
+                'order' => max(1, (int)($input['download_common_column_order'][$identifier] ?? 999)),
+            ];
+        }
+        if (!$commonColumns) {
+            $fallbackOrder = 1;
+            foreach ($commonOptionMap as $identifier => $label) {
+                if ($identifier === $level1CommonKey) {
+                    continue;
+                }
+                $commonColumns[$identifier] = [
+                    'field' => $identifier,
+                    'label' => (string)$label,
+                    'order' => $fallbackOrder++,
+                ];
+            }
+        }
+        uasort($commonColumns, static function (array $a, array $b): int {
+            $cmp = ((int)$a['order']) <=> ((int)$b['order']);
+            if ($cmp !== 0) {
+                return $cmp;
+            }
+            return strnatcasecmp((string)$a['label'], (string)$b['label']);
+        });
+        $commonColumns = array_values($commonColumns);
+
+        foreach ((array)($input['download_common_sort'] ?? []) as $identifier => $row) {
+            $identifier = (string)$identifier;
+            if (!isset($commonOptionMap[$identifier]) || $identifier === $level1CommonKey) {
+                continue;
+            }
+            if (empty($row['enabled'])) {
+                continue;
+            }
+            $commonSorts[] = [
+                'field' => $identifier,
+                'label' => (string)$commonOptionMap[$identifier],
+                'order' => max(1, (int)($row['order'] ?? 999)),
+                'dir' => strtolower((string)($row['dir'] ?? 'asc')) === 'desc' ? 'desc' : 'asc',
+            ];
+        }
+        usort($commonSorts, static function (array $a, array $b): int {
+            $cmp = ((int)$a['order']) <=> ((int)$b['order']);
+            if ($cmp !== 0) {
+                return $cmp;
+            }
+            return strnatcasecmp((string)$a['label'], (string)$b['label']);
+        });
+    }
+
+    $selectedSegmentIds = array_values(array_filter(array_map('intval', (array)($input['download_segments'] ?? []))));
+    if (!$selectedSegmentIds) {
+        $errors[] = 'Select at least one segment.';
+    }
+
+    $segments = [];
+    foreach ($selectedSegmentIds as $segmentId) {
+        $segment = get_asset_segment($segmentId);
+        if (!$segment || (int)($segment['active_status'] ?? 0) !== 1) {
+            continue;
+        }
+        $allFields = get_asset_fields(false, $segmentId);
+        $selectedFieldKeys = array_values(array_filter(array_map('strval', (array)($input['download_selected_fields'][$segmentId] ?? []))));
+        $fieldKeyMap = [];
+        foreach ($allFields as $field) {
+            $fieldKeyMap[(string)$field['field_key']] = $field;
+        }
+        $selectedFieldKeys = array_values(array_filter($selectedFieldKeys, static fn(string $key): bool => $key !== '' && isset($fieldKeyMap[$key])));
+        $segmentFilterMetaMap = [];
+        foreach (asset_download_effective_filter_fields($segmentId) as $filterField) {
+            $segmentFilterKey = (string)$filterField['field_key'];
+            if (isset($fieldKeyMap[$segmentFilterKey])) {
+                $segmentFilterMetaMap[$segmentFilterKey] = $fieldKeyMap[$segmentFilterKey];
+            }
+        }
+        $segmentCatalog = build_asset_filter_catalog(
+            asset_download_accessible_assets_for_segment($segmentId, $user, $viewScope),
+            $allFields,
+            $segmentId,
+            false
+        );
+        foreach ($segmentFilterMetaMap as $segmentFilterKey => $_meta) {
+            if (isset($segmentCatalog['fields'][$segmentFilterKey])) {
+                $segmentFilterMetaMap[$segmentFilterKey] = array_merge(
+                    $segmentFilterMetaMap[$segmentFilterKey],
+                    $segmentCatalog['fields'][$segmentFilterKey]
+                );
+            }
+        }
+
+        $zipSelected = [];
+        foreach ($selectedFieldKeys as $fieldKey) {
+            if ((string)($fieldKeyMap[$fieldKey]['data_type'] ?? '') === 'file') {
+                $zipSelected[] = $fieldKey;
+            }
+        }
+        if ($output === 'zip' && !$zipSelected) {
+            $errors[] = 'Select at least one file field for ZIP in segment ' . (string)$segment['segment_name'] . '.';
+        }
+
+        $segments[$segmentId] = [
+            'segment' => $segment,
+            'fields' => $allFields,
+            'selected_field_keys' => $selectedFieldKeys,
+            'selected_zip_field_keys' => $zipSelected,
+            'filters' => asset_download_normalize_segment_filters(
+                (array)($input['download_filters'][$segmentId] ?? []),
+                $segmentFilterMetaMap,
+                $selectedFieldKeys
+            ),
+        ];
+    }
+    if (!$segments) {
+        $errors[] = 'No valid segments selected.';
+    }
+
+    return [
+        'errors' => array_values(array_unique($errors)),
+        'request' => [
+            'output' => $output,
+            'zip_use_hierarchy' => !empty($input['download_zip_use_hierarchy']),
+            'zip_folder_template' => trim((string)($input['download_zip_folder_template'] ?? '')),
+            'level1_label' => $level1Label,
+            'level1_values' => $level1Values,
+            'common_filters' => asset_download_normalize_common_filters(
+                (array)($input['download_common_filters'] ?? []),
+                $commonFilterCatalog
+            ),
+            'common_columns' => $commonColumns,
+            'common_sorts' => $commonSorts,
+            'segments' => $segments,
+            'view_scope' => $viewScope,
+        ],
+    ];
+}
+
+function asset_download_dataset(array $request, array $user): array
+{
+    $level1Label = (string)$request['level1_label'];
+    $selectedLevel1Values = array_flip(array_map('strval', (array)$request['level1_values']));
+    $groups = [];
+    foreach ($request['segments'] as $segmentId => $segmentConfig) {
+        $assets = asset_download_accessible_assets_for_segment((int)$segmentId, $user, (string)$request['view_scope']);
+        $filterFieldMap = [];
+        foreach (asset_download_effective_filter_fields((int)$segmentId) as $field) {
+            $filterFieldMap[(string)$field['field_key']] = $field;
+        }
+        $segmentRowsByGroup = [];
+        foreach ($assets as $asset) {
+            if (!asset_download_matches_common_filters($asset, (int)$segmentId, (array)($request['common_filters'] ?? []))) {
+                continue;
+            }
+            $level1Value = $level1Label !== ''
+                ? asset_download_level1_value_for_asset($asset, $level1Label, (int)$segmentId)
+                : 'files';
+            if ($level1Label !== '' && $selectedLevel1Values && !isset($selectedLevel1Values[$level1Value])) {
+                continue;
+            }
+            if (!asset_download_matches_segment_filters($asset, $filterFieldMap, (array)$segmentConfig['filters'])) {
+                continue;
+            }
+            $segmentRowsByGroup[$level1Value][] = $asset;
+        }
+        foreach ($segmentRowsByGroup as $groupValue => &$segmentAssets) {
+            asset_download_sort_assets_by_common($segmentAssets, (array)($request['common_sorts'] ?? []), (int)$segmentId);
+        }
+        unset($segmentAssets);
+        foreach ($segmentRowsByGroup as $groupValue => $segmentAssets) {
+            $groups[$groupValue]['level1_value'] = $groupValue;
+            $groups[$groupValue]['segments'][$segmentId] = [
+                'segment' => $segmentConfig['segment'],
+                'assets' => $segmentAssets,
+                'selected_field_keys' => $segmentConfig['selected_field_keys'],
+                'selected_zip_field_keys' => $segmentConfig['selected_zip_field_keys'],
+            ];
+        }
+    }
+    if (!$groups && $level1Label !== '') {
+        foreach ((array)$request['level1_values'] as $value) {
+            $groups[$value] = ['level1_value' => $value, 'segments' => []];
+        }
+    } elseif (!$groups) {
+        $groups['files'] = ['level1_value' => 'files', 'segments' => []];
+    }
+    uksort($groups, 'strnatcasecmp');
+    return $groups;
+}
+
+function asset_download_table_headers(array $selectedFieldKeys, int $segmentId, array $commonColumns = [], string $level1Label = '', bool $includeLevel1Column = true): array
+{
+    $headers = ['serial' => 'SL No'];
+    if ($includeLevel1Column && $level1Label !== '') {
+        $headers['__level1'] = $level1Label;
+    }
+    foreach ($commonColumns as $commonColumn) {
+        $field = (string)($commonColumn['field'] ?? '');
+        $label = (string)($commonColumn['label'] ?? '');
+        if ($field === '' || $label === '') {
+            continue;
+        }
+        $headers['__common__' . $field] = $label;
+    }
+    if (asset_category_selection_enabled($segmentId)) {
+        $headers['category'] = 'Category';
+    }
+    if (asset_subcategory_enabled($segmentId)) {
+        $headers['subcategory'] = 'Sub-category';
+    }
+    foreach (get_asset_fields(false, $segmentId) as $field) {
+        $fieldKey = (string)$field['field_key'];
+        if (!in_array($fieldKey, $selectedFieldKeys, true)) {
+            continue;
+        }
+        if (trim((string)$field['label']) === $level1Label) {
+            continue;
+        }
+        $headers[$fieldKey] = (string)$field['label'];
+    }
+    return $headers;
+}
+
+function asset_download_table_rows(array $assets, array $selectedFieldKeys, int $segmentId, array $commonColumns = [], string $level1Label = '', bool $includeLevel1Column = true): array
+{
+    $rows = [];
+    $fieldMap = [];
+    foreach (get_asset_fields(false, $segmentId) as $field) {
+        $fieldMap[(string)$field['field_key']] = $field;
+    }
+    foreach ($assets as $index => $asset) {
+        $row = ['serial' => $index + 1];
+        if ($includeLevel1Column && $level1Label !== '') {
+            $row['__level1'] = asset_download_level1_value_for_asset($asset, $level1Label, $segmentId);
+        }
+        foreach ($commonColumns as $commonColumn) {
+            $field = (string)($commonColumn['field'] ?? '');
+            if ($field === '') {
+                continue;
+            }
+            $row['__common__' . $field] = asset_download_common_value_for_asset($asset, $field, $segmentId);
+        }
+        if (asset_category_selection_enabled($segmentId)) {
+            $row['category'] = (string)($asset['category_name'] ?? '');
+        }
+        if (asset_subcategory_enabled($segmentId)) {
+            $row['subcategory'] = (string)($asset['subcategory_name'] ?? '');
+        }
+        foreach ($selectedFieldKeys as $fieldKey) {
+            $field = $fieldMap[$fieldKey] ?? null;
+            if (!$field) {
+                continue;
+            }
+            if (trim((string)$field['label']) === $level1Label) {
+                continue;
+            }
+            if ((string)($field['data_type'] ?? '') === 'file') {
+                $row[$fieldKey] = asset_download_file_summary($asset, $fieldKey);
+            } else {
+                $row[$fieldKey] = (string)($asset['values'][$fieldKey] ?? '');
+            }
+        }
+        $rows[] = $row;
+    }
+    return $rows;
+}
+
+function asset_download_export_excel(array $request, array $groups, array $user): void
+{
+    ensure_library('PhpOffice\\PhpSpreadsheet\\Spreadsheet', 'PhpSpreadsheet is not installed.');
+    $book = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+    $sheetIndex = 0;
+    foreach ($request['segments'] as $segmentId => $segmentConfig) {
+        $sheet = $sheetIndex === 0 ? $book->getActiveSheet() : $book->createSheet($sheetIndex);
+        $safeTitle = substr(preg_replace('/[\\\\\\/\\?\\*\\[\\]:]/', '', asset_download_safe_name((string)$segmentConfig['segment']['segment_name'])), 0, 31);
+        $sheet->setTitle($safeTitle !== '' ? $safeTitle : ('Segment' . ($sheetIndex + 1)));
+        $headers = asset_download_table_headers(
+            $segmentConfig['selected_field_keys'],
+            (int)$segmentId,
+            (array)($request['common_columns'] ?? []),
+            (string)$request['level1_label'],
+            true
+        );
+        $rowNum = 1;
+        $col = 1;
+        foreach ($headers as $header) {
+            $sheet->setCellValue([$col, $rowNum], $header);
+            $col++;
+        }
+        $rowNum++;
+        foreach ($groups as $groupValue => $group) {
+            $segmentData = $group['segments'][$segmentId] ?? null;
+            if (!$segmentData) {
+                continue;
+            }
+            $rows = asset_download_table_rows(
+                $segmentData['assets'],
+                $segmentConfig['selected_field_keys'],
+                (int)$segmentId,
+                (array)($request['common_columns'] ?? []),
+                (string)$request['level1_label'],
+                true
+            );
+            foreach ($rows as $row) {
+                $col = 1;
+                foreach (array_keys($headers) as $key) {
+                    $sheet->setCellValue([$col, $rowNum], (string)($row[$key] ?? ''));
+                    $col++;
+                }
+                $rowNum++;
+            }
+        }
+        $sheetIndex++;
+    }
+    header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    header('Content-Disposition: attachment; filename="' . asset_download_build_name([
+        'segment' => 'download',
+        'field_name' => 'report',
+        'office_name' => '',
+        'asset_number' => date('Ymd_His'),
+    ]) . '.xlsx"');
+    header('Cache-Control: max-age=0');
+    $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($book);
+    $writer->save('php://output');
+    exit;
+}
+
+function asset_download_export_pdf(array $request, array $groups): void
+{
+    $html = '<html><head><meta charset="utf-8"><style>'
+        . '@page{size:A4 landscape;margin:20px 18px 28px 18px;}'
+        . 'body{font-family:DejaVu Sans,Arial,sans-serif;font-size:9px;color:#111;}'
+        . 'h2,h3{margin:0 0 8px;}'
+        . '.group{page-break-after:always;}'
+        . '.group:last-child{page-break-after:auto;}'
+        . '.group-head{margin-bottom:10px;padding-bottom:6px;border-bottom:2px solid #1f4f82;}'
+        . '.segment-block{margin-bottom:16px;}'
+        . 'table{width:100%;border-collapse:collapse;table-layout:fixed;margin-bottom:12px;}'
+        . 'table.compact{font-size:8px;}'
+        . 'table.tight{font-size:7px;}'
+        . 'thead{display:table-header-group;}'
+        . 'tr{page-break-inside:avoid;}'
+        . 'th,td{border:1px solid #444;padding:4px;vertical-align:top;text-align:left;word-wrap:break-word;word-break:break-word;white-space:pre-wrap;overflow-wrap:anywhere;}'
+        . 'th{background:#eef4fb;font-weight:700;}'
+        . '.muted{color:#666;}'
+        . '.page-footer{position:fixed;bottom:-12px;left:0;right:0;text-align:right;font-size:9px;color:#444;}'
+        . '</style></head><body>'
+        . '<div class="page-footer">Page <span class="page-number"></span></div>';
+    foreach ($groups as $groupValue => $group) {
+        $html .= '<section class="group"><h2>' . e((string)$request['level1_label']) . ': ' . e((string)$groupValue) . '</h2>';
+        foreach ($request['segments'] as $segmentId => $segmentConfig) {
+            $segmentData = $group['segments'][$segmentId] ?? null;
+            if (!$segmentData) {
+                continue;
+            }
+            $headers = asset_download_table_headers(
+                $segmentConfig['selected_field_keys'],
+                (int)$segmentId,
+                (array)($request['common_columns'] ?? []),
+                (string)$request['level1_label'],
+                false
+            );
+            $rows = asset_download_table_rows(
+                $segmentData['assets'],
+                $segmentConfig['selected_field_keys'],
+                (int)$segmentId,
+                (array)($request['common_columns'] ?? []),
+                (string)$request['level1_label'],
+                false
+            );
+            $headerCount = count($headers);
+            $tableClass = $headerCount >= 14 ? 'tight' : ($headerCount >= 10 ? 'compact' : '');
+            $html .= '<div class="segment-block"><h3>' . e((string)$segmentConfig['segment']['segment_name']) . '</h3>';
+            $html .= '<table' . ($tableClass !== '' ? ' class="' . $tableClass . '"' : '') . '><thead><tr>';
+            foreach ($headers as $header) {
+                $html .= '<th>' . e((string)$header) . '</th>';
+            }
+            $html .= '</tr></thead><tbody>';
+            foreach ($rows as $row) {
+                $html .= '<tr>';
+                foreach (array_keys($headers) as $key) {
+                    $html .= '<td>' . e((string)($row[$key] ?? '')) . '</td>';
+                }
+                $html .= '</tr>';
+            }
+            if (!$rows) {
+                $html .= '<tr><td colspan="' . count($headers) . '" class="muted">No rows found.</td></tr>';
+            }
+            $html .= '</tbody></table></div>';
+        }
+        $html .= '</section>';
+    }
+    $html .= '<script type="text/php">if (isset($pdf)) { $font = $fontMetrics->getFont("Helvetica", "normal"); $pdf->page_text(760, 575, "Page {PAGE_NUM} of {PAGE_COUNT}", $font, 9, array(0,0,0)); }</script></body></html>';
+    export_pdf($html, asset_download_build_name([
+        'segment' => 'download',
+        'field_name' => 'report',
+        'office_name' => '',
+        'asset_number' => date('Ymd_His'),
+    ]) . '.pdf');
+}
+
+function asset_download_export_zip(array $request, array $groups): void
+{
+    $tmpFile = tempnam(sys_get_temp_dir(), 'assetdl_');
+    if ($tmpFile === false) {
+        throw new RuntimeException('Unable to create temporary ZIP file.');
+    }
+    $zipPath = $tmpFile . '.zip';
+    @unlink($zipPath);
+    $zip = new \ZipArchive();
+    if ($zip->open($zipPath, \ZipArchive::CREATE | \ZipArchive::OVERWRITE) !== true) {
+        @unlink($tmpFile);
+        throw new RuntimeException('Unable to create ZIP archive.');
+    }
+    $usedNames = [];
+    $addedFileCount = 0;
+    $useHierarchy = !empty($request['zip_use_hierarchy']);
+    $folderTemplate = trim((string)($request['zip_folder_template'] ?? ''));
+    foreach ($groups as $groupValue => $group) {
+        $groupFolder = asset_download_safe_name((string)$groupValue);
+        foreach ($request['segments'] as $segmentId => $segmentConfig) {
+            $segmentData = $group['segments'][$segmentId] ?? null;
+            if (!$segmentData) {
+                continue;
+            }
+            foreach ($segmentData['assets'] as $assetIndex => $asset) {
+                $folderParts = [];
+                if (!$useHierarchy) {
+                    $folderParts[] = 'files';
+                }
+                foreach ($segmentConfig['selected_zip_field_keys'] as $fieldKey) {
+                    $fieldMeta = null;
+                    foreach ($segmentConfig['fields'] as $field) {
+                        if ((string)($field['field_key'] ?? '') === $fieldKey) {
+                            $fieldMeta = $field;
+                            break;
+                        }
+                    }
+                    $fieldLabel = (string)($fieldMeta['label'] ?? $fieldKey);
+                    $fieldFiles = array_values($asset['files'][$fieldKey] ?? []);
+                    $fieldFileCount = count($fieldFiles);
+                    foreach ($fieldFiles as $fileIndex => $fileRow) {
+                        $path = asset_file_storage_dir() . '/' . (string)$fileRow['stored_name'];
+                        if (!is_file($path)) {
+                            continue;
+                        }
+                        $tokens = asset_download_filename_tokens($asset, (int)$segmentId, $fieldLabel, (string)$request['level1_label'], (string)$groupValue);
+                        if ($useHierarchy) {
+                            $folderParts = asset_download_build_folder_parts($folderTemplate, $tokens);
+                            if (!$folderParts) {
+                                $folderParts = ['files'];
+                            }
+                        }
+                        $name = asset_download_build_name($tokens);
+                        if ($fieldFileCount > 1) {
+                            $name .= '_' . ($fileIndex + 1);
+                        }
+                        $ext = strtolower(trim((string)($fileRow['file_ext'] ?? '')));
+                        if ($ext !== '') {
+                            $name .= '.' . $ext;
+                        }
+                        $internal = implode('/', array_merge($folderParts, [$name]));
+                        $counter = 2;
+                        while (isset($usedNames[$internal])) {
+                            $base = preg_replace('/\\.[^.]+$/', '', $name);
+                            $suffix = $ext !== '' ? '.' . $ext : '';
+                            $internal = implode('/', array_merge($folderParts, [$base . '_' . $counter . $suffix]));
+                            $counter++;
+                        }
+                        $usedNames[$internal] = true;
+                        if ($zip->addFile($path, $internal)) {
+                            $addedFileCount++;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if ($addedFileCount === 0) {
+        $zip->addFromString('README.txt', "No files matched the selected download settings.\n");
+    }
+    $zip->close();
+    @unlink($tmpFile);
+    if (!is_file($zipPath)) {
+        throw new RuntimeException('ZIP archive could not be created.');
+    }
+    header('Content-Type: application/zip');
+    header('Content-Disposition: attachment; filename="' . asset_download_build_name([
+        'segment' => 'download',
+        'field_name' => 'files',
+        'office_name' => '',
+        'asset_number' => date('Ymd_His'),
+    ]) . '.zip"');
+    header('Content-Length: ' . (string)filesize($zipPath));
+    readfile($zipPath);
+    @unlink($zipPath);
+    exit;
+}
+
+function asset_handle_hierarchical_download(array $input, array $user, string $viewScope = 'my_office'): void
+{
+    $parsed = asset_download_request_from_input($input, $user, $viewScope);
+    if ($parsed['errors']) {
+        throw new RuntimeException(implode(' ', $parsed['errors']));
+    }
+    $request = $parsed['request'];
+    $groups = asset_download_dataset($request, $user);
+    if ($request['output'] === 'pdf') {
+        asset_download_export_pdf($request, $groups);
+    }
+    if ($request['output'] === 'zip') {
+        asset_download_export_zip($request, $groups);
+    }
+    asset_download_export_excel($request, $groups, $user);
 }
 
 function get_asset_file_record(int $fileId): ?array
@@ -5177,15 +7874,24 @@ function validate_uploaded_asset_template(string $tmpName, ?int $segmentId = nul
 {
     ensure_library('PhpOffice\\PhpSpreadsheet\\IOFactory', 'PhpSpreadsheet is not installed.');
     $spreadsheet = PhpOffice\PhpSpreadsheet\IOFactory::load($tmpName);
-    $sheet = $spreadsheet->getActiveSheet();
-    $rows = $sheet->toArray(null, true, true, true);
-    if (!$rows) {
-        return ['Template file is empty.'];
+    $sheet = null;
+    foreach ($spreadsheet->getWorksheetIterator() as $worksheet) {
+        if (strcasecmp(trim((string)$worksheet->getTitle()), 'data') === 0) {
+            $sheet = $worksheet;
+            break;
+        }
     }
-    $headerRow = array_values($rows[1] ?? []);
+    if (!$sheet) {
+        return ['Template must contain a sheet named data.'];
+    }
+    $rows = $sheet->toArray(null, false, false, true);
+    if (!$rows) {
+        return ['Data sheet is empty.'];
+    }
     $expectedCount = count(asset_template_columns($segmentId));
-    if (count($headerRow) < $expectedCount) {
-        return ['Template column count is less than the current required column sequence.'];
+    $headerCount = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::columnIndexFromString($sheet->getHighestDataColumn(1));
+    if ($headerCount !== $expectedCount) {
+        return ['Data sheet column count must match the current field count plus SL and Instruction columns.'];
     }
     return [];
 }
@@ -5226,7 +7932,7 @@ function sync_asset_template_info_sheet(string $tmpName, ?int $segmentId = null)
         return ['categories_created' => 0, 'subcategories_created' => 0];
     }
 
-    $rows = $sheet->toArray(null, true, true, true);
+    $rows = $sheet->toArray(null, false, false, true);
     if (!$rows) {
         return ['categories_created' => 0, 'subcategories_created' => 0];
     }
@@ -5315,14 +8021,22 @@ function save_uploaded_asset_template(array $file, ?int $segmentId = null): arra
     if (!move_uploaded_file($file['tmp_name'], $target)) {
         throw new RuntimeException('Failed to save template file.');
     }
+    set_asset_template_source(asset_template_source_uploaded(), $segmentId);
     return $syncSummary;
 }
 
-function output_asset_template_download(bool $preferUploaded = true, ?int $segmentId = null): void
+function output_asset_template_download(string $mode = 'selected', ?int $segmentId = null): void
 {
     $segmentId = asset_normalize_segment_id($segmentId);
     $stored = asset_template_uploaded_info($segmentId);
-    if ($preferUploaded && $stored) {
+    $mode = strtolower(trim($mode));
+    $shouldDownloadUploaded = false;
+    if ($mode === 'uploaded') {
+        $shouldDownloadUploaded = $stored !== null;
+    } elseif ($mode === 'selected') {
+        $shouldDownloadUploaded = $stored !== null && asset_template_prefers_uploaded($segmentId);
+    }
+    if ($shouldDownloadUploaded && $stored) {
         header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         header('Content-Disposition: attachment; filename="asset_import_template.xlsx"');
         header('Content-Length: ' . (string)$stored['size']);
@@ -5946,29 +8660,232 @@ function build_asset_template_rows(?int $segmentId = null): array
     return [$row];
 }
 
+function asset_import_detect_target_sheet_name($reader, string $tmpName): ?string
+{
+    if (!method_exists($reader, 'listWorksheetNames')) {
+        return null;
+    }
+    try {
+        $sheetNames = $reader->listWorksheetNames($tmpName);
+    } catch (Throwable $e) {
+        return null;
+    }
+    foreach ($sheetNames as $sheetName) {
+        if (strcasecmp(trim((string)$sheetName), 'data') === 0) {
+            return (string)$sheetName;
+        }
+    }
+    return isset($sheetNames[0]) ? (string)$sheetNames[0] : null;
+}
+
+function asset_import_extract_sheet_rows_with_reader(string $tmpName, int $lastInputColumnIndex): array
+{
+    ensure_library('PhpOffice\\PhpSpreadsheet\\IOFactory', 'PhpSpreadsheet is not installed.');
+    $reader = PhpOffice\PhpSpreadsheet\IOFactory::createReaderForFile($tmpName);
+    $reader->setReadDataOnly(true);
+    if (method_exists($reader, 'setReadEmptyCells')) {
+        $reader->setReadEmptyCells(false);
+    }
+    $targetSheetName = asset_import_detect_target_sheet_name($reader, $tmpName);
+    if ($targetSheetName !== null && method_exists($reader, 'setLoadSheetsOnly')) {
+        $reader->setLoadSheetsOnly([$targetSheetName]);
+    }
+    $spreadsheet = $reader->load($tmpName);
+    $sheet = null;
+    if ($targetSheetName !== null) {
+        $sheet = $spreadsheet->getSheetByName($targetSheetName);
+    }
+    if (!$sheet) {
+        foreach ($spreadsheet->getWorksheetIterator() as $worksheet) {
+            if (strcasecmp(trim((string)$worksheet->getTitle()), 'data') === 0) {
+                $sheet = $worksheet;
+                break;
+            }
+        }
+    }
+    if (!$sheet) {
+        $sheet = $spreadsheet->getActiveSheet();
+    }
+    $lastInputColumn = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($lastInputColumnIndex);
+    $lastRow = max(1, $sheet->getHighestDataRow());
+    $rawRows = $sheet->rangeToArray('A1:' . $lastInputColumn . $lastRow, null, false, false, false);
+    $rows = [];
+    foreach ($rawRows as $offset => $row) {
+        $rows[$offset + 1] = is_array($row) ? array_values($row) : [];
+    }
+    return $rows;
+}
+
+function asset_import_xlsx_column_index(string $cellRef): int
+{
+    $letters = preg_replace('/[^A-Z]/i', '', strtoupper($cellRef));
+    $index = 0;
+    $length = strlen($letters);
+    for ($i = 0; $i < $length; $i++) {
+        $index = ($index * 26) + (ord($letters[$i]) - 64);
+    }
+    return $index;
+}
+
+function asset_import_xlsx_shared_strings(\ZipArchive $zip): array
+{
+    $xml = $zip->getFromName('xl/sharedStrings.xml');
+    if ($xml === false) {
+        return [];
+    }
+    $doc = @simplexml_load_string($xml);
+    if (!$doc) {
+        return [];
+    }
+    $strings = [];
+    foreach ($doc->xpath('//*[local-name()="si"]') ?: [] as $item) {
+        $text = '';
+        foreach ($item->xpath('.//*[local-name()="t"]') ?: [] as $node) {
+            $text .= (string)$node;
+        }
+        $strings[] = $text;
+    }
+    return $strings;
+}
+
+function asset_import_xlsx_sheet_path(\ZipArchive $zip): ?string
+{
+    $workbookXml = $zip->getFromName('xl/workbook.xml');
+    $relsXml = $zip->getFromName('xl/_rels/workbook.xml.rels');
+    if ($workbookXml === false || $relsXml === false) {
+        return null;
+    }
+    $workbook = @simplexml_load_string($workbookXml);
+    $rels = @simplexml_load_string($relsXml);
+    if (!$workbook || !$rels) {
+        return null;
+    }
+    $targetRelId = null;
+    $firstRelId = null;
+    foreach ($workbook->xpath('//*[local-name()="sheets"]/*[local-name()="sheet"]') ?: [] as $sheet) {
+        $relId = (string)$sheet->attributes('http://schemas.openxmlformats.org/officeDocument/2006/relationships')['id'];
+        if ($firstRelId === null && $relId !== '') {
+            $firstRelId = $relId;
+        }
+        if (strcasecmp(trim((string)$sheet['name']), 'data') === 0) {
+            $targetRelId = $relId;
+            break;
+        }
+    }
+    $targetRelId = $targetRelId ?: $firstRelId;
+    if ($targetRelId === null || $targetRelId === '') {
+        return null;
+    }
+    foreach ($rels->xpath('//*[local-name()="Relationship"]') ?: [] as $rel) {
+        if ((string)$rel['Id'] !== $targetRelId) {
+            continue;
+        }
+        $target = (string)$rel['Target'];
+        if ($target === '') {
+            return null;
+        }
+        return strpos($target, 'xl/') === 0 ? $target : 'xl/' . ltrim($target, '/');
+    }
+    return null;
+}
+
+function asset_import_extract_sheet_rows_from_xlsx(string $tmpName, int $lastInputColumnIndex): array
+{
+    $zip = new \ZipArchive();
+    if ($zip->open($tmpName) !== true) {
+        throw new RuntimeException('Unable to open the Excel file.');
+    }
+    try {
+        $sheetPath = asset_import_xlsx_sheet_path($zip);
+        if ($sheetPath === null) {
+            throw new RuntimeException('Unable to locate the data sheet in the Excel file.');
+        }
+        $sheetXml = $zip->getFromName($sheetPath);
+        if ($sheetXml === false) {
+            throw new RuntimeException('Unable to read the data sheet from the Excel file.');
+        }
+        $sharedStrings = asset_import_xlsx_shared_strings($zip);
+        $sheet = @simplexml_load_string($sheetXml);
+        if (!$sheet) {
+            throw new RuntimeException('Unable to parse the data sheet in the Excel file.');
+        }
+        $rows = [];
+        foreach ($sheet->xpath('//*[local-name()="sheetData"]/*[local-name()="row"]') ?: [] as $rowNode) {
+            $rowNumber = (int)($rowNode['r'] ?? 0);
+            if ($rowNumber <= 0) {
+                continue;
+            }
+            $rowValues = array_fill(0, $lastInputColumnIndex, null);
+            foreach ($rowNode->xpath('./*[local-name()="c"]') ?: [] as $cell) {
+                $ref = (string)($cell['r'] ?? '');
+                $columnIndex = asset_import_xlsx_column_index($ref);
+                if ($columnIndex <= 0 || $columnIndex > $lastInputColumnIndex) {
+                    continue;
+                }
+                $type = (string)($cell['t'] ?? '');
+                $value = '';
+                if ($type === 'inlineStr') {
+                    foreach ($cell->xpath('./*[local-name()="is"]//*[local-name()="t"]') ?: [] as $textNode) {
+                        $value .= (string)$textNode;
+                    }
+                } else {
+                    $raw = (string)($cell->v ?? '');
+                    if ($type === 's') {
+                        $sharedIndex = (int)$raw;
+                        $value = (string)($sharedStrings[$sharedIndex] ?? '');
+                    } else {
+                        $value = $raw;
+                    }
+                }
+                $rowValues[$columnIndex - 1] = $value;
+            }
+            $rows[$rowNumber] = $rowValues;
+        }
+        if (!$rows) {
+            $rows[1] = array_fill(0, $lastInputColumnIndex, null);
+        }
+        ksort($rows);
+        return $rows;
+    } finally {
+        $zip->close();
+    }
+}
+
 function parse_asset_import_file(string $tmpName, string $originalName, array $user, ?int $segmentId = null): array
 {
     $segmentId = asset_normalize_segment_id($segmentId);
-    ensure_library('PhpOffice\\PhpSpreadsheet\\IOFactory', 'PhpSpreadsheet is not installed.');
-    $spreadsheet = PhpOffice\PhpSpreadsheet\IOFactory::load($tmpName);
-    $sheet = $spreadsheet->getActiveSheet();
-    $rows = $sheet->toArray(null, true, true, true);
-    if (!$rows) {
-        return ['errors' => ['Uploaded file is empty.'], 'rows' => []];
-    }
-    array_shift($rows);
     $expectedKeys = asset_import_expected_keys($segmentId);
     if (!$expectedKeys) {
         return ['errors' => ['No active import columns are configured.'], 'rows' => []];
     }
+    $lastInputColumnIndex = count($expectedKeys) + 1;
+    $extension = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
+    if ($extension === 'xlsx') {
+        try {
+            $rows = asset_import_extract_sheet_rows_from_xlsx($tmpName, $lastInputColumnIndex);
+        } catch (Throwable $xlsxError) {
+            try {
+                $rows = asset_import_extract_sheet_rows_with_reader($tmpName, $lastInputColumnIndex);
+            } catch (Throwable $readerError) {
+                throw $readerError;
+            }
+        }
+    } else {
+        $rows = asset_import_extract_sheet_rows_with_reader($tmpName, $lastInputColumnIndex);
+    }
+    if (!$rows) {
+        return ['errors' => ['Uploaded file is empty.'], 'rows' => []];
+    }
 
     $importRows = [];
     $topErrors = [];
-    foreach ($rows as $rowIndex => $cells) {
-        $values = array_values($cells);
-        if (count($values) >= 2) {
+    foreach ($rows as $rowNumber => $cells) {
+        if ((int)$rowNumber === 1) {
+            continue;
+        }
+        $values = array_values((array)$cells);
+        if ($values) {
             array_shift($values);
-            array_pop($values);
         }
         $payload = [];
         $hasValue = false;
@@ -5982,7 +8899,7 @@ function parse_asset_import_file(string $tmpName, string $originalName, array $u
         if (!$hasValue) {
             continue;
         }
-        $importRows[] = stage_asset_import_row($payload, $rowIndex + 2, $segmentId);
+        $importRows[] = stage_asset_import_row($payload, (int)$rowNumber, $segmentId);
     }
 
     if (!$importRows) {

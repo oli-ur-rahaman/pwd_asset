@@ -1170,6 +1170,11 @@ if ($page === 'board') {
     exit;
 }
 
+if ($page === 'download_modal_fragment') {
+    require __DIR__ . '/app/views/download_modal_fragment.php';
+    exit;
+}
+
 if ($page === 'audit') {
     if (!is_superadmin()) {
         http_response_code(403);

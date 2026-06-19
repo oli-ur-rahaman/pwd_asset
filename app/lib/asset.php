@@ -7,6 +7,9 @@ function ensure_asset_schema(): void
         return;
     }
     $initialized = true;
+    if (asset_schema_cache_matches()) {
+        return;
+    }
 
     db()->exec(
         "CREATE TABLE IF NOT EXISTS segments (
@@ -417,6 +420,36 @@ function ensure_asset_schema(): void
 
     asset_seed_default_fields();
     asset_backfill_office_user_access_levels();
+    asset_mark_schema_cache_ready();
+}
+
+function asset_schema_version(): string
+{
+    return '2026-06-19-1';
+}
+
+function asset_schema_cache_file(): string
+{
+    return __DIR__ . '/../../storage/cache/asset_schema_version.txt';
+}
+
+function asset_schema_cache_matches(): bool
+{
+    $file = asset_schema_cache_file();
+    if (!is_file($file)) {
+        return false;
+    }
+    return trim((string)file_get_contents($file)) === asset_schema_version();
+}
+
+function asset_mark_schema_cache_ready(): void
+{
+    $file = asset_schema_cache_file();
+    $dir = dirname($file);
+    if (!is_dir($dir)) {
+        @mkdir($dir, 0777, true);
+    }
+    @file_put_contents($file, asset_schema_version());
 }
 
 function asset_ensure_column(string $table, string $column, string $definition): void
@@ -3012,8 +3045,14 @@ function asset_office_type_label(int $officeType): string
 
 function office_name_from_type_id(int $officeType, int $officeId): string
 {
+    static $cache = [];
+
     if ($officeId <= 0) {
         return '-';
+    }
+    $cacheKey = $officeType . ':' . $officeId;
+    if (array_key_exists($cacheKey, $cache)) {
+        return $cache[$cacheKey];
     }
     $map = [
         2 => ['table' => 'zones', 'column' => 'office_name'],
@@ -3027,7 +3066,8 @@ function office_name_from_type_id(int $officeType, int $officeId): string
     $meta = $map[$officeType];
     $stmt = db()->prepare("SELECT {$meta['column']} FROM {$meta['table']} WHERE id = ? LIMIT 1");
     $stmt->execute([$officeId]);
-    return (string)($stmt->fetchColumn() ?: '-');
+    $cache[$cacheKey] = (string)($stmt->fetchColumn() ?: '-');
+    return $cache[$cacheKey];
 }
 
 function office_order_storage_dir(): string
@@ -6124,11 +6164,50 @@ function asset_download_normalize_filter_criteria(array $criteria, array $filter
     }
 
     $allowed = array_map('strval', array_keys((array)($filterMeta['options'] ?? [])));
+    if ($allowed === []) {
+        $values = [];
+        foreach ((array)($criteria['values'] ?? []) as $value) {
+            $value = trim((string)$value);
+            if ($value !== '') {
+                $values[$value] = $value;
+            }
+        }
+        if (!empty($criteria['blank'])) {
+            $values['__blank__'] = '__blank__';
+        }
+        return $values ? ['values' => array_values($values)] : [];
+    }
     if (!empty($filterMeta['has_blank'])) {
         $allowed[] = '__blank__';
     }
     $values = asset_download_normalize_filter_values((array)($criteria['values'] ?? []), $allowed);
     return $values ? ['values' => $values] : [];
+}
+
+function asset_download_request_common_filter_meta(): array
+{
+    $meta = [
+        '__office__' => [
+            'data_type' => 'office',
+        ],
+    ];
+
+    foreach (asset_download_common_label_candidates() as $label) {
+        foreach (get_asset_segments(false) as $segment) {
+            $segmentId = (int)$segment['id'];
+            $field = asset_download_field_for_label($label, $segmentId);
+            if (!$field) {
+                continue;
+            }
+            $meta[$label] = [
+                'data_type' => (string)($field['data_type'] ?? 'text'),
+                'has_blank' => true,
+            ];
+            break;
+        }
+    }
+
+    return $meta;
 }
 
 function asset_download_normalize_common_filters(array $inputFilters, array $catalog): array
@@ -6202,24 +6281,18 @@ function asset_download_request_from_input(array $input, array $user, string $vi
     if (!in_array($output, ['excel', 'pdf', 'zip'], true)) {
         $output = 'excel';
     }
-    $level1Catalog = asset_download_level1_catalog($user, $viewScope);
+    $level1Catalog = null;
+    $level1Labels = array_values(array_unique(array_merge(['Office'], asset_download_selected_level1_labels())));
     $level1Label = trim((string)($input['download_level1_label'] ?? ''));
-    if ($output !== 'zip' && ($level1Label === '' || !array_key_exists($level1Label, $level1Catalog))) {
+    if ($output !== 'zip' && ($level1Label === '' || !in_array($level1Label, $level1Labels, true))) {
         $errors[] = 'Valid Level 1 field is required.';
     }
-    $level1Values = array_values(array_filter(array_map('strval', (array)($input['download_level1_values'] ?? []))));
-    if ($output !== 'zip' && $level1Label !== '' && isset($level1Catalog[$level1Label])) {
-        $allowedValues = $level1Catalog[$level1Label];
-        if ($level1Values) {
-            $level1Values = array_values(array_filter($level1Values, static fn(string $value): bool => in_array($value, $allowedValues, true)));
-        }
-        if (!$level1Values) {
-            $level1Values = $allowedValues;
-        }
-    }
+    $level1Values = array_values(array_unique(array_filter(array_map(
+        static fn($value): string => trim((string)$value),
+        (array)($input['download_level1_values'] ?? [])
+    ), static fn(string $value): bool => $value !== '')));
 
     $commonOptionMap = asset_download_common_option_map();
-    $commonFilterCatalog = asset_download_common_field_catalog($user, $viewScope);
     $level1CommonKey = $level1Label === 'Office' ? '__office__' : $level1Label;
     $commonColumns = [];
     $commonSorts = [];
@@ -6307,20 +6380,6 @@ function asset_download_request_from_input(array $input, array $user, string $vi
                 $segmentFilterMetaMap[$segmentFilterKey] = $fieldKeyMap[$segmentFilterKey];
             }
         }
-        $segmentCatalog = build_asset_filter_catalog(
-            asset_download_accessible_assets_for_segment($segmentId, $user, $viewScope),
-            $allFields,
-            $segmentId,
-            false
-        );
-        foreach ($segmentFilterMetaMap as $segmentFilterKey => $_meta) {
-            if (isset($segmentCatalog['fields'][$segmentFilterKey])) {
-                $segmentFilterMetaMap[$segmentFilterKey] = array_merge(
-                    $segmentFilterMetaMap[$segmentFilterKey],
-                    $segmentCatalog['fields'][$segmentFilterKey]
-                );
-            }
-        }
 
         $zipSelected = [];
         foreach ($selectedFieldKeys as $fieldKey) {
@@ -6358,7 +6417,7 @@ function asset_download_request_from_input(array $input, array $user, string $vi
             'level1_values' => $level1Values,
             'common_filters' => asset_download_normalize_common_filters(
                 (array)($input['download_common_filters'] ?? []),
-                $commonFilterCatalog
+                asset_download_request_common_filter_meta()
             ),
             'common_columns' => $commonColumns,
             'common_sorts' => $commonSorts,
@@ -6497,10 +6556,101 @@ function asset_download_table_rows(array $assets, array $selectedFieldKeys, int 
     return $rows;
 }
 
-function asset_download_export_excel(array $request, array $groups, array $user): void
+function asset_download_prepare_runtime(string $mode = 'download'): string
+{
+    if (function_exists('ignore_user_abort')) {
+        @ignore_user_abort(true);
+    }
+    if (function_exists('set_time_limit')) {
+        @set_time_limit(0);
+    }
+    @ini_set('max_execution_time', '0');
+    @ini_set('memory_limit', '1024M');
+    $cacheDir = __DIR__ . '/../../storage/runtime/' . $mode;
+    if (!is_dir($cacheDir)) {
+        @mkdir($cacheDir, 0777, true);
+    }
+    return $cacheDir;
+}
+
+function asset_download_filtered_assets_for_segment(int $segmentId, array $request, array $user): array
+{
+    $level1Label = (string)($request['level1_label'] ?? '');
+    $selectedLevel1Values = array_flip(array_map('strval', (array)($request['level1_values'] ?? [])));
+    $segmentConfig = (array)($request['segments'][$segmentId] ?? []);
+    if (!$segmentConfig) {
+        return [];
+    }
+    $assets = asset_download_accessible_assets_for_segment($segmentId, $user, (string)($request['view_scope'] ?? 'my_office'));
+    $filterFieldMap = [];
+    foreach (asset_download_effective_filter_fields($segmentId) as $field) {
+        $filterFieldMap[(string)$field['field_key']] = $field;
+    }
+    $matched = [];
+    foreach ($assets as $asset) {
+        if (!asset_download_matches_common_filters($asset, $segmentId, (array)($request['common_filters'] ?? []))) {
+            continue;
+        }
+        $level1Value = $level1Label !== ''
+            ? asset_download_level1_value_for_asset($asset, $level1Label, $segmentId)
+            : 'files';
+        if ($level1Label !== '' && $selectedLevel1Values && !isset($selectedLevel1Values[$level1Value])) {
+            continue;
+        }
+        if (!asset_download_matches_segment_filters($asset, $filterFieldMap, (array)($segmentConfig['filters'] ?? []))) {
+            continue;
+        }
+        $matched[] = $asset;
+    }
+    asset_download_sort_assets_by_common($matched, (array)($request['common_sorts'] ?? []), $segmentId);
+    return $matched;
+}
+
+function asset_download_append_excel_rows(\PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet, int $startRow, array $assets, array $selectedFieldKeys, int $segmentId, array $commonColumns = [], string $level1Label = '', bool $includeLevel1Column = true): int
+{
+    $headers = asset_download_table_headers($selectedFieldKeys, $segmentId, $commonColumns, $level1Label, $includeLevel1Column);
+    $fieldMap = [];
+    foreach (get_asset_fields(false, $segmentId) as $field) {
+        $fieldMap[(string)$field['field_key']] = $field;
+    }
+    $rowNum = $startRow;
+    foreach ($assets as $index => $asset) {
+        $col = 1;
+        foreach (array_keys($headers) as $key) {
+            $value = '';
+            if ($key === 'serial') {
+                $value = (string)($index + 1);
+            } elseif ($key === '__level1') {
+                $value = asset_download_level1_value_for_asset($asset, $level1Label, $segmentId);
+            } elseif (str_starts_with($key, '__common__')) {
+                $commonField = substr($key, 10);
+                $value = asset_download_common_value_for_asset($asset, $commonField, $segmentId);
+            } elseif ($key === 'category') {
+                $value = (string)($asset['category_name'] ?? '');
+            } elseif ($key === 'subcategory') {
+                $value = (string)($asset['subcategory_name'] ?? '');
+            } else {
+                $field = $fieldMap[$key] ?? null;
+                if ($field && (string)($field['data_type'] ?? '') === 'file') {
+                    $value = asset_download_file_summary($asset, $key);
+                } else {
+                    $value = (string)($asset['values'][$key] ?? '');
+                }
+            }
+            $sheet->setCellValueExplicit([$col, $rowNum], $value, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+            $col++;
+        }
+        $rowNum++;
+    }
+    return $rowNum;
+}
+
+function asset_download_export_excel(array $request, array $user): void
 {
     ensure_library('PhpOffice\\PhpSpreadsheet\\Spreadsheet', 'PhpSpreadsheet is not installed.');
+    $cacheDir = asset_download_prepare_runtime('excel_export');
     $book = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+    \PhpOffice\PhpSpreadsheet\Settings::setLocale('en');
     $sheetIndex = 0;
     foreach ($request['segments'] as $segmentId => $segmentConfig) {
         $sheet = $sheetIndex === 0 ? $book->getActiveSheet() : $book->createSheet($sheetIndex);
@@ -6520,30 +6670,25 @@ function asset_download_export_excel(array $request, array $groups, array $user)
             $col++;
         }
         $rowNum++;
-        foreach ($groups as $groupValue => $group) {
-            $segmentData = $group['segments'][$segmentId] ?? null;
-            if (!$segmentData) {
-                continue;
-            }
-            $rows = asset_download_table_rows(
-                $segmentData['assets'],
-                $segmentConfig['selected_field_keys'],
-                (int)$segmentId,
-                (array)($request['common_columns'] ?? []),
-                (string)$request['level1_label'],
-                true
-            );
-            foreach ($rows as $row) {
-                $col = 1;
-                foreach (array_keys($headers) as $key) {
-                    $sheet->setCellValue([$col, $rowNum], (string)($row[$key] ?? ''));
-                    $col++;
-                }
-                $rowNum++;
-            }
-        }
+        $matchedAssets = asset_download_filtered_assets_for_segment((int)$segmentId, $request, $user);
+        $rowNum = asset_download_append_excel_rows(
+            $sheet,
+            $rowNum,
+            $matchedAssets,
+            $segmentConfig['selected_field_keys'],
+            (int)$segmentId,
+            (array)($request['common_columns'] ?? []),
+            (string)$request['level1_label'],
+            true
+        );
         $sheetIndex++;
     }
+    $tmpFile = tempnam($cacheDir, 'xlsx_');
+    if ($tmpFile === false) {
+        throw new RuntimeException('Unable to prepare temporary Excel file.');
+    }
+    $xlsxPath = $tmpFile . '.xlsx';
+    @unlink($xlsxPath);
     header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     header('Content-Disposition: attachment; filename="' . asset_download_build_name([
         'segment' => 'download',
@@ -6553,7 +6698,15 @@ function asset_download_export_excel(array $request, array $groups, array $user)
     ]) . '.xlsx"');
     header('Cache-Control: max-age=0');
     $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($book);
-    $writer->save('php://output');
+    $writer->setPreCalculateFormulas(false);
+    $writer->setUseDiskCaching(true, $cacheDir);
+    $writer->save($xlsxPath);
+    $book->disconnectWorksheets();
+    unset($book);
+    header('Content-Length: ' . (string)filesize($xlsxPath));
+    readfile($xlsxPath);
+    @unlink($xlsxPath);
+    @unlink($tmpFile);
     exit;
 }
 
@@ -6736,6 +6889,10 @@ function asset_handle_hierarchical_download(array $input, array $user, string $v
         throw new RuntimeException(implode(' ', $parsed['errors']));
     }
     $request = $parsed['request'];
+    asset_download_prepare_runtime((string)($request['output'] ?? 'download'));
+    if ($request['output'] === 'excel') {
+        asset_download_export_excel($request, $user);
+    }
     $groups = asset_download_dataset($request, $user);
     if ($request['output'] === 'pdf') {
         asset_download_export_pdf($request, $groups);
@@ -6743,7 +6900,7 @@ function asset_handle_hierarchical_download(array $input, array $user, string $v
     if ($request['output'] === 'zip') {
         asset_download_export_zip($request, $groups);
     }
-    asset_download_export_excel($request, $groups, $user);
+    asset_download_export_excel($request, $user);
 }
 
 function get_asset_file_record(int $fileId): ?array
