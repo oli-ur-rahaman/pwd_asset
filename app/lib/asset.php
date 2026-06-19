@@ -5971,6 +5971,106 @@ function asset_download_build_folder_parts(string $template, array $tokens): arr
     return $parts;
 }
 
+function asset_audit_level_choices(array $user, string $viewScope = 'my_office'): array
+{
+    $choices = ['count' => 'Count'];
+    foreach (asset_download_level1_catalog($user, $viewScope) as $label => $_values) {
+        $key = $label === 'Office' ? '__office__' : $label;
+        $choices[$key] = $label;
+    }
+    return $choices;
+}
+
+function asset_audit_level_value_map(array $user, string $viewScope = 'my_office'): array
+{
+    $valueMap = [];
+    foreach (asset_download_level1_catalog($user, $viewScope) as $label => $values) {
+        $key = $label === 'Office' ? '__office__' : $label;
+        $valueMap[$key] = array_values(array_filter(array_map('strval', $values), static fn(string $value): bool => trim($value) !== ''));
+    }
+    return $valueMap;
+}
+
+function asset_audit_field_has_entry(array $asset, array $field): bool
+{
+    $fieldKey = (string)($field['field_key'] ?? '');
+    $fieldType = (string)($field['data_type'] ?? 'text');
+    if ($fieldType === 'file') {
+        return !empty($asset['files'][$fieldKey]);
+    }
+    return trim((string)($asset['values'][$fieldKey] ?? '')) !== '';
+}
+
+function asset_audit_count_value(array $asset, string $levelKey, int $segmentId): string
+{
+    if ($levelKey === '__office__') {
+        return trim((string)(asset_download_office_hierarchy($asset)['office_name'] ?? ''));
+    }
+    return asset_download_common_value_for_asset($asset, $levelKey, $segmentId);
+}
+
+function asset_audit_count_cell(array $assets, array $field, string $levelKey, array $levelValueMap, int $segmentId): string
+{
+    $fieldKey = (string)($field['field_key'] ?? '');
+    $fieldType = (string)($field['data_type'] ?? 'text');
+    if ($levelKey === 'count') {
+        if ($fieldType === 'file') {
+            $totalFiles = 0;
+            foreach ($assets as $asset) {
+                $totalFiles += count((array)($asset['files'][$fieldKey] ?? []));
+            }
+            return (string)$totalFiles;
+        }
+        $count = 0;
+        foreach ($assets as $asset) {
+            if (asset_audit_field_has_entry($asset, $field)) {
+                $count++;
+            }
+        }
+        return (string)$count;
+    }
+
+    $totalLookup = [];
+    foreach (($levelValueMap[$levelKey] ?? []) as $value) {
+        $value = trim((string)$value);
+        if ($value !== '') {
+            $totalLookup[$value] = true;
+        }
+    }
+    $matched = [];
+    foreach ($assets as $asset) {
+        if (!asset_audit_field_has_entry($asset, $field)) {
+            continue;
+        }
+        $value = trim((string)asset_audit_count_value($asset, $levelKey, $segmentId));
+        if ($value === '' || strcasecmp($value, 'Blank') === 0) {
+            continue;
+        }
+        $matched[$value] = true;
+    }
+    $filledCount = count($matched);
+    return (string)$filledCount;
+}
+
+function asset_audit_segments(array $user, string $viewScope = 'my_office'): array
+{
+    $segments = [];
+    foreach (get_asset_segments(false) as $segment) {
+        $segmentId = (int)$segment['id'];
+        $fields = array_values(array_filter(
+            get_asset_fields(false, $segmentId),
+            static fn(array $field): bool => (int)($field['active_status'] ?? 0) === 1
+        ));
+        $assets = asset_download_accessible_assets_for_segment($segmentId, $user, $viewScope);
+        $segments[] = [
+            'segment' => $segment,
+            'fields' => $fields,
+            'assets' => $assets,
+        ];
+    }
+    return $segments;
+}
+
 function asset_download_normalize_filter_values(array $values, array $allowed): array
 {
     if (!$allowed) {

@@ -1170,6 +1170,15 @@ if ($page === 'board') {
     exit;
 }
 
+if ($page === 'audit') {
+    if (!is_superadmin()) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
+    require __DIR__ . '/app/views/audit.php';
+    exit;
+}
+
 if ($page === 'office_order_file') {
     stream_office_order_file((int)request_str('id', '0'));
 }

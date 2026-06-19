@@ -14,6 +14,9 @@
     <div class="nav-title"><?= e((string)($info['site_name'] ?? 'PWD Asset Management System')); ?></div>
     <div class="nav-links">
         <a href="index.php?page=board">Information</a>
+        <?php if (is_superadmin()): ?>
+            <a href="index.php?page=audit">Audit</a>
+        <?php endif; ?>
         <a href="index.php?page=office_orders">Office Orders</a>
         <?php if (is_superadmin()): ?>
             <a href="index.php?page=declarations">Declarations</a>
