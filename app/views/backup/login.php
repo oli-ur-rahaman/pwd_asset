@@ -1,4 +1,4 @@
-﻿<?php $info = get_info_row(); ?>
+<?php $info = get_info_row(); ?>
 <!doctype html>
 <html lang="en">
 <head>
@@ -29,10 +29,7 @@
                 <div class="login-label">Email</div>
                 <input type="email" name="email" placeholder="Enter PWD Official email" class="login-input" required>
                 <div class="login-label">Password</div>
-                <div class="login-password-wrap">
-                    <input type="password" name="password" id="login-password" placeholder="The Password" class="login-input" required>
-                    <button type="button" class="login-password-toggle" id="toggle-login-password" aria-controls="login-password" aria-label="Show password">Show</button>
-                </div>
+                <input type="password" name="password" placeholder="The Password" class="login-input" required>
                 <div class="login-actions">
                     <button type="submit">Sign in</button>
                     <div class="login-links">
@@ -57,22 +54,6 @@
         <button type="button" id="close-forgot">Close</button>
     </div>
 </div>
-<script>
-document.addEventListener('DOMContentLoaded', function () {
-    var passwordInput = document.getElementById('login-password');
-    var toggleButton = document.getElementById('toggle-login-password');
-    if (!passwordInput || !toggleButton) {
-        return;
-    }
-    toggleButton.addEventListener('click', function () {
-        var isHidden = passwordInput.type === 'password';
-        passwordInput.type = isHidden ? 'text' : 'password';
-        toggleButton.textContent = isHidden ? 'Hide' : 'Show';
-        toggleButton.setAttribute('aria-label', isHidden ? 'Hide password' : 'Show password');
-    });
-});
-</script>
 <script src="public/assets/app.js"></script>
 </body>
 </html>
-

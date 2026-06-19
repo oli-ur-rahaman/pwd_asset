@@ -182,7 +182,7 @@ if ($action === 'create_asset_subcategory') {
     $name = input_str('name');
     $segmentId = input_int('segment_id');
     if ($categoryId <= 0 || $name === '') {
-        flash('error', 'Sub-category তথ্য অসম্পূর্ণ।');
+        flash('error', 'Sub-category Ã Â¦Â¤Ã Â¦Â¥Ã Â§ÂÃ Â¦Â¯ Ã Â¦â€¦Ã Â¦Â¸Ã Â¦Â®Ã Â§ÂÃ Â¦ÂªÃ Â§â€šÃ Â¦Â°Ã Â§ÂÃ Â¦Â£Ã Â¥Â¤');
     } else {
         try {
             create_asset_subcategory($categoryId, $name, $segmentId);
@@ -1184,6 +1184,41 @@ if ($page === 'audit') {
     exit;
 }
 
+if ($page === 'audit_detail') {
+    if (!is_superadmin()) {
+        http_response_code(403);
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode(['ok' => false, 'message' => 'Not allowed.']);
+        exit;
+    }
+    header('Content-Type: application/json; charset=utf-8');
+    try {
+        $payload = asset_audit_detail_payload(
+            current_user(),
+            'my_office',
+            (int)request_str('segment_id', '0'),
+            trim((string)request_str('field_key', '')),
+            trim((string)request_str('audit_level', 'count'))
+        );
+        echo json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    } catch (Throwable $e) {
+        http_response_code(422);
+        echo json_encode([
+            'ok' => false,
+            'message' => $e->getMessage(),
+        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
+    exit;
+}
+
+if ($page === 'audit_export') {
+    if (!is_superadmin()) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
+    asset_audit_export(current_user(), 'my_office', $_GET);
+    exit;
+}
 if ($page === 'office_order_file') {
     stream_office_order_file((int)request_str('id', '0'));
 }
@@ -1310,3 +1345,4 @@ if ($page === 'interface') {
 }
 
 require __DIR__ . '/app/views/board.php';
+

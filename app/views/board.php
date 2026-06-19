@@ -1939,8 +1939,8 @@ if (is_superadmin()) {
             <h3 id="download-wait-title">Preparing Download</h3>
         </div>
         <p id="download-wait-text">The file is being prepared. Large exports may take some time. Please wait.</p>
-        <div class="download-wait-progress" aria-hidden="true">
-            <div class="download-wait-progress-bar" id="download-wait-progress-bar"></div>
+        <div class="download-wait-spinner" aria-hidden="true">
+            <div class="download-wait-spinner-ring"></div>
         </div>
     </div>
 </div>
@@ -2090,19 +2090,16 @@ window.initializeDownloadModalUi = function () {
     var level3AsyncBody = document.querySelector('.download-level3-async-body[data-download-level3-url]');
     var commonFilterAsyncBody = document.querySelector('#download-common-filter-modal .download-common-filter-async-body');
     var waitModal = document.getElementById('download-wait-modal');
-    var waitProgressBar = document.getElementById('download-wait-progress-bar');
     var waitText = document.getElementById('download-wait-text');
     var downloadFrame = document.getElementById('download-target-frame');
-    var waitInterval = null;
     var downloadInFlight = false;
     var level3LoadingPromise = null;
+    var downloadPollInterval = null;
+    var completionCookieName = '<?= e(asset_download_completion_cookie_name()); ?>';
     var closeWaitModal = function () {
-        if (waitInterval) {
-            clearInterval(waitInterval);
-            waitInterval = null;
-        }
-        if (waitProgressBar) {
-            waitProgressBar.style.width = '0%';
+        if (downloadPollInterval) {
+            clearInterval(downloadPollInterval);
+            downloadPollInterval = null;
         }
         if (waitModal) {
             waitModal.classList.remove('open');
@@ -2121,21 +2118,38 @@ window.initializeDownloadModalUi = function () {
         if (waitText) {
             waitText.textContent = 'The file is being prepared. Large exports may take some time. Please wait.';
         }
-        if (waitProgressBar) {
-            waitProgressBar.style.width = '12%';
-        }
         waitModal.classList.add('open');
         waitModal.setAttribute('aria-hidden', 'false');
-        if (waitInterval) {
-            clearInterval(waitInterval);
-        }
-        var percent = 12;
-        waitInterval = window.setInterval(function () {
-            percent = percent >= 88 ? 24 : percent + 8;
-            if (waitProgressBar) {
-                waitProgressBar.style.width = percent + '%';
+    };
+    var readCookieValue = function (name) {
+        var prefix = name + '=';
+        var cookies = document.cookie ? document.cookie.split(';') : [];
+        for (var i = 0; i < cookies.length; i++) {
+            var cookie = cookies[i].trim();
+            if (cookie.indexOf(prefix) === 0) {
+                return decodeURIComponent(cookie.substring(prefix.length));
             }
-        }, 700);
+        }
+        return '';
+    };
+    var clearCompletionCookie = function () {
+        document.cookie = completionCookieName + '=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; SameSite=Lax';
+    };
+    var startDownloadCompletionPolling = function (token) {
+        if (downloadPollInterval) {
+            clearInterval(downloadPollInterval);
+        }
+        downloadPollInterval = window.setInterval(function () {
+            if (!downloadInFlight) {
+                clearInterval(downloadPollInterval);
+                downloadPollInterval = null;
+                return;
+            }
+            if (readCookieValue(completionCookieName) === token) {
+                clearCompletionCookie();
+                closeWaitModal();
+            }
+        }, 500);
     };
     var extractDownloadFailureText = function () {
         if (!downloadFrame) {
@@ -2145,6 +2159,10 @@ window.initializeDownloadModalUi = function () {
             var responseDoc = downloadFrame.contentDocument || (downloadFrame.contentWindow ? downloadFrame.contentWindow.document : null);
             if (!responseDoc || !responseDoc.body) {
                 return '';
+            }
+            var flashAlert = responseDoc.querySelector('.flash-modal-alert');
+            if (flashAlert) {
+                return (flashAlert.textContent || '').replace(/\s+/g, ' ').trim();
             }
             var responseText = (responseDoc.body.textContent || '').replace(/\s+/g, ' ').trim();
             if (responseText === '') {
@@ -2508,13 +2526,10 @@ window.initializeDownloadModalUi = function () {
             if (!downloadInFlight) {
                 return;
             }
-            if (waitProgressBar) {
-                waitProgressBar.style.width = '100%';
-            }
             window.setTimeout(function () {
                 var responseText = extractDownloadFailureText();
-                closeWaitModal();
                 if (responseText !== '') {
+                    closeWaitModal();
                     alert(responseText.substring(0, 1200));
                 }
             }, 300);
@@ -2526,14 +2541,25 @@ window.initializeDownloadModalUi = function () {
         }
         form.target = 'download-target-frame';
         downloadInFlight = true;
-        form.querySelectorAll('button, input, select, textarea').forEach(function (field) {
-            if (field.disabled || field.type === 'hidden') {
+        var downloadTokenInput = form.querySelector('input[name="download_token"]');
+        var token = String(Date.now()) + '_' + Math.random().toString(36).slice(2);
+        if (!downloadTokenInput) {
+            downloadTokenInput = document.createElement('input');
+            downloadTokenInput.type = 'hidden';
+            downloadTokenInput.name = 'download_token';
+            form.appendChild(downloadTokenInput);
+        }
+        downloadTokenInput.value = token;
+        clearCompletionCookie();
+        form.querySelectorAll('button').forEach(function (field) {
+            if (field.disabled) {
                 return;
             }
             field.disabled = true;
             field.setAttribute('data-download-disabled-by-wait', '1');
         });
         openWaitModal();
+        startDownloadCompletionPolling(token);
     });
     document.querySelectorAll('[data-common-filter-open]').forEach(function (button) {
         button.addEventListener('click', function () {

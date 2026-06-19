@@ -46,18 +46,13 @@ function export_excel(array $rows, array $headers, string $filename, ?string $sh
     exit;
 }
 
-function export_pdf(string $html, string $filename, string $orientation = 'landscape'): void
+function export_pdf(string $html, string $filename): void
 {
     ensure_library('Dompdf\\Dompdf', 'dompdf is not installed.');
 
-    $orientation = strtolower(trim($orientation));
-    if (!in_array($orientation, ['portrait', 'landscape'], true)) {
-        $orientation = 'landscape';
-    }
-
     $dompdf = new Dompdf\Dompdf();
     $dompdf->loadHtml($html);
-    $dompdf->setPaper('A4', $orientation);
+    $dompdf->setPaper('A4', 'landscape');
     $dompdf->render();
     $dompdf->stream($filename, ['Attachment' => true]);
     exit;

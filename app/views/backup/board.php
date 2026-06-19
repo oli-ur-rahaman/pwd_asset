@@ -101,41 +101,12 @@ $editingAsset = ($editingAsset && (int)($editingAsset['segment_id'] ?? 0) === $a
 $editValues = $editingAsset['values'] ?? [];
 $editFiles = $editingAsset['files'] ?? [];
 $review = $_SESSION['asset_import_review'] ?? null;
-$downloadLevel1Catalog = asset_download_level1_catalog($user, $currentOfficeViewScope);
-$downloadCommonLabelCandidates = asset_download_common_label_candidates();
-$downloadCommonOptionMap = asset_download_common_option_map();
-$downloadCommonFilterCatalog = asset_download_common_field_catalog($user, $currentOfficeViewScope);
-$downloadNamingTokens = array_values(array_unique(array_merge(
-    asset_download_available_naming_tokens(),
-    asset_download_dynamic_naming_tokens()
-)));
-$downloadAvailableSegments = get_asset_segments(false);
-$downloadModuleReady = !empty($downloadAvailableSegments);
-$downloadSegmentConfigs = [];
-foreach ($downloadAvailableSegments as $downloadSegment) {
-    $downloadSegmentId = (int)$downloadSegment['id'];
-    $downloadSegmentFields = array_values(array_filter(
-        get_asset_fields(false, $downloadSegmentId),
-        static fn(array $field): bool => (int)($field['active_status'] ?? 0) === 1
-    ));
-    $downloadSegmentAssets = asset_download_accessible_assets_for_segment($downloadSegmentId, $user, $currentOfficeViewScope);
-    $downloadCatalog = build_asset_filter_catalog($downloadSegmentAssets, $downloadSegmentFields, $downloadSegmentId, false);
-    $downloadFilterFieldMap = [];
-    foreach (asset_download_effective_filter_fields($downloadSegmentId) as $filterField) {
-        $downloadFilterFieldMap[(string)$filterField['field_key']] = $filterField;
-    }
-    $downloadSegmentConfigs[$downloadSegmentId] = [
-        'segment' => $downloadSegment,
-        'fields' => $downloadSegmentFields,
-        'segment_fields_only' => array_values(array_filter(
-            $downloadSegmentFields,
-            static fn(array $field): bool => !in_array(trim((string)($field['label'] ?? '')), $downloadCommonLabelCandidates, true)
-        )),
-        'catalog' => $downloadCatalog,
-        'filter_fields' => $downloadFilterFieldMap,
-        'sort_options' => asset_download_sort_option_map($downloadSegmentId),
-    ];
-}
+$downloadModuleReady = !empty(asset_download_level1_fields()) && !empty(get_asset_segments(false));
+$downloadModalUrl = 'index.php?' . http_build_query([
+    'page' => 'download_modal_fragment',
+    'segment_id' => $activeSegmentId,
+    'office_view_scope' => $currentOfficeViewScope,
+]);
 
 $zones = db()->query('SELECT id, office_name FROM zones ORDER BY office_name')->fetchAll();
 $circles = db()->query('SELECT id, office_name, zone_id FROM circles ORDER BY office_name')->fetchAll();
@@ -226,21 +197,6 @@ foreach ($fields as $field) {
         }
     }
 }
-$downloadFilters = [
-    'segment_id' => $activeSegmentId,
-    'office_type' => $selectedOfficeType,
-    'office_id' => $selectedOfficeId,
-    'category_id' => (int)($filters['category_id'] ?? 0),
-    'office_view_scope' => $currentOfficeViewScope,
-    'zone_id' => $selectedZone,
-    'circle_id' => $selectedCircle,
-    'division_id' => $selectedDivision,
-    'subdivision_id' => $selectedSubdivision,
-];
-if ($subcategoryEnabled) {
-    $downloadFilters['subcategory_id'] = (int)($filters['subcategory_id'] ?? 0);
-}
-$downloadFilters = array_merge($downloadFilters, $fieldFilterSelections);
 $defaultCategoryId = !$editingAsset && count($categories) === 1 ? (int)$categories[0]['id'] : 0;
 $historyAssetId = (int)request_str('asset_history', '0');
 $historyAsset = $historyAssetId > 0 ? get_asset($historyAssetId, true) : null;
@@ -1426,6 +1382,7 @@ if (is_superadmin()) {
 </div>
 <?php endif; ?>
 
+<?php if (false): ?>
 <div class="modal-backdrop" id="download-data-modal" aria-hidden="true">
     <div class="modal-card modal-wide download-data-modal-card" role="dialog" aria-modal="true" aria-labelledby="download-data-title">
         <div class="flash-modal-head">
@@ -1948,6 +1905,45 @@ if (is_superadmin()) {
         </div>
     </div>
 </div>
+<?php endif; ?>
+
+<div class="modal-backdrop" id="download-data-modal" aria-hidden="true">
+    <div class="modal-card modal-wide download-data-modal-card" role="dialog" aria-modal="true" aria-labelledby="download-data-title">
+        <div class="flash-modal-head">
+            <h3 id="download-data-title">Download Data</h3>
+            <button type="button" class="welcome-modal-close modal-close" data-close="download-data-modal" aria-label="Close">×</button>
+        </div>
+        <div class="download-modal-async-body" data-download-modal-url="<?= e($downloadModalUrl); ?>" data-download-loaded="0">
+            <p class="muted">Loading download options when needed...</p>
+        </div>
+    </div>
+</div>
+
+<div class="modal-backdrop" id="download-common-filter-modal" aria-hidden="true">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="download-common-filter-title">
+        <div class="flash-modal-head">
+            <h3 id="download-common-filter-title">Level 1 Field Filter</h3>
+            <button type="button" class="welcome-modal-close modal-close" data-close="download-common-filter-modal" aria-label="Close">×</button>
+        </div>
+        <div class="download-common-filter-async-body">
+            <p class="muted">Loading filters...</p>
+        </div>
+    </div>
+</div>
+
+<iframe name="download-target-frame" id="download-target-frame" class="download-hidden-frame" title="Download Target"></iframe>
+
+<div class="modal-backdrop" id="download-wait-modal" aria-hidden="true">
+    <div class="modal-card download-wait-modal-card" role="dialog" aria-modal="true" aria-labelledby="download-wait-title">
+        <div class="flash-modal-head">
+            <h3 id="download-wait-title">Preparing Download</h3>
+        </div>
+        <p id="download-wait-text">The file is being prepared. Large exports may take some time. Please wait.</p>
+        <div class="download-wait-spinner" aria-hidden="true">
+            <div class="download-wait-spinner-ring"></div>
+        </div>
+    </div>
+</div>
 
 <script type="application/json" id="bimh-picker-meta"><?= json_encode([
     'lookup_url' => 'index.php?page=bimh_lookup',
@@ -2078,7 +2074,12 @@ if (is_superadmin()) {
 <?php endif; ?>
 
 <script>
-document.addEventListener('DOMContentLoaded', function () {
+window.initializeDownloadModalUi = function () {
+    var form = document.getElementById('download-data-form');
+    if (!form || form.getAttribute('data-download-ui-bound') === '1') {
+        return;
+    }
+    form.setAttribute('data-download-ui-bound', '1');
     var level1Select = document.getElementById('download-level1-label');
     var level1Choices = Array.from(document.querySelectorAll('[data-download-level1-choice]'));
     var outputSelect = document.getElementById('download-output-select');
@@ -2086,6 +2087,162 @@ document.addEventListener('DOMContentLoaded', function () {
     var commonFilterModal = document.getElementById('download-common-filter-modal');
     var modalPageTabs = Array.from(document.querySelectorAll('[data-download-modal-page-tab]'));
     var modalPages = Array.from(document.querySelectorAll('[data-download-modal-page]'));
+    var level3AsyncBody = document.querySelector('.download-level3-async-body[data-download-level3-url]');
+    var commonFilterAsyncBody = document.querySelector('#download-common-filter-modal .download-common-filter-async-body');
+    var waitModal = document.getElementById('download-wait-modal');
+    var waitText = document.getElementById('download-wait-text');
+    var downloadFrame = document.getElementById('download-target-frame');
+    var downloadInFlight = false;
+    var level3LoadingPromise = null;
+    var downloadPollInterval = null;
+    var completionCookieName = '<?= e(asset_download_completion_cookie_name()); ?>';
+    var closeWaitModal = function () {
+        if (downloadPollInterval) {
+            clearInterval(downloadPollInterval);
+            downloadPollInterval = null;
+        }
+        if (waitModal) {
+            waitModal.classList.remove('open');
+            waitModal.setAttribute('aria-hidden', 'true');
+        }
+        downloadInFlight = false;
+        form.querySelectorAll('[data-download-disabled-by-wait="1"]').forEach(function (field) {
+            field.disabled = false;
+            field.removeAttribute('data-download-disabled-by-wait');
+        });
+    };
+    var openWaitModal = function () {
+        if (!waitModal) {
+            return;
+        }
+        if (waitText) {
+            waitText.textContent = 'The file is being prepared. Large exports may take some time. Please wait.';
+        }
+        waitModal.classList.add('open');
+        waitModal.setAttribute('aria-hidden', 'false');
+    };
+    var readCookieValue = function (name) {
+        var prefix = name + '=';
+        var cookies = document.cookie ? document.cookie.split(';') : [];
+        for (var i = 0; i < cookies.length; i++) {
+            var cookie = cookies[i].trim();
+            if (cookie.indexOf(prefix) === 0) {
+                return decodeURIComponent(cookie.substring(prefix.length));
+            }
+        }
+        return '';
+    };
+    var clearCompletionCookie = function () {
+        document.cookie = completionCookieName + '=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; SameSite=Lax';
+    };
+    var startDownloadCompletionPolling = function (token) {
+        if (downloadPollInterval) {
+            clearInterval(downloadPollInterval);
+        }
+        downloadPollInterval = window.setInterval(function () {
+            if (!downloadInFlight) {
+                clearInterval(downloadPollInterval);
+                downloadPollInterval = null;
+                return;
+            }
+            if (readCookieValue(completionCookieName) === token) {
+                clearCompletionCookie();
+                closeWaitModal();
+            }
+        }, 500);
+    };
+    var extractDownloadFailureText = function () {
+        if (!downloadFrame) {
+            return '';
+        }
+        try {
+            var responseDoc = downloadFrame.contentDocument || (downloadFrame.contentWindow ? downloadFrame.contentWindow.document : null);
+            if (!responseDoc || !responseDoc.body) {
+                return '';
+            }
+            var flashAlert = responseDoc.querySelector('.flash-modal-alert');
+            if (flashAlert) {
+                return (flashAlert.textContent || '').replace(/\s+/g, ' ').trim();
+            }
+            var responseText = (responseDoc.body.textContent || '').replace(/\s+/g, ' ').trim();
+            if (responseText === '') {
+                return '';
+            }
+            var failureMarkers = [
+                'fatal error',
+                'warning',
+                'notice',
+                'csrf',
+                'gateway time-out',
+                'internal server error',
+                'failed to',
+                'runtimeexception',
+                'uncaught',
+                'exception',
+            ];
+            var lowerText = responseText.toLowerCase();
+            for (var i = 0; i < failureMarkers.length; i++) {
+                if (lowerText.indexOf(failureMarkers[i]) !== -1) {
+                    return responseText;
+                }
+            }
+        } catch (error) {
+            return '';
+        }
+        return '';
+    };
+    var loadLevel3Content = function () {
+        if (!level3AsyncBody) {
+            return Promise.resolve();
+        }
+        if (level3AsyncBody.getAttribute('data-download-level3-loaded') === '1') {
+            return Promise.resolve();
+        }
+        if (level3LoadingPromise) {
+            return level3LoadingPromise;
+        }
+        var url = level3AsyncBody.getAttribute('data-download-level3-url') || '';
+        if (!url) {
+            return Promise.resolve();
+        }
+        level3AsyncBody.setAttribute('data-download-level3-loading', '1');
+        level3LoadingPromise = fetch(url, {
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            credentials: 'same-origin'
+        })
+            .then(function (response) {
+                if (!response.ok) {
+                    throw new Error('HTTP ' + response.status);
+                }
+                return response.text();
+            })
+            .then(function (html) {
+                var temp = document.createElement('div');
+                temp.innerHTML = html;
+                var level3Fragment = temp.querySelector('[data-download-fragment-level3]');
+                var commonFragment = temp.querySelector('[data-download-fragment-common]');
+                if (level3Fragment) {
+                    level3AsyncBody.innerHTML = level3Fragment.innerHTML;
+                    level3AsyncBody.setAttribute('data-download-level3-loaded', '1');
+                } else {
+                    level3AsyncBody.innerHTML = '<p class=\"error-text\">Failed to load filters.</p>';
+                }
+                if (commonFilterAsyncBody && commonFragment) {
+                    commonFilterAsyncBody.innerHTML = commonFragment.innerHTML;
+                }
+                if (typeof window.initializeDownloadModalUi === 'function') {
+                    window.initializeDownloadModalUi();
+                }
+            })
+            .catch(function () {
+                level3AsyncBody.innerHTML = '<p class=\"error-text\">Failed to load filters.</p>';
+            })
+            .finally(function () {
+                level3AsyncBody.removeAttribute('data-download-level3-loading');
+                level3LoadingPromise = null;
+            });
+        return level3LoadingPromise;
+    };
     var activateModalPage = function (pageKey) {
         modalPageTabs.forEach(function (tab) {
             tab.classList.toggle('is-active', tab.getAttribute('data-download-modal-page-tab') === pageKey);
@@ -2093,6 +2250,9 @@ document.addEventListener('DOMContentLoaded', function () {
         modalPages.forEach(function (page) {
             page.classList.toggle('hidden', page.getAttribute('data-download-modal-page') !== pageKey);
         });
+        if (pageKey === 'level3') {
+            loadLevel3Content();
+        }
     };
     var selectedLevel1Label = function () {
         var checked = level1Choices.find(function (input) { return input.checked; });
@@ -2360,18 +2520,61 @@ document.addEventListener('DOMContentLoaded', function () {
     document.querySelectorAll('[data-download-field-checkbox]').forEach(function (input) {
         input.addEventListener('change', syncLevel3FieldFilters);
     });
+    if (downloadFrame && !downloadFrame.getAttribute('data-download-frame-bound')) {
+        downloadFrame.setAttribute('data-download-frame-bound', '1');
+        downloadFrame.addEventListener('load', function () {
+            if (!downloadInFlight) {
+                return;
+            }
+            window.setTimeout(function () {
+                var responseText = extractDownloadFailureText();
+                if (responseText !== '') {
+                    closeWaitModal();
+                    alert(responseText.substring(0, 1200));
+                }
+            }, 300);
+        });
+    }
+    form.addEventListener('submit', function () {
+        if (downloadInFlight) {
+            return;
+        }
+        form.target = 'download-target-frame';
+        downloadInFlight = true;
+        var downloadTokenInput = form.querySelector('input[name="download_token"]');
+        var token = String(Date.now()) + '_' + Math.random().toString(36).slice(2);
+        if (!downloadTokenInput) {
+            downloadTokenInput = document.createElement('input');
+            downloadTokenInput.type = 'hidden';
+            downloadTokenInput.name = 'download_token';
+            form.appendChild(downloadTokenInput);
+        }
+        downloadTokenInput.value = token;
+        clearCompletionCookie();
+        form.querySelectorAll('button').forEach(function (field) {
+            if (field.disabled) {
+                return;
+            }
+            field.disabled = true;
+            field.setAttribute('data-download-disabled-by-wait', '1');
+        });
+        openWaitModal();
+        startDownloadCompletionPolling(token);
+    });
     document.querySelectorAll('[data-common-filter-open]').forEach(function (button) {
         button.addEventListener('click', function () {
             var identifier = button.getAttribute('data-common-filter-open');
             if (!commonFilterModal) {
                 return;
             }
-            commonFilterModal.setAttribute('aria-hidden', 'false');
-            commonFilterModal.classList.add('open');
-            commonFilterModal.querySelectorAll('[data-common-filter-panel]').forEach(function (panel) {
-                panel.classList.toggle('hidden', panel.getAttribute('data-common-filter-panel') !== identifier);
+            loadLevel3Content().finally(function () {
+                commonFilterModal.setAttribute('aria-hidden', 'false');
+                commonFilterModal.classList.add('open');
+                commonFilterModal.querySelectorAll('[data-common-filter-panel]').forEach(function (panel) {
+                    panel.classList.toggle('hidden', panel.getAttribute('data-common-filter-panel') !== identifier);
+                });
+                syncHierarchyTrees();
             });
-            syncHierarchyTrees();
         });
     });
     document.addEventListener('change', function (event) {
@@ -2395,6 +2598,10 @@ document.addEventListener('DOMContentLoaded', function () {
     activateModalPage('level1');
     syncLevel3FieldFilters();
     syncHierarchyTrees();
+};
+
+document.addEventListener('DOMContentLoaded', function () {
+    window.initializeDownloadModalUi();
 });
 </script>
 

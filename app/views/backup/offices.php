@@ -6,10 +6,6 @@ $zones = $overview['zones'];
 $circles = $overview['circles'];
 $divisions = $overview['divisions'];
 $subdivisions = $overview['subdivisions'];
-$zoneProvidesData = asset_office_type_provides_data(2);
-$circleProvidesData = asset_office_type_provides_data(3);
-$divisionProvidesData = asset_office_type_provides_data(4);
-$subdivisionProvidesData = asset_office_type_provides_data(5);
 $accessOptions = office_user_access_options();
 $renderManageUsersModal = static function (string $officeKind, int $officeType, int $officeId, string $officeName, bool $allowManagement, array $officeUsers, array $accessOptions): void {
     $modalId = 'manage-users-' . $officeKind . '-' . $officeId;
@@ -231,7 +227,7 @@ $renderManageUsersModal = static function (string $officeKind, int $officeType, 
                 $formId = 'office-zone-' . (int)$zone['id'];
                 $isActive = (int)($zone['active_status'] ?? 1) === 1;
                 ?>
-                <tr class="<?= !$zoneProvidesData ? 'office-row-no-provider' : ''; ?>">
+                <tr>
                     <td>
                         <input form="<?= e($formId); ?>" class="inline-edit" type="text" name="office_name" value="<?= e($zone['office_name']); ?>" required>
                     </td>
@@ -302,7 +298,7 @@ $renderManageUsersModal = static function (string $officeKind, int $officeType, 
                 $formId = 'office-subdivision-' . (int)$subdivision['id'];
                 $isActive = (int)($subdivision['active_status'] ?? 1) === 1;
                 ?>
-                <tr class="<?= !$subdivisionProvidesData ? 'office-row-no-provider' : ''; ?>">
+                <tr>
                     <td><input form="<?= e($formId); ?>" class="inline-edit" type="text" name="office_name" value="<?= e($subdivision['office_name']); ?>" required></td>
                     <td><input form="<?= e($formId); ?>" class="inline-edit" type="text" name="office_address" value="<?= e((string)($subdivision['office_address'] ?? '')); ?>"></td>
                     <td>
@@ -374,7 +370,7 @@ $renderManageUsersModal = static function (string $officeKind, int $officeType, 
                 $formId = 'office-circle-' . (int)$circle['id'];
                 $isActive = (int)($circle['active_status'] ?? 1) === 1;
                 ?>
-                <tr class="<?= !$circleProvidesData ? 'office-row-no-provider' : ''; ?>">
+                <tr>
                     <td>
                         <input form="<?= e($formId); ?>" class="inline-edit" type="text" name="office_name" value="<?= e($circle['office_name']); ?>" required>
                     </td>
@@ -451,7 +447,7 @@ $renderManageUsersModal = static function (string $officeKind, int $officeType, 
                 $formId = 'office-division-' . (int)$division['id'];
                 $isActive = (int)($division['active_status'] ?? 1) === 1;
                 ?>
-                <tr class="<?= !$divisionProvidesData ? 'office-row-no-provider' : ''; ?>">
+                <tr>
                     <td>
                         <input form="<?= e($formId); ?>" class="inline-edit" type="text" name="office_name" value="<?= e($division['office_name']); ?>" required>
                     </td>
