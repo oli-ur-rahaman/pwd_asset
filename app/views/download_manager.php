@@ -125,7 +125,7 @@ $commonLookup = array_fill_keys($commonLabels, true);
 
     <section class="download-manager-page hidden" data-download-page="level3">
         <h2>Level_3</h2>
-        <p class="hint">This page now manages filter fields, sort fields, and token fields per segment. Common fields across all active segments appear as token candidates by default.</p>
+        <p class="hint">This page now manages only filter fields per segment for download filtering. Sorting is no longer managed here.</p>
 
         <article class="download-manager-info-card">
             <h3>ZIP / File Naming Structure</h3>
@@ -155,23 +155,19 @@ $commonLookup = array_fill_keys($commonLabels, true);
                     <thead>
                         <tr>
                             <th>Segment</th>
-                            <th>Filter</th>
-                            <th>Sort</th>
-                            <th>Token</th>
+                            <th>Filter (Non Level_1)</th>
                         </tr>
                     </thead>
                     <tbody>
                         <?php foreach ($segments as $segment): ?>
                             <?php
                                 $segmentId = (int)$segment['id'];
-                                $fields = get_asset_fields(false, $segmentId);
+                                $fields = asset_download_segment_matrix_fields($segmentId, 'filter');
                                 $selectedFilterIds = array_flip(asset_download_segment_selected_field_ids($segmentId, 'filter'));
-                                $selectedSortIds = array_flip(asset_download_segment_selected_field_ids($segmentId, 'sort'));
-                                $selectedTokenIds = array_flip(asset_download_segment_selected_field_ids($segmentId, 'token'));
                             ?>
                             <tr>
                                 <td><strong><?= e((string)$segment['segment_name']); ?></strong></td>
-                                <?php foreach (['filter' => $selectedFilterIds, 'sort' => $selectedSortIds, 'token' => $selectedTokenIds] as $mode => $selectedLookup): ?>
+                                <?php foreach (['filter' => $selectedFilterIds] as $mode => $selectedLookup): ?>
                                     <td>
                                         <div class="download-manager-cell" data-download-cell>
                                             <div class="download-manager-chip-list">
@@ -209,13 +205,14 @@ $commonLookup = array_fill_keys($commonLabels, true);
                     </tbody>
                 </table>
             </div>
-            <button type="submit">Save Filter, Sort, And Token Fields</button>
+            <button type="submit">Save Filter Fields</button>
         </form>
     </section>
 </section>
 
 <script>
 document.addEventListener('DOMContentLoaded', function () {
+    var storageKey = 'download_manager_active_tab';
     var tabs = Array.from(document.querySelectorAll('[data-download-page-tab]'));
     var pages = Array.from(document.querySelectorAll('[data-download-page]'));
     var activatePage = function (pageKey) {
@@ -227,13 +224,25 @@ document.addEventListener('DOMContentLoaded', function () {
             var isActive = page.getAttribute('data-download-page') === pageKey;
             page.classList.toggle('hidden', !isActive);
         });
+        try {
+            window.sessionStorage.setItem(storageKey, pageKey);
+        } catch (error) {
+        }
     };
     tabs.forEach(function (tab) {
         tab.addEventListener('click', function () {
             activatePage(tab.getAttribute('data-download-page-tab'));
         });
     });
-    activatePage('level1');
+    var initialPage = 'level1';
+    try {
+        var storedPage = window.sessionStorage.getItem(storageKey);
+        if (storedPage && pages.some(function (page) { return page.getAttribute('data-download-page') === storedPage; })) {
+            initialPage = storedPage;
+        }
+    } catch (error) {
+    }
+    activatePage(initialPage);
 });
 </script>
 

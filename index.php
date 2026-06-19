@@ -346,7 +346,7 @@ if ($action === 'save_download_manager_matrix') {
     }
     try {
         save_asset_download_segment_matrix($_POST['download_matrix'] ?? []);
-        flash('success', 'Download filter, sort, and token fields updated.');
+        flash('success', 'Download filter fields updated.');
     } catch (Throwable $e) {
         flash('error', $e->getMessage());
     }

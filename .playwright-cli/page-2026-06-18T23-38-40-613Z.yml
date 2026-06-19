@@ -1,0 +1,256 @@
+- generic [ref=e1]:
+  - navigation [ref=e2]:
+    - generic [ref=e3]: Survey Website
+    - generic [ref=e4]:
+      - link "Information" [ref=e5] [cursor=pointer]:
+        - /url: index.php?page=board
+      - link "Office Orders" [ref=e6] [cursor=pointer]:
+        - /url: index.php?page=office_orders
+      - link "Declarations" [ref=e7] [cursor=pointer]:
+        - /url: index.php?page=declarations
+      - link "Management" [ref=e8] [cursor=pointer]:
+        - /url: index.php?page=admin
+      - link "Download Manager" [ref=e9] [cursor=pointer]:
+        - /url: index.php?page=download_manager
+      - link "Offices" [ref=e10] [cursor=pointer]:
+        - /url: index.php?page=offices
+      - link "User Permissions" [ref=e11] [cursor=pointer]:
+        - /url: index.php?page=user_permissions
+      - link "Interface" [ref=e12] [cursor=pointer]:
+        - /url: index.php?page=interface
+      - link "Profile" [ref=e13] [cursor=pointer]:
+        - /url: index.php?page=profile
+      - link "Tutorial" [ref=e14] [cursor=pointer]:
+        - /url: https://www.youtube.com/watch?v=0xDtouznUAE
+      - button "Logout" [ref=e16] [cursor=pointer]
+  - main [ref=e17]:
+    - text: ✓ ✓ ✓ ✓
+    - generic [ref=e38]:
+      - heading "Survey Website" [level=2] [ref=e39]
+      - paragraph [ref=e40]: "Office: Chief Engineer Office | User: superadmin@pwd.gov.bd"
+    - generic [ref=e42]:
+      - link "General Information" [ref=e43] [cursor=pointer]:
+        - /url: index.php?page=board&segment_id=3
+      - link "Civil Related" [ref=e44] [cursor=pointer]:
+        - /url: index.php?page=board&segment_id=4
+      - link "Water Supply and Sanitation" [ref=e45] [cursor=pointer]:
+        - /url: index.php?page=board&segment_id=5
+      - link "Ancillary Civil Items" [ref=e46] [cursor=pointer]:
+        - /url: index.php?page=board&segment_id=6
+      - link "Electromechanical Items" [ref=e47] [cursor=pointer]:
+        - /url: index.php?page=board&segment_id=7
+      - link "External Electrification" [ref=e48] [cursor=pointer]:
+        - /url: index.php?page=board&segment_id=8
+      - link "Ancillary EM Items" [ref=e49] [cursor=pointer]:
+        - /url: index.php?page=board&segment_id=9
+    - generic [ref=e51]:
+      - link "Excel Template" [ref=e52] [cursor=pointer]:
+        - /url: asset_template.php?segment_id=3
+      - button "Download Data" [active] [ref=e53] [cursor=pointer]
+    - generic [ref=e55]:
+      - generic [ref=e56]:
+        - heading "General Information and File Uploading" [level=2] [ref=e57]
+        - generic [ref=e58]:
+          - generic [ref=e59]: 3 row(s)
+          - link "Refresh" [ref=e60] [cursor=pointer]:
+            - /url: index.php?page=board&office_view_scope=my_office&segment_id=3
+          - button "Columns" [ref=e61] [cursor=pointer]
+      - table [ref=e63]:
+        - rowgroup [ref=e64]:
+          - row "SL No Asset Number Office District Name * Upazilla * Name of the Hospital * Number of Beds of Existing Hospital Building * Digital Survey Map (CAD and PDF) Soil Test Report Field information As Built Arc Drawing of Existing Hospital Building (Floor Plans) Field information Layout of Hospital (At least Hand Drawn) Field information Master Plan of Campus (Demarking Visually Vulnerable Buildings) Field information Visual Evidence of the area (Image or video) Remarks (Additional Information)" [ref=e65]:
+            - columnheader "SL No" [ref=e66]:
+              - link "SL No" [ref=e67] [cursor=pointer]:
+                - /url: index.php?page=board&office_view_scope=my_office&segment_id=3&sort_col=__sl&sort_dir=asc
+            - columnheader "Asset Number" [ref=e68]:
+              - link "Asset Number" [ref=e69] [cursor=pointer]:
+                - /url: index.php?page=board&office_view_scope=my_office&segment_id=3&sort_col=asset_number&sort_dir=asc
+            - columnheader "Office" [ref=e70]:
+              - link "Office" [ref=e71] [cursor=pointer]:
+                - /url: index.php?page=board&office_view_scope=my_office&segment_id=3&sort_col=office_name&sort_dir=asc
+            - columnheader "District Name *" [ref=e72]:
+              - link "District Name *" [ref=e74] [cursor=pointer]:
+                - /url: index.php?page=board&office_view_scope=my_office&segment_id=3&sort_col=district&sort_dir=asc
+                - text: District Name
+                - generic [ref=e75]: "*"
+            - columnheader "Upazilla *" [ref=e76]:
+              - link "Upazilla *" [ref=e78] [cursor=pointer]:
+                - /url: index.php?page=board&office_view_scope=my_office&segment_id=3&sort_col=upazilla&sort_dir=asc
+                - text: Upazilla
+                - generic [ref=e79]: "*"
+            - columnheader "Name of the Hospital *" [ref=e80]:
+              - link "Name of the Hospital *" [ref=e82] [cursor=pointer]:
+                - /url: index.php?page=board&office_view_scope=my_office&segment_id=3&sort_col=name_of_the_hospital&sort_dir=asc
+                - text: Name of the Hospital
+                - generic [ref=e83]: "*"
+            - columnheader "Number of Beds of Existing Hospital Building *" [ref=e84]:
+              - link "Number of Beds of Existing Hospital Building *" [ref=e86] [cursor=pointer]:
+                - /url: index.php?page=board&office_view_scope=my_office&segment_id=3&sort_col=number_of_beds&sort_dir=asc
+                - text: Number of Beds of Existing Hospital Building
+                - generic [ref=e87]: "*"
+            - columnheader "Digital Survey Map (CAD and PDF)" [ref=e88]:
+              - link "Digital Survey Map (CAD and PDF)" [ref=e90] [cursor=pointer]:
+                - /url: index.php?page=board&office_view_scope=my_office&segment_id=3&sort_col=digitalsurvey&sort_dir=asc
+            - columnheader "Soil Test Report Field information" [ref=e91]:
+              - generic [ref=e92]:
+                - link "Soil Test Report" [ref=e93] [cursor=pointer]:
+                  - /url: index.php?page=board&office_view_scope=my_office&segment_id=3&sort_col=soiltest&sort_dir=asc
+                - button "Field information" [ref=e94] [cursor=pointer]: i
+            - columnheader "As Built Arc Drawing of Existing Hospital Building (Floor Plans) Field information" [ref=e95]:
+              - generic [ref=e96]:
+                - link "As Built Arc Drawing of Existing Hospital Building (Floor Plans)" [ref=e97] [cursor=pointer]:
+                  - /url: index.php?page=board&office_view_scope=my_office&segment_id=3&sort_col=archospital&sort_dir=asc
+                - button "Field information" [ref=e98] [cursor=pointer]: i
+            - columnheader "Layout of Hospital (At least Hand Drawn) Field information" [ref=e99]:
+              - generic [ref=e100]:
+                - link "Layout of Hospital (At least Hand Drawn)" [ref=e101] [cursor=pointer]:
+                  - /url: index.php?page=board&office_view_scope=my_office&segment_id=3&sort_col=layout&sort_dir=asc
+                - button "Field information" [ref=e102] [cursor=pointer]: i
+            - columnheader "Master Plan of Campus (Demarking Visually Vulnerable Buildings) Field information" [ref=e103]:
+              - generic [ref=e104]:
+                - link "Master Plan of Campus (Demarking Visually Vulnerable Buildings)" [ref=e105] [cursor=pointer]:
+                  - /url: index.php?page=board&office_view_scope=my_office&segment_id=3&sort_col=masterplan&sort_dir=asc
+                - button "Field information" [ref=e106] [cursor=pointer]: i
+            - columnheader "Visual Evidence of the area (Image or video)" [ref=e107]:
+              - link "Visual Evidence of the area (Image or video)" [ref=e109] [cursor=pointer]:
+                - /url: index.php?page=board&office_view_scope=my_office&segment_id=3&sort_col=image_or_video&sort_dir=asc
+            - columnheader "Remarks (Additional Information)" [ref=e110]:
+              - link "Remarks (Additional Information)" [ref=e112] [cursor=pointer]:
+                - /url: index.php?page=board&office_view_scope=my_office&segment_id=3&sort_col=remarks_additional_information&sort_dir=asc
+        - rowgroup [ref=e113]:
+          - row "1 AST-2026-000076 Division - Patuakhali PWD Division Rangamati baghaichhari Balaganj Upazilla Health Complex 20 No file No file PDF No file No file No file" [ref=e114]:
+            - cell "1" [ref=e115]
+            - cell "AST-2026-000076" [ref=e116]
+            - cell "Division - Patuakhali PWD Division" [ref=e117]
+            - cell "Rangamati" [ref=e118]
+            - cell "baghaichhari" [ref=e119]
+            - cell "Balaganj Upazilla Health Complex" [ref=e120]
+            - cell "20" [ref=e121]
+            - cell "No file" [ref=e122]
+            - cell "No file" [ref=e123]
+            - cell "PDF" [ref=e124]:
+              - link "PDF" [ref=e126] [cursor=pointer]:
+                - /url: index.php?page=asset_file&id=61
+                - generic [ref=e127]: PDF
+            - cell "No file" [ref=e128]
+            - cell "No file" [ref=e129]
+            - cell "No file" [ref=e130]
+            - cell [ref=e131]
+          - row "2 AST-2026-000075 Division - Patuakhali PWD Division Gazipur kaliakoir patua sadar hosp 15 No file No file PDF No file No file No file" [ref=e132]:
+            - cell "2" [ref=e133]
+            - cell "AST-2026-000075" [ref=e134]
+            - cell "Division - Patuakhali PWD Division" [ref=e135]
+            - cell "Gazipur" [ref=e136]
+            - cell "kaliakoir" [ref=e137]
+            - cell "patua sadar hosp" [ref=e138]
+            - cell "15" [ref=e139]
+            - cell "No file" [ref=e140]
+            - cell "No file" [ref=e141]
+            - cell "PDF" [ref=e142]:
+              - link "PDF" [ref=e144] [cursor=pointer]:
+                - /url: index.php?page=asset_file&id=60
+                - generic [ref=e145]: PDF
+            - cell "No file" [ref=e146]
+            - cell "No file" [ref=e147]
+            - cell "No file" [ref=e148]
+            - cell [ref=e149]
+          - row "3 AST-2026-000074 Division - Patuakhali PWD Division Patuakhali sadar patua sadar hosp 15 No file No file PDF No file No file No file" [ref=e150]:
+            - cell "3" [ref=e151]
+            - cell "AST-2026-000074" [ref=e152]
+            - cell "Division - Patuakhali PWD Division" [ref=e153]
+            - cell "Patuakhali" [ref=e154]
+            - cell "sadar" [ref=e155]
+            - cell "patua sadar hosp" [ref=e156]
+            - cell "15" [ref=e157]
+            - cell "No file" [ref=e158]
+            - cell "No file" [ref=e159]
+            - cell "PDF" [ref=e160]:
+              - link "PDF" [ref=e162] [cursor=pointer]:
+                - /url: index.php?page=asset_file&id=59
+                - generic [ref=e163]: PDF
+            - cell "No file" [ref=e164]
+            - cell "No file" [ref=e165]
+            - cell "No file" [ref=e166]
+            - cell [ref=e167]
+    - dialog "Download Data" [ref=e169]:
+      - generic [ref=e170]:
+        - heading "Download Data" [level=3] [ref=e171]
+        - button "Close" [ref=e172] [cursor=pointer]: ×
+      - generic [ref=e173]:
+        - tablist "Download Pages" [ref=e174]:
+          - button "Level_1" [ref=e175] [cursor=pointer]
+          - button "Level_2" [ref=e176] [cursor=pointer]
+          - button "Level_3" [ref=e177] [cursor=pointer]
+        - generic [ref=e179]:
+          - generic [ref=e180]:
+            - generic [ref=e181]:
+              - heading "Select File Format" [level=4] [ref=e182]
+              - paragraph [ref=e183]: Choose PDF (data only), Excel (data only), or ZIP (file only).
+            - generic [ref=e185]:
+              - text: File Format
+              - combobox "File Format" [ref=e186]:
+                - option "PDF (data only)"
+                - option "Excel (data only)" [selected]
+                - option "ZIP (file only)"
+          - generic [ref=e187]:
+            - generic [ref=e188]:
+              - heading "Level 1 Setup" [level=4] [ref=e189]
+              - paragraph [ref=e190]: "For PDF and Excel, manage all Level_1 fields in one table. Choose one field as `is_level`. The remaining fields keep their sequence and sort direction here."
+            - table [ref=e192]:
+              - rowgroup [ref=e193]:
+                - row "Field Name Show Is_Level1 Serial Sorting" [ref=e194]:
+                  - columnheader "Field Name" [ref=e195]
+                  - columnheader "Show" [ref=e196]
+                  - columnheader "Is_Level1" [ref=e197]
+                  - columnheader "Serial" [ref=e198]
+                  - columnheader "Sorting" [ref=e199]
+              - rowgroup [ref=e200]:
+                - row "District Name 1 ASC" [ref=e201]:
+                  - cell "District Name" [ref=e202]
+                  - cell [ref=e203]:
+                    - checkbox [checked] [disabled] [ref=e205]
+                  - cell [ref=e206]:
+                    - radio [checked] [ref=e208]
+                  - cell "1" [ref=e209]:
+                    - spinbutton [disabled] [ref=e210]: "0"
+                  - cell "ASC" [ref=e211]:
+                    - combobox [ref=e212]:
+                      - option "ASC" [selected]
+                      - option "DESC"
+                - row "Name of the Hospital 2 ASC" [ref=e213]:
+                  - cell "Name of the Hospital" [ref=e214]
+                  - cell [ref=e215]:
+                    - checkbox [checked] [ref=e217]
+                  - cell [ref=e218]:
+                    - radio [ref=e220]
+                  - cell "2" [ref=e221]:
+                    - spinbutton [ref=e222]: "1"
+                  - cell "ASC" [ref=e223]:
+                    - combobox [ref=e224]:
+                      - option "ASC" [selected]
+                      - option "DESC"
+                - row "Office 3 Default hierarchy" [ref=e225]:
+                  - cell "Office" [ref=e226]
+                  - cell [ref=e227]:
+                    - checkbox [checked] [ref=e229]
+                  - cell [ref=e230]:
+                    - radio [ref=e232]
+                  - cell "3" [ref=e233]:
+                    - spinbutton [ref=e234]: "2"
+                  - cell "Default hierarchy" [ref=e235]:
+                    - combobox [disabled] [ref=e236]:
+                      - option "Default hierarchy" [selected]
+                - row "Upazilla 4 ASC" [ref=e237]:
+                  - cell "Upazilla" [ref=e238]
+                  - cell [ref=e239]:
+                    - checkbox [checked] [ref=e241]
+                  - cell [ref=e242]:
+                    - radio [ref=e244]
+                  - cell "4" [ref=e245]:
+                    - spinbutton [ref=e246]: "3"
+                  - cell "ASC" [ref=e247]:
+                    - combobox [ref=e248]:
+                      - option "ASC" [selected]
+                      - option "DESC"
+        - generic [ref=e249]:
+          - button "Download" [ref=e250] [cursor=pointer]
+          - button "Cancel" [ref=e251] [cursor=pointer]

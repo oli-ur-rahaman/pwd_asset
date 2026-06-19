@@ -104,6 +104,7 @@ $review = $_SESSION['asset_import_review'] ?? null;
 $downloadLevel1Catalog = asset_download_level1_catalog($user, $currentOfficeViewScope);
 $downloadCommonLabelCandidates = asset_download_common_label_candidates();
 $downloadCommonOptionMap = asset_download_common_option_map();
+$downloadCommonFilterCatalog = asset_download_common_field_catalog($user, $currentOfficeViewScope);
 $downloadNamingTokens = array_values(array_unique(array_merge(
     asset_download_available_naming_tokens(),
     asset_download_dynamic_naming_tokens()
@@ -118,9 +119,9 @@ foreach ($downloadAvailableSegments as $downloadSegment) {
         static fn(array $field): bool => (int)($field['active_status'] ?? 0) === 1
     ));
     $downloadSegmentAssets = asset_download_accessible_assets_for_segment($downloadSegmentId, $user, $currentOfficeViewScope);
-    $downloadCatalog = build_asset_filter_catalog($downloadSegmentAssets, $downloadSegmentFields, $downloadSegmentId);
+    $downloadCatalog = build_asset_filter_catalog($downloadSegmentAssets, $downloadSegmentFields, $downloadSegmentId, false);
     $downloadFilterFieldMap = [];
-    foreach (asset_download_filter_fields($downloadSegmentId) as $filterField) {
+    foreach (asset_download_effective_filter_fields($downloadSegmentId) as $filterField) {
         $downloadFilterFieldMap[(string)$filterField['field_key']] = $filterField;
     }
     $downloadSegmentConfigs[$downloadSegmentId] = [
@@ -1450,6 +1451,188 @@ if (is_superadmin()) {
                 }
                 echo '</div>';
             };
+            $renderDownloadFilterControl = static function (string $inputBase, array $filterMeta, string $mode = 'segment') use ($renderDownloadChoiceGroup): void {
+                $type = (string)($filterMeta['data_type'] ?? 'text');
+                if ($type === 'office') {
+                    $zones = (array)($filterMeta['zones'] ?? []);
+                    $circles = (array)($filterMeta['circles'] ?? []);
+                    $divisions = (array)($filterMeta['divisions'] ?? []);
+                    $subdivisions = (array)($filterMeta['subdivisions'] ?? []);
+                    if (!$zones && !$circles && !$divisions && !$subdivisions) {
+                        echo '<p class="muted">No options available.</p>';
+                        return;
+                    }
+                    echo '<div class="download-filter-tree download-office-tree">';
+                    foreach ($zones as $zoneId => $zoneMeta) {
+                        echo '<div class="download-filter-tree-node depth-1">';
+                        echo '<label class="download-tree-check">';
+                        echo '<input type="checkbox" name="' . e($inputBase . '[zone_ids][]') . '" value="' . e((string)$zoneId) . '">';
+                        echo '<span>' . e((string)($zoneMeta['name'] ?? '')) . '</span>';
+                        echo '</label>';
+                        $zoneHasChild = false;
+                        foreach ($circles as $circleId => $circleMeta) {
+                            if ((string)($circleMeta['zone_id'] ?? '') !== (string)$zoneId) {
+                                continue;
+                            }
+                            if (!$zoneHasChild) {
+                                echo '<div class="download-filter-tree-children">';
+                                $zoneHasChild = true;
+                            }
+                            echo '<div class="download-filter-tree-node depth-2">';
+                            echo '<label class="download-tree-check">';
+                            echo '<input type="checkbox" name="' . e($inputBase . '[circle_ids][]') . '" value="' . e((string)$circleId) . '">';
+                            echo '<span>' . e((string)($circleMeta['name'] ?? '')) . '</span>';
+                            echo '</label>';
+                            $circleHasChild = false;
+                            foreach ($divisions as $divisionId => $divisionMeta) {
+                                if ((string)($divisionMeta['circle_id'] ?? '') !== (string)$circleId) {
+                                    continue;
+                                }
+                                if (!$circleHasChild) {
+                                    echo '<div class="download-filter-tree-children">';
+                                    $circleHasChild = true;
+                                }
+                                echo '<div class="download-filter-tree-node depth-3">';
+                                echo '<label class="download-tree-check">';
+                                echo '<input type="checkbox" name="' . e($inputBase . '[division_ids][]') . '" value="' . e((string)$divisionId) . '">';
+                                echo '<span>' . e((string)($divisionMeta['name'] ?? '')) . '</span>';
+                                echo '</label>';
+                                $divisionHasChild = false;
+                                foreach ($subdivisions as $subdivisionId => $subdivisionMeta) {
+                                    if ((string)($subdivisionMeta['division_id'] ?? '') !== (string)$divisionId) {
+                                        continue;
+                                    }
+                                    if (!$divisionHasChild) {
+                                        echo '<div class="download-filter-tree-children">';
+                                        $divisionHasChild = true;
+                                    }
+                                    echo '<div class="download-filter-tree-node depth-4">';
+                                    echo '<label class="download-tree-check">';
+                                    echo '<input type="checkbox" name="' . e($inputBase . '[subdivision_ids][]') . '" value="' . e((string)$subdivisionId) . '">';
+                                    echo '<span>' . e((string)($subdivisionMeta['name'] ?? '')) . '</span>';
+                                    echo '</label>';
+                                    echo '</div>';
+                                }
+                                if ($divisionHasChild) {
+                                    echo '</div>';
+                                }
+                                echo '</div>';
+                            }
+                            if ($circleHasChild) {
+                                echo '</div>';
+                            }
+                            echo '</div>';
+                        }
+                        if ($zoneHasChild) {
+                            echo '</div>';
+                        }
+                        echo '</div>';
+                    }
+                    echo '</div>';
+                    return;
+                }
+                if ($type === 'conditional') {
+                    $childKey = (string)($filterMeta['child_key'] ?? '');
+                    $childLabel = (string)($filterMeta['child_label'] ?? '');
+                    if ($mode === 'common' && $childKey === '') {
+                        $childKey = (string)($filterMeta['child_identifier'] ?? '');
+                        $childLabel = (string)($filterMeta['child_label'] ?? '');
+                    }
+                    $childBase = $childKey !== '' ? preg_replace('/\[[^\]]+\]$/', '[' . $childKey . ']', $inputBase) : '';
+                    $primaryOptions = (array)($filterMeta['options'] ?? []);
+                    $secondaryMap = (array)($filterMeta['secondary_options_map'] ?? []);
+                    if (!$primaryOptions && empty($filterMeta['has_blank'])) {
+                        echo '<p class="muted">No options available.</p>';
+                        return;
+                    }
+                    echo '<div class="download-filter-tree download-conditional-tree">';
+                    foreach ($primaryOptions as $primaryValue => $primaryLabel) {
+                        $children = (array)($secondaryMap[(string)$primaryValue] ?? []);
+                        echo '<div class="download-filter-tree-node depth-1">';
+                        echo '<label class="download-tree-check">';
+                        echo '<input type="checkbox" name="' . e($inputBase . '[values][]') . '" value="' . e((string)$primaryValue) . '" data-conditional-primary-checkbox>';
+                        echo '<span>' . e((string)$primaryLabel) . '</span>';
+                        echo '</label>';
+                        if ($children) {
+                            echo '<div class="download-filter-tree-children">';
+                            foreach ($children as $childValue => $childOptionLabel) {
+                                echo '<div class="download-filter-tree-node depth-2">';
+                                echo '<label class="download-tree-check">';
+                                echo '<input type="checkbox" name="' . e($childBase . '[values][]') . '" value="' . e((string)$childValue) . '">';
+                                echo '<span>' . e((string)$childOptionLabel) . '</span>';
+                                echo '</label>';
+                                echo '</div>';
+                            }
+                            echo '</div>';
+                        }
+                        echo '</div>';
+                    }
+                    if (!empty($filterMeta['has_blank'])) {
+                        echo '<div class="download-filter-tree-node depth-1">';
+                        echo '<label class="download-tree-check">';
+                        echo '<input type="checkbox" name="' . e($inputBase . '[values][]') . '" value="__blank__">';
+                        echo '<span>Blank</span>';
+                        echo '</label>';
+                        echo '</div>';
+                    }
+                    echo '</div>';
+                    return;
+                }
+                if ($type === 'date') {
+                    echo '<div class="download-filter-body download-filter-range">';
+                    echo '<div class="download-date-range">';
+                    echo '<label>From<input type="date" name="' . e($inputBase . '[from]') . '"></label>';
+                    echo '<label>To<input type="date" name="' . e($inputBase . '[to]') . '"></label>';
+                    echo '</div>';
+                    echo '<label class="inline-check download-inline-check"><input type="checkbox" name="' . e($inputBase . '[blank]') . '" value="1"><span>Blank</span></label>';
+                    echo '</div>';
+                    return;
+                }
+                if ($type === 'number') {
+                    echo '<div class="download-filter-body download-filter-range">';
+                    echo '<div class="download-date-range">';
+                    echo '<label>From<input type="number" step="0.01" name="' . e($inputBase . '[from]') . '"></label>';
+                    echo '<label>To<input type="number" step="0.01" name="' . e($inputBase . '[to]') . '"></label>';
+                    echo '</div>';
+                    echo '<label class="inline-check download-inline-check"><input type="checkbox" name="' . e($inputBase . '[blank]') . '" value="1"><span>Blank</span></label>';
+                    echo '</div>';
+                    return;
+                }
+                $optionMap = [];
+                if ($type === 'file') {
+                    $optionMap = [
+                        '__has_file__' => 'Have file',
+                        '__no_file__' => 'No file',
+                    ];
+                    echo '<div class="download-filter-body">';
+                    $renderDownloadChoiceGroup($inputBase . '[values]', $optionMap);
+                    echo '</div>';
+                    return;
+                }
+                if ($type === 'yes_no') {
+                    foreach (['Yes', 'No'] as $yesNoValue) {
+                        if (isset($filterMeta['options'][$yesNoValue])) {
+                            $optionMap[$yesNoValue] = $yesNoValue;
+                        }
+                    }
+                    if (!empty($filterMeta['has_blank'])) {
+                        $optionMap['__blank__'] = 'Blank';
+                    }
+                    echo '<div class="download-filter-body">';
+                    $renderDownloadChoiceGroup($inputBase . '[values]', $optionMap, [], 'Blank');
+                    echo '</div>';
+                    return;
+                }
+                foreach ((array)($filterMeta['options'] ?? []) as $optionValue => $optionLabel) {
+                    $optionMap[(string)$optionValue] = (string)$optionLabel;
+                }
+                if (!empty($filterMeta['has_blank'])) {
+                    $optionMap['__blank__'] = 'Blank';
+                }
+                echo '<div class="download-filter-body">';
+                $renderDownloadChoiceGroup($inputBase . '[values]', $optionMap, [], 'Blank');
+                echo '</div>';
+            };
             $downloadLevel1DefaultLabel = array_key_first($downloadLevel1Catalog);
             $downloadDefaultSegmentIds = array_map(static fn(array $segment): int => (int)$segment['id'], $downloadAvailableSegments);
             $downloadCommonColumnDefaults = [];
@@ -1656,7 +1839,44 @@ if (is_superadmin()) {
                 <section class="download-layer-card">
                     <div class="download-layer-head">
                         <h4>Level 3 Filters</h4>
-                        <p class="hint">Only filters are shown segment-wise here. The chosen Level 1 field is hidden from filters for this run.</p>
+                        <p class="hint">Only filters are shown here. Level_1 filters are separate, and segment filters appear only for segments and fields currently checked in Level_2.</p>
+                    </div>
+                    <div class="download-subhead-row">
+                        <strong>Level 1 Fields</strong>
+                    </div>
+                    <?php
+                        $downloadConditionalChildLabels = [];
+                        foreach ($downloadCommonFilterCatalog as $downloadCommonMeta) {
+                            if ((string)($downloadCommonMeta['data_type'] ?? '') === 'conditional' && !empty($downloadCommonMeta['child_label'])) {
+                                $downloadConditionalChildLabels[(string)$downloadCommonMeta['child_label']] = true;
+                            }
+                        }
+                    ?>
+                    <div class="download-choice-grid">
+                        <?php foreach ($downloadLevel1Catalog as $label => $values): ?>
+                            <?php
+                                if (isset($downloadConditionalChildLabels[(string)$label])) {
+                                    continue;
+                                }
+                                $commonKey = $label === 'Office' ? '__office__' : $label;
+                                $commonMeta = $downloadCommonFilterCatalog[$commonKey] ?? null;
+                                if ($commonMeta && (string)($commonMeta['data_type'] ?? '') === 'conditional_secondary') {
+                                    continue;
+                                }
+                                $buttonLabel = (string)$label;
+                                if ($commonMeta && (string)($commonMeta['data_type'] ?? '') === 'conditional' && !empty($commonMeta['child_label'])) {
+                                    $buttonLabel .= ' - ' . (string)$commonMeta['child_label'];
+                                }
+                            ?>
+                            <button type="button" class="btn-small button-link" data-common-filter-open="<?= e((string)$commonKey); ?>"><?= e($buttonLabel); ?></button>
+                        <?php endforeach; ?>
+                    </div>
+                </section>
+
+                <section class="download-layer-card">
+                    <div class="download-layer-head">
+                        <h4>Segment Filters</h4>
+                        <p class="hint">These filters follow the segments and fields selected in Level_2.</p>
                     </div>
                     <?php foreach ($downloadSegmentConfigs as $downloadSegmentId => $downloadSegmentConfig): ?>
                         <?php
@@ -1669,120 +1889,24 @@ if (is_superadmin()) {
                             }
                         ?>
                         <section class="download-segment-block" data-download-level3-block="<?= $downloadSegmentId; ?>" data-has-file-field="<?= $downloadSegmentHasFileField ? '1' : '0'; ?>">
-                            <div class="download-subhead-row">
-                                <strong><?= e((string)$downloadSegmentConfig['segment']['segment_name']); ?></strong>
-                            </div>
-                            <div class="download-segment-config-grid">
-                                <div class="download-config-box download-filter-box">
-                                    <h5>Filters</h5>
-                                    <?php $downloadCatalog = $downloadSegmentConfig['catalog']; ?>
-                                    <?php if (!empty($downloadCatalog['zones'])): ?>
-                                        <details class="download-filter-group">
-                                            <summary>Zone</summary>
-                                            <?php
-                                                $zoneOptions = [];
-                                                foreach ($downloadCatalog['zones'] as $zone) {
-                                                    $zoneOptions[(string)$zone['id']] = (string)$zone['name'];
-                                                }
-                                                $renderDownloadChoiceGroup('download_filters[' . $downloadSegmentId . '][zone_ids]', $zoneOptions);
-                                            ?>
-                                        </details>
-                                    <?php endif; ?>
-                                    <?php if (!empty($downloadCatalog['circles'])): ?>
-                                        <details class="download-filter-group">
-                                            <summary>Circle</summary>
-                                            <?php
-                                                $circleOptions = [];
-                                                foreach ($downloadCatalog['circles'] as $circle) {
-                                                    $circleOptions[(string)$circle['id']] = (string)$circle['name'];
-                                                }
-                                                $renderDownloadChoiceGroup('download_filters[' . $downloadSegmentId . '][circle_ids]', $circleOptions);
-                                            ?>
-                                        </details>
-                                    <?php endif; ?>
-                                    <?php if (!empty($downloadCatalog['divisions'])): ?>
-                                        <details class="download-filter-group">
-                                            <summary>Division</summary>
-                                            <?php
-                                                $divisionOptions = [];
-                                                foreach ($downloadCatalog['divisions'] as $division) {
-                                                    $divisionOptions[(string)$division['id']] = (string)$division['name'];
-                                                }
-                                                $renderDownloadChoiceGroup('download_filters[' . $downloadSegmentId . '][division_ids]', $divisionOptions);
-                                            ?>
-                                        </details>
-                                    <?php endif; ?>
-                                    <?php if (!empty($downloadCatalog['subdivisions'])): ?>
-                                        <details class="download-filter-group">
-                                            <summary>Sub-division</summary>
-                                            <?php
-                                                $subdivisionOptions = [];
-                                                foreach ($downloadCatalog['subdivisions'] as $subdivision) {
-                                                    $subdivisionOptions[(string)$subdivision['id']] = (string)$subdivision['name'];
-                                                }
-                                                $renderDownloadChoiceGroup('download_filters[' . $downloadSegmentId . '][subdivision_ids]', $subdivisionOptions);
-                                            ?>
-                                        </details>
-                                    <?php endif; ?>
-                                    <?php if (asset_category_selection_enabled($downloadSegmentId) && !empty($downloadCatalog['categories'])): ?>
-                                        <details class="download-filter-group">
-                                            <summary>Category</summary>
-                                            <?php
-                                                $categoryOptions = [];
-                                                foreach ($downloadCatalog['categories'] as $category) {
-                                                    $categoryOptions[(string)$category['id']] = (string)$category['name'];
-                                                }
-                                                $renderDownloadChoiceGroup('download_filters[' . $downloadSegmentId . '][category_ids]', $categoryOptions);
-                                            ?>
-                                        </details>
-                                    <?php endif; ?>
-                                    <?php if (asset_subcategory_enabled($downloadSegmentId) && !empty($downloadCatalog['subcategories'])): ?>
-                                        <details class="download-filter-group">
-                                            <summary>Sub-category</summary>
-                                            <?php
-                                                $subcategoryOptions = [];
-                                                foreach ($downloadCatalog['subcategories'] as $subcategory) {
-                                                    $subcategoryOptions[(string)$subcategory['id']] = (string)$subcategory['name'];
-                                                }
-                                                $renderDownloadChoiceGroup('download_filters[' . $downloadSegmentId . '][subcategory_ids]', $subcategoryOptions);
-                                            ?>
-                                        </details>
-                                    <?php endif; ?>
-                                    <?php foreach ($downloadSegmentConfig['filter_fields'] as $filterFieldKey => $filterField): ?>
-                                        <?php
-                                            $filterMeta = $downloadCatalog['fields'][$filterFieldKey] ?? null;
-                                            if (!$filterMeta) {
-                                                continue;
-                                            }
-                                            $filterType = (string)($filterField['data_type'] ?? 'text');
-                                        ?>
-                                        <details class="download-filter-group" data-download-filter-field data-field-label="<?= e((string)$filterField['label']); ?>">
-                                            <summary><?= e((string)$filterField['label']); ?></summary>
-                                            <?php if ($filterType === 'date'): ?>
-                                                <div class="download-date-range">
-                                                    <label>From
-                                                        <input type="date" name="download_filters[<?= $downloadSegmentId; ?>][date_from][<?= e($filterFieldKey); ?>]">
-                                                    </label>
-                                                    <label>To
-                                                        <input type="date" name="download_filters[<?= $downloadSegmentId; ?>][date_to][<?= e($filterFieldKey); ?>]">
-                                                    </label>
-                                                </div>
-                                            <?php else: ?>
-                                                <?php
-                                                    $optionMap = [];
-                                                    foreach ((array)($filterMeta['options'] ?? []) as $optionValue => $optionLabel) {
-                                                        $optionMap[(string)$optionValue] = (string)$optionLabel;
-                                                    }
-                                                    if (!empty($filterMeta['has_blank'])) {
-                                                        $optionMap['__blank__'] = 'Blank';
-                                                    }
-                                                    $renderDownloadChoiceGroup('download_filters[' . $downloadSegmentId . '][fields][' . $filterFieldKey . ']', $optionMap, [], 'Blank');
-                                                ?>
-                                            <?php endif; ?>
-                                        </details>
-                                    <?php endforeach; ?>
-                                </div>
-
+                            <div class="download-config-box download-filter-box">
+                                <h5><?= e((string)$downloadSegmentConfig['segment']['segment_name']); ?></h5>
+                                <?php $downloadCatalog = $downloadSegmentConfig['catalog']; ?>
+                                <?php foreach ($downloadSegmentConfig['filter_fields'] as $filterFieldKey => $filterField): ?>
+                                    <?php
+                                        $filterMeta = $downloadCatalog['fields'][$filterFieldKey] ?? null;
+                                        if (!$filterMeta) {
+                                            continue;
+                                        }
+                                        if ((int)($filterMeta['secondary_of_field_id'] ?? 0) > 0) {
+                                            continue;
+                                        }
+                                    ?>
+                                    <div class="download-filter-group" data-download-filter-field data-field-label="<?= e((string)$filterField['label']); ?>" data-field-key="<?= e((string)$filterFieldKey); ?>">
+                                        <h6><?= e((string)$filterField['label']); ?></h6>
+                                        <?php $renderDownloadFilterControl('download_filters[' . $downloadSegmentId . '][' . $filterFieldKey . ']', $filterMeta, 'segment'); ?>
+                                    </div>
+                                <?php endforeach; ?>
                             </div>
                         </section>
                     <?php endforeach; ?>
@@ -1795,6 +1919,33 @@ if (is_superadmin()) {
                 <button type="button" class="modal-close" data-close="download-data-modal">Cancel</button>
             </div>
         </form>
+    </div>
+</div>
+
+<div class="modal-backdrop" id="download-common-filter-modal" aria-hidden="true">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="download-common-filter-title">
+        <div class="flash-modal-head">
+            <h3 id="download-common-filter-title">Level 1 Field Filter</h3>
+            <button type="button" class="welcome-modal-close modal-close" data-close="download-common-filter-modal" aria-label="Close">x</button>
+        </div>
+        <div id="download-common-filter-panels">
+            <?php foreach ($downloadCommonFilterCatalog as $identifier => $filterMeta): ?>
+                <?php if ((string)($filterMeta['data_type'] ?? '') === 'conditional_secondary') { continue; } ?>
+                <section class="download-common-filter-panel hidden" data-common-filter-panel="<?= e((string)$identifier); ?>">
+                    <?php
+                        $panelTitle = (string)($filterMeta['label'] ?? $identifier);
+                        if ((string)($filterMeta['data_type'] ?? '') === 'conditional' && !empty($filterMeta['child_label'])) {
+                            $panelTitle .= ' - ' . (string)$filterMeta['child_label'];
+                        }
+                    ?>
+                    <h4><?= e($panelTitle); ?></h4>
+                    <?php $renderDownloadFilterControl('download_common_filters[' . $identifier . ']', $filterMeta, 'common'); ?>
+                </section>
+            <?php endforeach; ?>
+        </div>
+        <div class="modal-actions">
+            <button type="button" class="modal-close" data-close="download-common-filter-modal">Close</button>
+        </div>
     </div>
 </div>
 
@@ -1932,6 +2083,7 @@ document.addEventListener('DOMContentLoaded', function () {
     var level1Choices = Array.from(document.querySelectorAll('[data-download-level1-choice]'));
     var outputSelect = document.getElementById('download-output-select');
     var segmentToggles = Array.from(document.querySelectorAll('[data-download-segment-toggle]'));
+    var commonFilterModal = document.getElementById('download-common-filter-modal');
     var modalPageTabs = Array.from(document.querySelectorAll('[data-download-modal-page-tab]'));
     var modalPages = Array.from(document.querySelectorAll('[data-download-modal-page]'));
     var activateModalPage = function (pageKey) {
@@ -2079,6 +2231,74 @@ document.addEventListener('DOMContentLoaded', function () {
             var zipBlocked = outputSelect && outputSelect.value === 'zip' && block.getAttribute('data-has-file-field') !== '1';
             block.classList.toggle('hidden', zipBlocked || !selected.has(segmentId));
         });
+        syncLevel3FieldFilters();
+    };
+    var syncLevel3FieldFilters = function () {
+        document.querySelectorAll('[data-download-level3-block]').forEach(function (block) {
+            var segmentId = block.getAttribute('data-download-level3-block');
+            var selectedFieldKeys = new Set(
+                Array.from(document.querySelectorAll('input[data-download-field-checkbox="' + segmentId + '"]:checked'))
+                    .map(function (input) { return input.value; })
+            );
+            block.querySelectorAll('[data-download-filter-field]').forEach(function (item) {
+                var fieldKey = item.getAttribute('data-field-key') || '';
+                item.classList.toggle('hidden', !selectedFieldKeys.has(fieldKey));
+                item.querySelectorAll('input, select, textarea').forEach(function (input) {
+                    input.disabled = !selectedFieldKeys.has(fieldKey);
+                });
+            });
+        });
+    };
+    var getTreeNodeCheckbox = function (node) {
+        var ownLabel = node ? node.querySelector(':scope > .download-tree-check input[type="checkbox"]') : null;
+        if (ownLabel) {
+            return ownLabel;
+        }
+        return node ? node.querySelector('.download-tree-check input[type="checkbox"]') : null;
+    };
+    var getTreeChildNodes = function (node) {
+        if (!node) {
+            return [];
+        }
+        var childContainer = node.querySelector(':scope > .download-filter-tree-children');
+        if (!childContainer) {
+            return [];
+        }
+        return Array.from(childContainer.children).filter(function (child) {
+            return child.classList && child.classList.contains('download-filter-tree-node');
+        });
+    };
+    var setTreeDescendantsChecked = function (node, checked) {
+        getTreeChildNodes(node).forEach(function (childNode) {
+            var checkbox = getTreeNodeCheckbox(childNode);
+            if (checkbox) {
+                checkbox.checked = checked;
+                checkbox.indeterminate = false;
+            }
+            setTreeDescendantsChecked(childNode, checked);
+        });
+    };
+    var syncTreeNodeState = function (node) {
+        var checkbox = getTreeNodeCheckbox(node);
+        var childNodes = getTreeChildNodes(node);
+        if (!checkbox || !childNodes.length) {
+            return checkbox ? { checked: checkbox.checked, indeterminate: false } : { checked: false, indeterminate: false };
+        }
+        var childStates = childNodes.map(syncTreeNodeState);
+        var allChecked = childStates.every(function (state) { return state.checked && !state.indeterminate; });
+        var anyChecked = childStates.some(function (state) { return state.checked || state.indeterminate; });
+        checkbox.checked = allChecked || anyChecked;
+        checkbox.indeterminate = anyChecked && !allChecked;
+        return { checked: checkbox.checked, indeterminate: checkbox.indeterminate };
+    };
+    var syncHierarchyTrees = function () {
+        document.querySelectorAll('.download-filter-tree').forEach(function (tree) {
+            Array.from(tree.children).forEach(function (child) {
+                if (child.classList && child.classList.contains('download-filter-tree-node')) {
+                    syncTreeNodeState(child);
+                }
+            });
+        });
     };
     level1Choices.forEach(function (input) {
         input.addEventListener('change', function () {
@@ -2134,7 +2354,38 @@ document.addEventListener('DOMContentLoaded', function () {
                     input.checked = true;
                 }
             });
+            syncLevel3FieldFilters();
         });
+    });
+    document.querySelectorAll('[data-download-field-checkbox]').forEach(function (input) {
+        input.addEventListener('change', syncLevel3FieldFilters);
+    });
+    document.querySelectorAll('[data-common-filter-open]').forEach(function (button) {
+        button.addEventListener('click', function () {
+            var identifier = button.getAttribute('data-common-filter-open');
+            if (!commonFilterModal) {
+                return;
+            }
+            commonFilterModal.setAttribute('aria-hidden', 'false');
+            commonFilterModal.classList.add('open');
+            commonFilterModal.querySelectorAll('[data-common-filter-panel]').forEach(function (panel) {
+                panel.classList.toggle('hidden', panel.getAttribute('data-common-filter-panel') !== identifier);
+            });
+            syncHierarchyTrees();
+        });
+    });
+    document.addEventListener('change', function (event) {
+        var target = event.target;
+        if (!(target instanceof HTMLInputElement) || target.type !== 'checkbox') {
+            return;
+        }
+        var treeNode = target.closest('.download-filter-tree-node');
+        if (!treeNode) {
+            return;
+        }
+        target.indeterminate = false;
+        setTreeDescendantsChecked(treeNode, target.checked);
+        syncHierarchyTrees();
     });
     modalPageTabs.forEach(function (tab) {
         tab.addEventListener('click', function () {
@@ -2142,6 +2393,8 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     });
     activateModalPage('level1');
+    syncLevel3FieldFilters();
+    syncHierarchyTrees();
 });
 </script>
 

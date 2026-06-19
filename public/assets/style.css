@@ -619,8 +619,9 @@ textarea { resize: vertical; }
   gap: 12px;
 }
 .download-filter-box {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   align-items: start;
+  width: 100%;
 }
 .download-filter-box > h5 {
   grid-column: 1 / -1;
@@ -632,12 +633,65 @@ textarea { resize: vertical; }
   background: #f8fbff;
   min-width: 0;
 }
-.download-filter-group summary {
-  cursor: pointer;
-  font-weight: 600;
+.download-filter-group h6 {
+  margin: 0 0 10px;
+  font-size: 16px;
+  font-weight: 700;
 }
-.download-filter-group[open] summary {
-  margin-bottom: 10px;
+.download-filter-body {
+  display: grid;
+  gap: 10px;
+}
+.download-filter-range {
+  align-content: start;
+}
+.download-filter-group .download-choice-grid {
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+.download-filter-group .download-inline-check {
+  min-height: 0;
+  padding: 10px 12px;
+  align-items: center;
+}
+.download-filter-group .download-inline-check span {
+  align-self: center;
+}
+.download-filter-tree {
+  display: grid;
+  gap: 10px;
+}
+.download-filter-tree-node {
+  display: grid;
+  gap: 8px;
+}
+.download-filter-tree-children {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+  margin-left: 28px;
+}
+.download-tree-check {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+}
+.download-tree-check input {
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+}
+.download-tree-check span {
+  display: block;
+  text-align: left;
+  padding-top: 1px;
+}
+.download-office-tree,
+.download-conditional-tree {
+  max-height: 360px;
+  overflow: auto;
+  padding-right: 4px;
 }
 .download-date-range {
   display: grid;
@@ -1065,10 +1119,12 @@ tbody tr:hover td:first-child {
   .hero-title { margin-bottom: 12px; }
   .download-modal-row { grid-template-columns: 1fr; }
   .download-segment-config-grid,
-  .download-filter-box,
   .download-date-range,
   .download-sort-row {
     grid-template-columns: 1fr;
+  }
+  .download-filter-box {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
   .auth-wrap { gap: 18px; }
   .auth-grid { width: min(540px, 100%); }
@@ -1095,4 +1151,5 @@ tbody tr:hover td:first-child {
 
 @media (max-width: 560px) {
   .column-visibility-grid { grid-template-columns: minmax(0, 1fr); }
+  .download-filter-box { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

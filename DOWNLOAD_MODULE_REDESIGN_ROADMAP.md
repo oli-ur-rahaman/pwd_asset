@@ -4,7 +4,7 @@
 - Current status: **Runtime refactor in active progress**
 - Existing state: the revised 3-page runtime modal is now partially implemented and wired to backend parsing/export rules
 - This roadmap now reflects the **new target structure**
-- Last update: `2026-06-18` (token policy revision applied)
+- Last update: `2026-06-19` (Level_3 hierarchy filter refinement applied)
 
 ## Revised Core Idea
 The download flow will be reorganized into **three pages inside one download experience**. The UI should feel like moving through separate pages inside the same modal, with a clear top bar or folder-style navigation:
@@ -234,6 +234,42 @@ Status: **In Progress**
   - targeted export-file verification for Excel/PDF/ZIP
   - broader regression sweep after export verification
 
+### Task 7: Level_3 filter UX refinement
+Status: **Completed**
+- aligned office filter presentation to nested hierarchy style
+- changed runtime dropdown/yes-no/text-like filter options to present-value-only behavior
+- refined conditional filter behavior:
+  - segment filters now render primary + secondary in one hierarchy block
+  - common/Level_1 filters now use the same hierarchy block instead of separate primary/secondary controls
+  - Level_1 conditional button title now uses `Primary - Secondary`
+- changed runtime segment filter presentation from generic collapsible blocks to card-style filter boxes
+- added hierarchy checkbox behavior:
+  - checking a parent auto-checks all descendants
+  - unchecking a parent auto-unchecks all descendants
+  - partially selected descendants make the parent indeterminate
+
+### Task 8: Level_3 filter request hardening
+Status: **Completed**
+- normalized runtime common-filter payload before export processing
+- normalized runtime segment-filter payload before export processing
+- restricted segment filters to:
+  - valid configured filter fields
+  - currently selected Level_2 fields only
+- restricted choice-based filter values to valid present-item options only
+- kept date/number/file filter payloads explicit and clean before dataset building
+
+### Task 9: non-Level_1 filter completion
+Status: **Completed**
+- completed field-type-specific non-Level_1 filter rendering for:
+  - date
+  - number
+  - file
+  - yes/no
+  - dropdown / text / BIMH-style text-value filters
+  - conditional hierarchy filters
+- finalized segment-side filter card bodies so the field controls are grouped consistently
+- fixed hierarchy submission behavior so partially selected parents remain checked + indeterminate
+
 ## What To Check Now
 
 ### Download Manager structure
@@ -258,6 +294,19 @@ Status: **In Progress**
 - naming helper shows only:
   - default tokens
   - common-token labels
+
+### Runtime `Level_3` modal
+- `Office` filter opens as nested:
+  - Zone
+  - Circle under Zone
+  - Division under Circle
+  - Sub-division under Division
+- normal dropdown / yes-no / text-like filters show only values currently present in data
+- segment conditional filters show one hierarchy card:
+  - primary item
+  - matching secondary items nested under it
+- common conditional filters now follow the same hierarchy-tree pattern
+- hierarchy trees now support parent / child auto-checking with indeterminate parent state
   - superadmin-declared token labels
 
 ## Next Implementation Focus
