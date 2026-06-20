@@ -39,6 +39,24 @@ if ($action !== null && !csrf_validate($_POST['csrf_token'] ?? null)) {
     exit('Invalid CSRF token.');
 }
 
+if ($page === 'download_job_status') {
+    header('Content-Type: application/json; charset=utf-8');
+    try {
+        echo json_encode(
+            asset_download_job_status_payload(request_str('job'), current_user()),
+            JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
+        );
+    } catch (Throwable $e) {
+        http_response_code(404);
+        echo json_encode(['ok' => false, 'message' => $e->getMessage()], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
+    exit;
+}
+
+if ($page === 'download_job_file') {
+    asset_download_stream_job_file(request_str('job'), current_user());
+}
+
 $adminRedirect = static function (): void {
     $segmentId = input_int('segment_id');
     $params = ['page' => 'admin'];
@@ -1045,6 +1063,31 @@ if ($action === 'update_profile') {
     $_SESSION['user']['officer_name'] = $name;
     flash('success', 'Profile updated.');
     redirect('index.php?page=profile');
+}
+
+if ($action === 'asset_download_data_queue') {
+    $user = current_user();
+    $officeViewScope = input_str('office_view_scope', 'my_office');
+    header('Content-Type: application/json; charset=utf-8');
+    if (is_superadmin()) {
+        if (!$user) {
+            http_response_code(403);
+            echo json_encode(['ok' => false, 'message' => 'Not allowed.']);
+            exit;
+        }
+    } elseif (!current_office_context($user)) {
+        http_response_code(403);
+        echo json_encode(['ok' => false, 'message' => 'Not allowed.']);
+        exit;
+    }
+    try {
+        $payload = asset_download_job_create($_POST, $user, $officeViewScope);
+        echo json_encode(array_merge(['ok' => true], $payload), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    } catch (Throwable $e) {
+        http_response_code(400);
+        echo json_encode(['ok' => false, 'message' => $e->getMessage()], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
+    exit;
 }
 
 if ($action === 'save_login_page_video_link_setting') {

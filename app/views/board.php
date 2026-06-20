@@ -1651,15 +1651,15 @@ if (is_superadmin()) {
                 <div class="download-preview-list download-token-helper-grid">
                     <?php foreach ($downloadNamingTokens as $token): ?>
                         <div class="download-preview-row">
-                            <span class="download-preview-label"><code>{<?= e($token); ?>}</code></span>
+                            <span class="download-preview-label" title="<?= e('{' . $token . '}'); ?>"><code>{<?= e($token); ?>}</code></span>
                         </div>
                     <?php endforeach; ?>
                 </div>
             </section>
-            <section class="download-layer-card" data-download-non-zip-only>
+            <section class="download-layer-card" data-download-level1-card>
                 <div class="download-layer-head">
                     <h4>Level 1 Setup</h4>
-                    <p class="hint">For PDF and Excel, manage all Level_1 fields in one table. Choose one field as `is_level`. The remaining fields keep their sequence and sort direction here.</p>
+                    <p class="hint">For PDF and Excel, choose one field as `is_level`. For ZIP, this table stays available only for field visibility and common filtering.</p>
                 </div>
                 <?php if (!$downloadLevel1Catalog): ?>
                     <p class="muted">No Level 1 field is available. Configure Download Manager first.</p>
@@ -1669,11 +1669,12 @@ if (is_superadmin()) {
                         <table class="download-manager-table download-level1-table">
                             <thead>
                                 <tr>
-                                    <th>Field Name</th>
-                                    <th>Show</th>
-                                    <th>Is_Level1</th>
-                                    <th>Serial</th>
-                                    <th>Sorting</th>
+                                    <th data-download-level1-col="field">Field Name</th>
+                                    <th data-download-level1-col="show">Show</th>
+                                    <th data-download-level1-col="is_level">Is_Level1</th>
+                                    <th data-download-level1-col="serial">Serial</th>
+                                    <th data-download-level1-col="filter">Filter</th>
+                                    <th data-download-level1-col="sorting">Sorting</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -1683,9 +1684,9 @@ if (is_superadmin()) {
                                         $commonKey = $label === 'Office' ? '__office__' : $label;
                                         $isSelectedLevel = $label === $downloadLevel1DefaultLabel;
                                     ?>
-                                    <tr data-download-level1-row data-level1-label="<?= e((string)$label); ?>" data-common-field="<?= e((string)$commonKey); ?>" data-is-office="<?= $commonKey === '__office__' ? '1' : '0'; ?>">
-                                        <td><?= e((string)$label); ?></td>
-                                        <td>
+                                    <tr data-download-level1-row data-level1-label="<?= e((string)$label); ?>" data-common-field="<?= e((string)$commonKey); ?>" data-common-filter-identifier="<?= e((string)$commonKey); ?>" data-is-office="<?= $commonKey === '__office__' ? '1' : '0'; ?>">
+                                        <td data-download-level1-col="field"><?= e((string)$label); ?></td>
+                                        <td data-download-level1-col="show">
                                             <label class="inline-check download-inline-check">
                                                 <input
                                                     type="checkbox"
@@ -1694,7 +1695,7 @@ if (is_superadmin()) {
                                                 <span></span>
                                             </label>
                                         </td>
-                                        <td>
+                                        <td data-download-level1-col="is_level">
                                             <label class="inline-check download-inline-check">
                                                 <input
                                                     type="radio"
@@ -1705,7 +1706,7 @@ if (is_superadmin()) {
                                                 <span></span>
                                             </label>
                                         </td>
-                                        <td>
+                                        <td data-download-level1-col="serial">
                                             <input
                                                 type="number"
                                                 min="1"
@@ -1717,7 +1718,10 @@ if (is_superadmin()) {
                                             <input type="checkbox" name="download_common_sort[<?= e((string)$commonKey); ?>][enabled]" value="1" <?= $isSelectedLevel ? '' : 'checked'; ?> hidden data-download-common-sort-enabled>
                                             <input type="hidden" name="download_common_sort[<?= e((string)$commonKey); ?>][order]" value="<?= $level1RowSerial; ?>" data-download-common-sort-order>
                                         </td>
-                                        <td>
+                                        <td data-download-level1-col="filter">
+                                            <button type="button" class="btn-small button-link" data-common-filter-open="<?= e((string)$commonKey); ?>">Filter</button>
+                                        </td>
+                                        <td data-download-level1-col="sorting">
                                             <select name="download_common_sort[<?= e((string)$commonKey); ?>][dir]" data-download-sort-direction <?= $commonKey === '__office__' ? 'disabled' : ''; ?>>
                                                 <?php if ($commonKey === '__office__'): ?>
                                                     <option value="asc" selected>Default hierarchy</option>
@@ -1797,7 +1801,7 @@ if (is_superadmin()) {
             </section>
 
             <section class="download-modal-page hidden" data-download-modal-page="level3">
-                <section class="download-layer-card">
+                <section class="download-layer-card" data-download-level1-filter-section>
                     <div class="download-layer-head">
                         <h4>Level 3 Filters</h4>
                         <p class="hint">Only filters are shown here. Level_1 filters are separate, and segment filters appear only for segments and fields currently checked in Level_2.</p>
@@ -2014,7 +2018,7 @@ if (is_superadmin()) {
             <p class="field-help-label" id="field-help-label"></p>
             <div class="field-help-body" id="field-help-body"></div>
             <div class="field-help-video hidden" id="field-help-video">
-                <video id="field-help-player" class="hidden" controls preload="metadata"></video>
+                <video id="field-help-player" class="hidden" controls preload="none"></video>
                 <iframe
                     id="field-help-iframe"
                     class="hidden"
@@ -2102,11 +2106,26 @@ window.initializeDownloadModalUi = function () {
     var level3LoadingPromise = null;
     var downloadPollInterval = null;
     var completionCookieName = '<?= e(asset_download_completion_cookie_name()); ?>';
+    var activeDownloadStatusUrl = '';
+    var parseJsonResponse = function (response, fallbackMessage) {
+        return response.text().then(function (text) {
+            var body = String(text || '').trim();
+            if (body === '') {
+                throw new Error(fallbackMessage);
+            }
+            try {
+                return JSON.parse(body);
+            } catch (error) {
+                throw new Error(body.substring(0, 600));
+            }
+        });
+    };
     var closeWaitModal = function () {
         if (downloadPollInterval) {
             clearInterval(downloadPollInterval);
             downloadPollInterval = null;
         }
+        activeDownloadStatusUrl = '';
         if (waitModal) {
             waitModal.classList.remove('open');
             waitModal.setAttribute('aria-hidden', 'true');
@@ -2117,12 +2136,48 @@ window.initializeDownloadModalUi = function () {
             field.removeAttribute('data-download-disabled-by-wait');
         });
     };
+    var prepareDownloadSubmissionState = function () {
+        var touched = [];
+        var markDisabled = function (input) {
+            if (!input || input.disabled) {
+                return;
+            }
+            input.disabled = true;
+            input.setAttribute('data-download-submit-disabled', '1');
+            touched.push(input);
+        };
+        var disableIfAllChecked = function (container) {
+            if (!container) {
+                return;
+            }
+            var checkboxes = Array.from(container.querySelectorAll('input[type="checkbox"]')).filter(function (input) {
+                return !input.disabled;
+            });
+            if (!checkboxes.length) {
+                return;
+            }
+            var checkedCount = checkboxes.filter(function (input) { return input.checked; }).length;
+            if (checkedCount === checkboxes.length) {
+                container.querySelectorAll('input, select, textarea').forEach(markDisabled);
+            }
+        };
+        document.querySelectorAll('[data-common-filter-panel]').forEach(disableIfAllChecked);
+        document.querySelectorAll('[data-download-filter-field]').forEach(disableIfAllChecked);
+        return function restoreDownloadSubmissionState() {
+            touched.forEach(function (input) {
+                if (input.getAttribute('data-download-submit-disabled') === '1') {
+                    input.disabled = false;
+                    input.removeAttribute('data-download-submit-disabled');
+                }
+            });
+        };
+    };
     var openWaitModal = function () {
         if (!waitModal) {
             return;
         }
         if (waitText) {
-            waitText.textContent = 'The file is being prepared. Large exports may take some time. Please wait.';
+            waitText.textContent = 'Preparing the download in background. Large exports may take some time. Please wait.';
         }
         waitModal.classList.add('open');
         waitModal.setAttribute('aria-hidden', 'false');
@@ -2156,6 +2211,58 @@ window.initializeDownloadModalUi = function () {
                 closeWaitModal();
             }
         }, 500);
+    };
+    var startDownloadJobPolling = function (statusUrl, downloadUrl) {
+        if (!statusUrl) {
+            throw new Error('Download status URL is missing.');
+        }
+        activeDownloadStatusUrl = statusUrl;
+        if (downloadPollInterval) {
+            clearInterval(downloadPollInterval);
+        }
+        var pollOnce = function () {
+            if (!downloadInFlight || !activeDownloadStatusUrl) {
+                clearInterval(downloadPollInterval);
+                downloadPollInterval = null;
+                return;
+            }
+            fetch(activeDownloadStatusUrl, {
+                headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                credentials: 'same-origin'
+            })
+                .then(function (response) { return parseJsonResponse(response, 'Download status failed.'); })
+                .then(function (payload) {
+                    if (!payload || payload.ok !== true) {
+                        throw new Error((payload && payload.message) ? payload.message : 'Download status failed.');
+                    }
+                    if (payload.status === 'completed') {
+                        if (waitText) {
+                            waitText.textContent = 'Download is ready. Starting file transfer...';
+                        }
+                        if (downloadFrame) {
+                            downloadFrame.src = String(payload.download_url || downloadUrl || '') + (String(payload.download_url || downloadUrl || '').indexOf('?') === -1 ? '?' : '&') + '_ts=' + Date.now();
+                        } else if (payload.download_url || downloadUrl) {
+                            window.location.href = String(payload.download_url || downloadUrl);
+                        }
+                        window.setTimeout(closeWaitModal, 800);
+                        return;
+                    }
+                    if (payload.status === 'failed') {
+                        throw new Error(payload.message || 'Download failed.');
+                    }
+                    if (waitText) {
+                        waitText.textContent = payload.status === 'processing'
+                            ? 'Generating the file. Please wait...'
+                            : 'Preparing the download in queue. Please wait...';
+                    }
+                })
+                .catch(function (error) {
+                    closeWaitModal();
+                    alert((error && error.message) ? error.message : 'Download failed.');
+                });
+        };
+        pollOnce();
+        downloadPollInterval = window.setInterval(pollOnce, 1500);
     };
     var extractDownloadFailureText = function () {
         if (!downloadFrame) {
@@ -2266,6 +2373,7 @@ window.initializeDownloadModalUi = function () {
     };
     var syncLevel1Table = function () {
         var selectedLabel = selectedLevel1Label();
+        var isZip = outputSelect && outputSelect.value === 'zip';
         if (level1Select) {
             level1Select.value = selectedLabel;
         }
@@ -2280,24 +2388,24 @@ window.initializeDownloadModalUi = function () {
             var commonSortEnabled = row.querySelector('[data-download-common-sort-enabled]');
             var isVisible = visibleToggle ? visibleToggle.checked : true;
             if (visibleToggle) {
-                visibleToggle.disabled = isSelected;
+                visibleToggle.disabled = isSelected && !isZip;
                 if (isSelected) {
                     visibleToggle.checked = true;
                     isVisible = true;
                 }
             }
             if (serialInput) {
-                serialInput.disabled = isSelected || !isVisible;
+                serialInput.disabled = isZip || isSelected || !isVisible;
                 serialInput.value = isSelected ? '0' : (isVisible ? String(nextSerial++) : '');
             }
             if (directionSelect) {
-                directionSelect.disabled = isOffice || !isVisible;
+                directionSelect.disabled = isZip || isOffice || !isVisible;
             }
             if (commonColumnInput) {
                 commonColumnInput.checked = !isSelected && isVisible;
             }
             if (commonSortEnabled) {
-                commonSortEnabled.checked = !isOffice && isVisible;
+                commonSortEnabled.checked = !isZip && !isOffice && isVisible;
             }
         });
     };
@@ -2320,11 +2428,14 @@ window.initializeDownloadModalUi = function () {
     };
     var syncLevel1FieldUsage = function () {
         var selectedLabel = selectedLevel1Label();
-        var selectedCommonField = selectedLabel === 'Office' ? '__office__' : selectedLabel;
+        var isZip = outputSelect && outputSelect.value === 'zip';
         document.querySelectorAll('[data-download-filter-field]').forEach(function (block) {
             var isMatch = (block.getAttribute('data-field-label') || '') === selectedLabel;
-            block.classList.toggle('hidden', isMatch);
+            block.classList.toggle('hidden', !isZip && isMatch);
             if (isMatch) {
+                if (isZip) {
+                    return;
+                }
                 block.querySelectorAll('input').forEach(function (input) {
                     if (input.type === 'checkbox') {
                         input.checked = false;
@@ -2336,8 +2447,15 @@ window.initializeDownloadModalUi = function () {
         });
         document.querySelectorAll('[data-download-field-item]').forEach(function (item) {
             var isMatch = (item.getAttribute('data-field-label') || '') === selectedLabel;
-            item.classList.toggle('hidden', isMatch);
             var input = item.querySelector('input[type="checkbox"]');
+            if (isZip) {
+                if (input && input.getAttribute('data-level1-auto-hidden') === '1') {
+                    input.checked = true;
+                    input.removeAttribute('data-level1-auto-hidden');
+                }
+                return;
+            }
+            item.classList.toggle('hidden', isMatch);
             if (isMatch && input) {
                 if (input.checked) {
                     input.setAttribute('data-level1-auto-hidden', '1');
@@ -2351,10 +2469,16 @@ window.initializeDownloadModalUi = function () {
     };
     var syncOutputMode = function () {
         var isZip = outputSelect && outputSelect.value === 'zip';
+        if (form) {
+            form.setAttribute('data-download-output-mode', isZip ? 'zip' : 'data');
+        }
         document.querySelectorAll('[data-download-zip-only]').forEach(function (item) {
             item.classList.toggle('hidden', !isZip);
         });
         document.querySelectorAll('[data-download-non-zip-only]').forEach(function (item) {
+            item.classList.toggle('hidden', isZip);
+        });
+        document.querySelectorAll('[data-download-level1-filter-section]').forEach(function (item) {
             item.classList.toggle('hidden', isZip);
         });
         document.querySelectorAll('[data-download-segment-option]').forEach(function (item) {
@@ -2466,6 +2590,25 @@ window.initializeDownloadModalUi = function () {
             });
         });
     };
+    var activeCommonFilterPanel = function () {
+        if (!commonFilterModal) {
+            return null;
+        }
+        return commonFilterModal.querySelector('[data-common-filter-panel]:not(.hidden)');
+    };
+    var setCommonFilterPanelChecked = function (panel, checked) {
+        if (!panel) {
+            return;
+        }
+        panel.querySelectorAll('input[type="checkbox"]').forEach(function (input) {
+            if (input.disabled) {
+                return;
+            }
+            input.checked = checked;
+            input.indeterminate = false;
+        });
+        syncHierarchyTrees();
+    };
     level1Choices.forEach(function (input) {
         input.addEventListener('change', function () {
             syncLevel1Table();
@@ -2541,22 +2684,12 @@ window.initializeDownloadModalUi = function () {
             }, 300);
         });
     }
-    form.addEventListener('submit', function () {
+    form.addEventListener('submit', function (event) {
+        event.preventDefault();
         if (downloadInFlight) {
             return;
         }
-        form.target = 'download-target-frame';
         downloadInFlight = true;
-        var downloadTokenInput = form.querySelector('input[name="download_token"]');
-        var token = String(Date.now()) + '_' + Math.random().toString(36).slice(2);
-        if (!downloadTokenInput) {
-            downloadTokenInput = document.createElement('input');
-            downloadTokenInput.type = 'hidden';
-            downloadTokenInput.name = 'download_token';
-            form.appendChild(downloadTokenInput);
-        }
-        downloadTokenInput.value = token;
-        clearCompletionCookie();
         form.querySelectorAll('button').forEach(function (field) {
             if (field.disabled) {
                 return;
@@ -2565,11 +2698,46 @@ window.initializeDownloadModalUi = function () {
             field.setAttribute('data-download-disabled-by-wait', '1');
         });
         openWaitModal();
-        startDownloadCompletionPolling(token);
+        var restoreSubmissionState = prepareDownloadSubmissionState();
+        var formData = new FormData(form);
+        restoreSubmissionState();
+        formData.set('action', 'asset_download_data_queue');
+        fetch('index.php', {
+            method: 'POST',
+            body: formData,
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            credentials: 'same-origin'
+        })
+            .then(function (response) { return parseJsonResponse(response, 'Download start failed.'); })
+            .then(function (payload) {
+                if (!payload || payload.ok !== true) {
+                    throw new Error((payload && payload.message) ? payload.message : 'Download start failed.');
+                }
+                if (payload.status === 'completed') {
+                    if (downloadFrame && payload.download_url) {
+                        downloadFrame.src = String(payload.download_url) + (String(payload.download_url).indexOf('?') === -1 ? '?' : '&') + '_ts=' + Date.now();
+                    } else if (payload.download_url) {
+                        window.location.href = String(payload.download_url);
+                    }
+                    window.setTimeout(closeWaitModal, 500);
+                    return;
+                }
+                startDownloadJobPolling(String(payload.status_url || ''), String(payload.download_url || ''));
+            })
+            .catch(function (error) {
+                closeWaitModal();
+                alert((error && error.message) ? error.message : 'Download failed.');
+            });
     });
     document.addEventListener('click', function (event) {
         var commonFilterButton = event.target.closest('[data-common-filter-open]');
         if (!commonFilterButton) {
+            var bulkButton = event.target.closest('[data-common-filter-check-all], [data-common-filter-uncheck-all]');
+            if (!bulkButton) {
+                return;
+            }
+            event.preventDefault();
+            setCommonFilterPanelChecked(activeCommonFilterPanel(), bulkButton.hasAttribute('data-common-filter-check-all'));
             return;
         }
         event.preventDefault();

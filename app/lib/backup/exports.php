@@ -46,7 +46,7 @@ function export_excel(array $rows, array $headers, string $filename, ?string $sh
     exit;
 }
 
-function export_pdf(string $html, string $filename, string $orientation = 'landscape', ?string $destinationPath = null): ?string
+function export_pdf(string $html, string $filename, string $orientation = 'landscape'): void
 {
     ensure_library('Dompdf\\Dompdf', 'dompdf is not installed.');
 
@@ -59,10 +59,6 @@ function export_pdf(string $html, string $filename, string $orientation = 'lands
     $dompdf->loadHtml($html);
     $dompdf->setPaper('A4', $orientation);
     $dompdf->render();
-    if ($destinationPath !== null) {
-        file_put_contents($destinationPath, $dompdf->output());
-        return $destinationPath;
-    }
     $dompdf->stream($filename, ['Attachment' => true]);
     exit;
 }

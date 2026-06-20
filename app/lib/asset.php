@@ -220,6 +220,30 @@ function ensure_asset_schema(): void
     );
 
     db()->exec(
+        "CREATE TABLE IF NOT EXISTS asset_download_jobs (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            job_token VARCHAR(80) NOT NULL,
+            user_id INT NOT NULL,
+            request_signature VARCHAR(64) NOT NULL,
+            output_type VARCHAR(20) NOT NULL,
+            status VARCHAR(20) NOT NULL DEFAULT 'pending',
+            request_payload LONGTEXT NOT NULL,
+            result_filename VARCHAR(255) DEFAULT NULL,
+            result_path VARCHAR(500) DEFAULT NULL,
+            error_message LONGTEXT DEFAULT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            started_at DATETIME DEFAULT NULL,
+            completed_at DATETIME DEFAULT NULL,
+            expires_at DATETIME DEFAULT NULL,
+            updated_at DATETIME DEFAULT NULL,
+            UNIQUE KEY uniq_asset_download_jobs_token (job_token),
+            KEY idx_asset_download_jobs_user_status (user_id, status),
+            KEY idx_asset_download_jobs_signature (request_signature),
+            KEY idx_asset_download_jobs_expires (expires_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    );
+
+    db()->exec(
         "CREATE TABLE IF NOT EXISTS asset_activity_logs (
             id INT AUTO_INCREMENT PRIMARY KEY,
             segment_id INT DEFAULT NULL,
@@ -437,7 +461,7 @@ function ensure_asset_schema(): void
 
 function asset_schema_version(): string
 {
-    return '2026-06-20-3';
+    return '2026-06-20-4';
 }
 
 function asset_schema_cache_file(): string
@@ -5609,6 +5633,9 @@ function asset_download_common_field_catalog(array $user, string $viewScope = 'm
     ];
 
     foreach (asset_download_common_label_candidates() as $label) {
+        if (isset($catalog[$label]) && (string)($catalog[$label]['data_type'] ?? '') === 'conditional_secondary') {
+            continue;
+        }
         $fieldMeta = null;
         $fieldMetaSegmentId = null;
         $options = [];
@@ -6352,6 +6379,53 @@ function asset_download_matches_segment_filters(array $asset, array $fieldMap, a
             }
             return false;
         }
+        if ($type === 'conditional') {
+            $currentPrimary = asset_filter_value($asset, $fieldKey);
+            $childField = get_asset_conditional_child_field((int)($field['id'] ?? 0), true, (int)($field['segment_id'] ?? 0));
+            $childKey = (string)($childField['field_key'] ?? '');
+            if ($selected) {
+                if ($currentPrimary === '') {
+                    if (!in_array('__blank__', $selected, true)) {
+                        return false;
+                    }
+                } else {
+                    $matchedPrimary = false;
+                    foreach ($selected as $value) {
+                        if ($value !== '__blank__' && strcasecmp($currentPrimary, $value) === 0) {
+                            $matchedPrimary = true;
+                            break;
+                        }
+                    }
+                    if (!$matchedPrimary) {
+                        return false;
+                    }
+                }
+            }
+            if ($childKey !== '') {
+                $childCriteria = (array)($criteria[$childKey] ?? []);
+                $childSelected = array_values(array_map('strval', (array)($childCriteria['values'] ?? [])));
+                if ($childSelected) {
+                    $currentChild = asset_filter_value($asset, $childKey);
+                    if ($currentChild === '') {
+                        if (!in_array('__blank__', $childSelected, true)) {
+                            return false;
+                        }
+                    } else {
+                        $matchedChild = false;
+                        foreach ($childSelected as $value) {
+                            if ($value !== '__blank__' && strcasecmp($currentChild, $value) === 0) {
+                                $matchedChild = true;
+                                break;
+                            }
+                        }
+                        if (!$matchedChild) {
+                            return false;
+                        }
+                    }
+                }
+            }
+            continue;
+        }
         $current = $type === 'bimh'
             ? trim((string)($asset['values'][$fieldKey . '__est_name'] ?? ''))
             : asset_filter_value($asset, $fieldKey);
@@ -6446,6 +6520,57 @@ function asset_download_matches_common_filters(array $asset, int $segmentId, arr
             }
             return false;
         }
+        if ($fieldType === 'conditional') {
+            $currentPrimary = asset_filter_value($asset, $fieldKey);
+            $childField = get_asset_conditional_child_field((int)($field['id'] ?? 0), true, $segmentId);
+            $childKey = (string)($childField['field_key'] ?? '');
+            $childIdentifier = (string)($childField['label'] ?? '');
+            if ($selected) {
+                if ($currentPrimary === '') {
+                    if (!in_array('__blank__', $selected, true)) {
+                        return false;
+                    }
+                } else {
+                    $matchedPrimary = false;
+                    foreach ($selected as $value) {
+                        if ($value !== '__blank__' && strcasecmp($currentPrimary, $value) === 0) {
+                            $matchedPrimary = true;
+                            break;
+                        }
+                    }
+                    if (!$matchedPrimary) {
+                        return false;
+                    }
+                }
+            }
+            $childCriteria = [];
+            if ($childKey !== '' && isset($criteria[$childKey]) && is_array($criteria[$childKey])) {
+                $childCriteria = (array)$criteria[$childKey];
+            } elseif ($childIdentifier !== '' && isset($criteria[$childIdentifier]) && is_array($criteria[$childIdentifier])) {
+                $childCriteria = (array)$criteria[$childIdentifier];
+            }
+            $childSelected = array_values(array_map('strval', (array)($childCriteria['values'] ?? [])));
+            if ($childSelected && $childKey !== '') {
+                $currentChild = asset_filter_value($asset, $childKey);
+                if ($currentChild === '') {
+                    if (!in_array('__blank__', $childSelected, true)) {
+                        return false;
+                    }
+                } else {
+                    $matchedChild = false;
+                    foreach ($childSelected as $value) {
+                        if ($value !== '__blank__' && strcasecmp($currentChild, $value) === 0) {
+                            $matchedChild = true;
+                            break;
+                        }
+                    }
+                    if (!$matchedChild) {
+                        return false;
+                    }
+                }
+            }
+            continue;
+        }
 
         $current = $fieldType === 'bimh'
             ? trim((string)($asset['values'][$fieldKey . '__est_name'] ?? ''))
@@ -6492,6 +6617,35 @@ function asset_download_common_value_for_asset(array $asset, string $identifier,
     }
     $value = trim((string)($asset['values'][(string)$field['field_key']] ?? ''));
     return $value === '' ? 'Blank' : $value;
+}
+
+function asset_download_base_filename_tokens(array $asset, int $segmentId): array
+{
+    static $cache = [];
+    $assetKey = (string)($asset['id'] ?? ($asset['asset_number'] ?? spl_object_id((object)$asset)));
+    $cacheKey = $segmentId . ':' . $assetKey;
+    if (isset($cache[$cacheKey])) {
+        return $cache[$cacheKey];
+    }
+
+    $office = asset_download_office_hierarchy($asset);
+    $tokens = [
+        'office_name' => $office['office_name'],
+        'sub-division' => (string)($office['subdivision_name'] ?? ''),
+        'division' => (string)($office['division_name'] ?? ''),
+        'circle' => (string)($office['circle_name'] ?? ''),
+        'zone' => (string)($office['zone_name'] ?? ''),
+        'segment' => asset_template_segment_display_name($segmentId),
+        'office_type' => (string)($asset['office_type_label'] ?? ''),
+        'asset_number' => (string)($asset['asset_number'] ?? ''),
+    ];
+
+    foreach (asset_download_declared_field_token_map() as $label => $tokenKey) {
+        $tokens[$tokenKey] = asset_download_common_value_for_asset($asset, $label, $segmentId);
+    }
+
+    $cache[$cacheKey] = $tokens;
+    return $cache[$cacheKey];
 }
 
 function asset_download_sort_assets_by_common(array &$assets, array $sorts, int $segmentId): void
@@ -6542,20 +6696,13 @@ function asset_download_sort_assets(array &$assets, array $sorts): void
 
 function asset_download_filename_tokens(array $asset, int $segmentId, string $fieldName = '', string $level1Label = '', string $level1Value = ''): array
 {
-    $office = asset_download_office_hierarchy($asset);
-    $tokens = [
-        'office_name' => $office['office_name'],
-        'sub-division' => (string)($office['subdivision_name'] ?? ''),
-        'division' => (string)($office['division_name'] ?? ''),
-        'circle' => (string)($office['circle_name'] ?? ''),
-        'zone' => (string)($office['zone_name'] ?? ''),
-        'segment' => asset_template_segment_display_name($segmentId),
-        'office_type' => (string)($asset['office_type_label'] ?? ''),
-        'field_name' => $fieldName,
-        'asset_number' => (string)($asset['asset_number'] ?? ''),
-    ];
-    foreach (asset_download_declared_field_token_map() as $label => $tokenKey) {
-        $tokens[$tokenKey] = asset_download_common_value_for_asset($asset, $label, $segmentId);
+    $tokens = asset_download_base_filename_tokens($asset, $segmentId);
+    $tokens['field_name'] = $fieldName;
+    if ($level1Label !== '') {
+        $tokens['level1_field_name'] = $level1Label;
+    }
+    if ($level1Value !== '') {
+        $tokens['level1_value'] = $level1Value;
     }
     return $tokens;
 }
@@ -7502,6 +7649,49 @@ function asset_download_normalize_filter_criteria(array $criteria, array $filter
         );
         return $values ? ['values' => $values] : [];
     }
+    if ($type === 'conditional') {
+        $allowedPrimary = array_map('strval', array_keys((array)($filterMeta['options'] ?? [])));
+        if (!empty($filterMeta['has_blank'])) {
+            $allowedPrimary[] = '__blank__';
+        }
+        $primaryValues = asset_download_normalize_filter_values((array)($criteria['values'] ?? []), $allowedPrimary);
+        $normalized = [];
+        if ($primaryValues) {
+            $normalized['values'] = $primaryValues;
+        }
+        $childInputKey = (string)($filterMeta['child_key'] ?? $filterMeta['child_identifier'] ?? '');
+        if ($childInputKey !== '') {
+            $secondaryMap = (array)($filterMeta['secondary_options_map'] ?? []);
+            $childAllowed = [];
+            $selectedPrimaryValues = array_values(array_filter(
+                $primaryValues,
+                static fn(string $value): bool => $value !== '__blank__'
+            ));
+            if ($selectedPrimaryValues) {
+                foreach ($selectedPrimaryValues as $primaryValue) {
+                    foreach ((array)($secondaryMap[$primaryValue] ?? []) as $secondaryValue => $_secondaryLabel) {
+                        $childAllowed[] = (string)$secondaryValue;
+                    }
+                }
+            } else {
+                foreach ($secondaryMap as $secondaryValues) {
+                    foreach ((array)$secondaryValues as $secondaryValue => $_secondaryLabel) {
+                        $childAllowed[] = (string)$secondaryValue;
+                    }
+                }
+            }
+            $childAllowed = array_values(array_unique($childAllowed));
+            if (!empty($filterMeta['has_blank'])) {
+                $childAllowed[] = '__blank__';
+            }
+            $childCriteria = (array)($criteria[$childInputKey] ?? []);
+            $childValues = asset_download_normalize_filter_values((array)($childCriteria['values'] ?? []), $childAllowed);
+            if ($childValues) {
+                $normalized[$childInputKey] = ['values' => $childValues];
+            }
+        }
+        return $normalized;
+    }
 
     $allowed = array_map('strval', array_keys((array)($filterMeta['options'] ?? [])));
     if ($allowed === []) {
@@ -7524,29 +7714,22 @@ function asset_download_normalize_filter_criteria(array $criteria, array $filter
     return $values ? ['values' => $values] : [];
 }
 
-function asset_download_request_common_filter_meta(): array
+function asset_download_request_common_filter_meta(array $user, string $viewScope = 'my_office'): array
 {
-    $meta = [
-        '__office__' => [
-            'data_type' => 'office',
-        ],
-    ];
-
-    foreach (asset_download_common_label_candidates() as $label) {
-        foreach (get_asset_segments(false) as $segment) {
-            $segmentId = (int)$segment['id'];
-            $field = asset_download_field_for_label($label, $segmentId);
-            if (!$field) {
-                continue;
-            }
-            $meta[$label] = [
-                'data_type' => (string)($field['data_type'] ?? 'text'),
-                'has_blank' => true,
-            ];
-            break;
+    $meta = [];
+    foreach (asset_download_common_field_catalog($user, $viewScope) as $identifier => $fieldMeta) {
+        if ((string)($fieldMeta['data_type'] ?? '') === 'conditional_secondary') {
+            continue;
         }
+        $meta[(string)$identifier] = [
+            'data_type' => (string)($fieldMeta['data_type'] ?? 'text'),
+            'options' => (array)($fieldMeta['options'] ?? []),
+            'has_blank' => !empty($fieldMeta['has_blank']),
+            'child_key' => (string)($fieldMeta['child_key'] ?? ''),
+            'child_identifier' => (string)($fieldMeta['child_identifier'] ?? ''),
+            'secondary_options_map' => (array)($fieldMeta['secondary_options_map'] ?? []),
+        ];
     }
-
     return $meta;
 }
 
@@ -7582,6 +7765,9 @@ function asset_download_normalize_segment_filters(array $inputFilters, array $al
             'data_type' => (string)($fieldMeta['data_type'] ?? 'text'),
             'options' => (array)($fieldMeta['options'] ?? []),
             'has_blank' => !empty($fieldMeta['has_blank']),
+            'child_key' => (string)($fieldMeta['child_key'] ?? ''),
+            'child_identifier' => (string)($fieldMeta['child_identifier'] ?? ''),
+            'secondary_options_map' => (array)($fieldMeta['secondary_options_map'] ?? []),
         ];
         $normalizedCriteria = asset_download_normalize_filter_criteria($criteria, $filterMeta);
         if ($normalizedCriteria) {
@@ -7612,6 +7798,93 @@ function asset_download_file_summary(array $asset, string $fieldKey): string
         $parts[] = $count . ' ' . $label;
     }
     return implode(', ', $parts);
+}
+
+function asset_download_request_signature(array $request, array $user): string
+{
+    $signature = $request;
+    unset($signature['download_token']);
+    return md5(json_encode([
+        'user_id' => (int)($user['id'] ?? 0),
+        'superadmin' => is_superadmin() ? 1 : 0,
+        'request' => $signature,
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+}
+
+function asset_download_runtime_context(array $request, array $user): array
+{
+    static $cache = [];
+    $cacheKey = asset_download_request_signature($request, $user);
+    if (isset($cache[$cacheKey])) {
+        return $cache[$cacheKey];
+    }
+    $segments = [];
+    foreach ((array)($request['segments'] ?? []) as $segmentId => $segmentConfig) {
+        $segmentId = (int)$segmentId;
+        $fields = (array)($segmentConfig['fields'] ?? get_asset_fields(false, $segmentId));
+        $fieldMap = [];
+        foreach ($fields as $field) {
+            $fieldMap[(string)($field['field_key'] ?? '')] = $field;
+        }
+        $filterFieldMap = [];
+        foreach (asset_download_effective_filter_fields($segmentId) as $field) {
+            $filterFieldMap[(string)$field['field_key']] = $field;
+        }
+        $segments[$segmentId] = [
+            'assets' => asset_download_accessible_assets_for_segment($segmentId, $user, (string)($request['view_scope'] ?? 'my_office')),
+            'fields' => $fields,
+            'field_map' => $fieldMap,
+            'filter_field_map' => $filterFieldMap,
+        ];
+    }
+    $cache[$cacheKey] = [
+        'signature' => $cacheKey,
+        'segments' => $segments,
+    ];
+    return $cache[$cacheKey];
+}
+
+function asset_download_grouped_assets_for_segment(int $segmentId, array $request, array $user, ?array $context = null): array
+{
+    static $cache = [];
+    $context = $context ?? asset_download_runtime_context($request, $user);
+    $requestKey = (string)($context['signature'] ?? asset_download_request_signature($request, $user));
+    $cacheKey = $requestKey . ':' . $segmentId;
+    if (isset($cache[$cacheKey])) {
+        return $cache[$cacheKey];
+    }
+
+    $level1Label = (string)($request['level1_label'] ?? '');
+    $selectedLevel1Values = array_flip(array_map('strval', (array)($request['level1_values'] ?? [])));
+    $segmentConfig = (array)($request['segments'][$segmentId] ?? []);
+    $segmentContext = (array)($context['segments'][$segmentId] ?? []);
+    if (!$segmentConfig || !$segmentContext) {
+        return [];
+    }
+
+    $grouped = [];
+    foreach ((array)($segmentContext['assets'] ?? []) as $asset) {
+        if (!asset_download_matches_common_filters($asset, $segmentId, (array)($request['common_filters'] ?? []))) {
+            continue;
+        }
+        $level1Value = $level1Label !== ''
+            ? asset_download_level1_value_for_asset($asset, $level1Label, $segmentId)
+            : 'files';
+        if ($level1Label !== '' && $selectedLevel1Values && !isset($selectedLevel1Values[$level1Value])) {
+            continue;
+        }
+        if (!asset_download_matches_segment_filters($asset, (array)($segmentContext['filter_field_map'] ?? []), (array)($segmentConfig['filters'] ?? []))) {
+            continue;
+        }
+        $grouped[$level1Value][] = $asset;
+    }
+    foreach ($grouped as &$groupAssets) {
+        asset_download_sort_assets_by_common($groupAssets, (array)($request['common_sorts'] ?? []), $segmentId);
+    }
+    unset($groupAssets);
+    uksort($grouped, 'strnatcasecmp');
+    $cache[$cacheKey] = $grouped;
+    return $cache[$cacheKey];
 }
 
 function asset_download_request_from_input(array $input, array $user, string $viewScope = 'my_office'): array
@@ -7714,10 +7987,16 @@ function asset_download_request_from_input(array $input, array $user, string $vi
         }
         $selectedFieldKeys = array_values(array_filter($selectedFieldKeys, static fn(string $key): bool => $key !== '' && isset($fieldKeyMap[$key])));
         $segmentFilterMetaMap = [];
+        $segmentFilterCatalog = build_asset_filter_catalog(
+            asset_download_accessible_assets_for_segment($segmentId, $user, $viewScope),
+            $allFields,
+            $segmentId,
+            false
+        );
         foreach (asset_download_effective_filter_fields($segmentId) as $filterField) {
             $segmentFilterKey = (string)$filterField['field_key'];
-            if (isset($fieldKeyMap[$segmentFilterKey])) {
-                $segmentFilterMetaMap[$segmentFilterKey] = $fieldKeyMap[$segmentFilterKey];
+            if (isset($segmentFilterCatalog['fields'][$segmentFilterKey])) {
+                $segmentFilterMetaMap[$segmentFilterKey] = $segmentFilterCatalog['fields'][$segmentFilterKey];
             }
         }
 
@@ -7758,7 +8037,7 @@ function asset_download_request_from_input(array $input, array $user, string $vi
             'level1_values' => $level1Values,
             'common_filters' => asset_download_normalize_common_filters(
                 (array)($input['download_common_filters'] ?? []),
-                asset_download_request_common_filter_meta()
+                asset_download_request_common_filter_meta($user, $viewScope)
             ),
             'common_columns' => $commonColumns,
             'common_sorts' => $commonSorts,
@@ -7768,37 +8047,13 @@ function asset_download_request_from_input(array $input, array $user, string $vi
     ];
 }
 
-function asset_download_dataset(array $request, array $user): array
+function asset_download_dataset(array $request, array $user, ?array $context = null): array
 {
     $level1Label = (string)$request['level1_label'];
-    $selectedLevel1Values = array_flip(array_map('strval', (array)$request['level1_values']));
+    $context = $context ?? asset_download_runtime_context($request, $user);
     $groups = [];
     foreach ($request['segments'] as $segmentId => $segmentConfig) {
-        $assets = asset_download_accessible_assets_for_segment((int)$segmentId, $user, (string)$request['view_scope']);
-        $filterFieldMap = [];
-        foreach (asset_download_effective_filter_fields((int)$segmentId) as $field) {
-            $filterFieldMap[(string)$field['field_key']] = $field;
-        }
-        $segmentRowsByGroup = [];
-        foreach ($assets as $asset) {
-            if (!asset_download_matches_common_filters($asset, (int)$segmentId, (array)($request['common_filters'] ?? []))) {
-                continue;
-            }
-            $level1Value = $level1Label !== ''
-                ? asset_download_level1_value_for_asset($asset, $level1Label, (int)$segmentId)
-                : 'files';
-            if ($level1Label !== '' && $selectedLevel1Values && !isset($selectedLevel1Values[$level1Value])) {
-                continue;
-            }
-            if (!asset_download_matches_segment_filters($asset, $filterFieldMap, (array)$segmentConfig['filters'])) {
-                continue;
-            }
-            $segmentRowsByGroup[$level1Value][] = $asset;
-        }
-        foreach ($segmentRowsByGroup as $groupValue => &$segmentAssets) {
-            asset_download_sort_assets_by_common($segmentAssets, (array)($request['common_sorts'] ?? []), (int)$segmentId);
-        }
-        unset($segmentAssets);
+        $segmentRowsByGroup = asset_download_grouped_assets_for_segment((int)$segmentId, $request, $user, $context);
         foreach ($segmentRowsByGroup as $groupValue => $segmentAssets) {
             $groups[$groupValue]['level1_value'] = $groupValue;
             $groups[$groupValue]['segments'][$segmentId] = [
@@ -7820,7 +8075,7 @@ function asset_download_dataset(array $request, array $user): array
     return $groups;
 }
 
-function asset_download_table_headers(array $selectedFieldKeys, int $segmentId, array $commonColumns = [], string $level1Label = '', bool $includeLevel1Column = true): array
+function asset_download_table_headers(array $selectedFieldKeys, int $segmentId, array $commonColumns = [], string $level1Label = '', bool $includeLevel1Column = true, ?array $fields = null): array
 {
     $headers = ['serial' => 'SL No'];
     if ($includeLevel1Column && $level1Label !== '') {
@@ -7840,7 +8095,7 @@ function asset_download_table_headers(array $selectedFieldKeys, int $segmentId, 
     if (asset_subcategory_enabled($segmentId)) {
         $headers['subcategory'] = 'Sub-category';
     }
-    foreach (get_asset_fields(false, $segmentId) as $field) {
+    foreach (($fields ?? get_asset_fields(false, $segmentId)) as $field) {
         $fieldKey = (string)$field['field_key'];
         if (!in_array($fieldKey, $selectedFieldKeys, true)) {
             continue;
@@ -7853,11 +8108,11 @@ function asset_download_table_headers(array $selectedFieldKeys, int $segmentId, 
     return $headers;
 }
 
-function asset_download_table_rows(array $assets, array $selectedFieldKeys, int $segmentId, array $commonColumns = [], string $level1Label = '', bool $includeLevel1Column = true): array
+function asset_download_table_rows(array $assets, array $selectedFieldKeys, int $segmentId, array $commonColumns = [], string $level1Label = '', bool $includeLevel1Column = true, ?array $fields = null): array
 {
     $rows = [];
     $fieldMap = [];
-    foreach (get_asset_fields(false, $segmentId) as $field) {
+    foreach (($fields ?? get_asset_fields(false, $segmentId)) as $field) {
         $fieldMap[(string)$field['field_key']] = $field;
     }
     foreach ($assets as $index => $asset) {
@@ -7895,6 +8150,315 @@ function asset_download_table_rows(array $assets, array $selectedFieldKeys, int 
         $rows[] = $row;
     }
     return $rows;
+}
+
+function asset_download_jobs_dir(): string
+{
+    $dir = __DIR__ . '/../../storage/download_jobs';
+    if (!is_dir($dir)) {
+        @mkdir($dir, 0777, true);
+    }
+    return $dir;
+}
+
+function asset_download_job_runner_script(): string
+{
+    return dirname(__DIR__, 2) . '/bin/run_download_job.php';
+}
+
+function asset_download_is_windows(): bool
+{
+    return DIRECTORY_SEPARATOR === '\\';
+}
+
+function asset_download_worker_php_binary(): string
+{
+    $binary = PHP_BINARY;
+    if (!asset_download_is_windows()) {
+        $basename = strtolower(basename((string)$binary));
+        $candidates = [];
+        if ($basename === 'php-fpm' || str_starts_with($basename, 'php-fpm')) {
+            $candidates[] = rtrim((string)PHP_BINDIR, '/\\') . '/php';
+            $candidates[] = '/usr/bin/php';
+            $candidates[] = '/usr/local/bin/php';
+            $resolved = @shell_exec('command -v php 2>/dev/null');
+            if (is_string($resolved)) {
+                $resolved = trim($resolved);
+                if ($resolved !== '') {
+                    $candidates[] = $resolved;
+                }
+            }
+            foreach ($candidates as $candidate) {
+                if ($candidate !== '' && is_file($candidate) && is_executable($candidate)) {
+                    return $candidate;
+                }
+            }
+        }
+        return $binary;
+    }
+    $normalized = str_replace('/', '\\', $binary);
+    $dir = dirname($normalized);
+    $basename = strtolower(basename($normalized));
+    if ($basename !== 'php.exe') {
+        $cliBinary = $dir . '\\php.exe';
+        if (is_file($cliBinary)) {
+            return $cliBinary;
+        }
+    }
+    return $normalized;
+}
+
+function asset_download_gc_jobs(): void
+{
+    static $done = false;
+    if ($done) {
+        return;
+    }
+    $done = true;
+    $expiredStmt = db()->prepare("SELECT id, result_path FROM asset_download_jobs WHERE expires_at IS NOT NULL AND expires_at < NOW()");
+    $expiredStmt->execute();
+    foreach ($expiredStmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        $path = trim((string)($row['result_path'] ?? ''));
+        if ($path !== '' && is_file($path)) {
+            @unlink($path);
+        }
+    }
+    db()->exec("DELETE FROM asset_download_jobs WHERE expires_at IS NOT NULL AND expires_at < NOW()");
+}
+
+function asset_download_job_fetch_by_token(string $jobToken): ?array
+{
+    asset_download_gc_jobs();
+    $stmt = db()->prepare('SELECT * FROM asset_download_jobs WHERE job_token = ? LIMIT 1');
+    $stmt->execute([$jobToken]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    return $row ?: null;
+}
+
+function asset_download_existing_cached_job(string $signature, int $userId, string $outputType): ?array
+{
+    asset_download_gc_jobs();
+    $stmt = db()->prepare("SELECT * FROM asset_download_jobs WHERE user_id = ? AND request_signature = ? AND output_type = ? AND status = 'completed' AND (expires_at IS NULL OR expires_at >= NOW()) ORDER BY completed_at DESC, id DESC LIMIT 1");
+    $stmt->execute([$userId, $signature, $outputType]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+    if (!$row) {
+        return null;
+    }
+    $path = trim((string)($row['result_path'] ?? ''));
+    if ($path === '' || !is_file($path)) {
+        return null;
+    }
+    return $row;
+}
+
+function asset_download_job_output_filename(array $request): string
+{
+    $base = asset_download_build_name([
+        'segment' => 'download',
+        'field_name' => (string)($request['output'] ?? 'download'),
+        'office_name' => '',
+        'asset_number' => date('Ymd_His'),
+    ]);
+    $ext = match ((string)($request['output'] ?? 'excel')) {
+        'pdf' => 'pdf',
+        'zip' => 'zip',
+        default => 'xlsx',
+    };
+    return $base . '.' . $ext;
+}
+
+function asset_download_job_create(array $input, array $user, string $viewScope = 'my_office'): array
+{
+    $parsed = asset_download_request_from_input($input, $user, $viewScope);
+    if ($parsed['errors']) {
+        throw new RuntimeException(implode(' ', $parsed['errors']));
+    }
+    $request = $parsed['request'];
+    $signature = asset_download_request_signature($request, $user);
+    $existing = asset_download_existing_cached_job($signature, (int)$user['id'], (string)$request['output']);
+    if ($existing) {
+        return [
+            'job_token' => (string)$existing['job_token'],
+            'status' => 'completed',
+            'cached' => true,
+            'download_url' => 'index.php?page=download_job_file&job=' . rawurlencode((string)$existing['job_token']),
+        ];
+    }
+
+    $jobToken = bin2hex(random_bytes(20));
+    $stmt = db()->prepare('INSERT INTO asset_download_jobs (job_token, user_id, request_signature, output_type, status, request_payload, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())');
+    $stmt->execute([
+        $jobToken,
+        (int)$user['id'],
+        $signature,
+        (string)$request['output'],
+        'pending',
+        json_encode($request, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+    ]);
+
+    if (!asset_download_is_windows()) {
+        asset_download_spawn_job_worker($jobToken);
+    }
+
+    return [
+        'job_token' => $jobToken,
+        'status' => 'pending',
+        'cached' => false,
+        'status_url' => 'index.php?page=download_job_status&job=' . rawurlencode($jobToken),
+        'download_url' => 'index.php?page=download_job_file&job=' . rawurlencode($jobToken),
+    ];
+}
+
+function asset_download_spawn_job_worker(string $jobToken): void
+{
+    $phpBinary = asset_download_worker_php_binary();
+    $script = asset_download_job_runner_script();
+    if (!is_file($script)) {
+        throw new RuntimeException('Download worker script is missing.');
+    }
+    if (asset_download_is_windows()) {
+        $script = str_replace('/', '\\', $script);
+        $command = 'cmd /c start "" /B "' . $phpBinary . '" "' . $script . '" "' . $jobToken . '"';
+        @pclose(@popen($command, 'r'));
+        return;
+    }
+    $command = 'nohup ' . escapeshellarg($phpBinary) . ' ' . escapeshellarg($script) . ' ' . escapeshellarg($jobToken) . ' >/dev/null 2>&1 &';
+    @exec($command);
+}
+
+function asset_download_job_user(int $userId): ?array
+{
+    $stmt = db()->prepare('SELECT * FROM users WHERE id = ? LIMIT 1');
+    $stmt->execute([$userId]);
+    $user = $stmt->fetch(PDO::FETCH_ASSOC);
+    return $user ?: null;
+}
+
+function asset_download_job_result_target(string $jobToken, string $outputType): string
+{
+    $ext = match ($outputType) {
+        'pdf' => 'pdf',
+        'zip' => 'zip',
+        default => 'xlsx',
+    };
+    return asset_download_jobs_dir() . '/' . $jobToken . '.' . $ext;
+}
+
+function asset_download_process_job(string $jobToken): void
+{
+    ignore_user_abort(true);
+    @set_time_limit(0);
+    asset_download_gc_jobs();
+    $job = asset_download_job_fetch_by_token($jobToken);
+    if (!$job) {
+        return;
+    }
+    if ((string)($job['status'] ?? '') === 'completed') {
+        $path = trim((string)($job['result_path'] ?? ''));
+        if ($path !== '' && is_file($path)) {
+            return;
+        }
+    }
+
+    db()->prepare("UPDATE asset_download_jobs SET status = 'processing', started_at = COALESCE(started_at, NOW()), updated_at = NOW(), error_message = NULL WHERE job_token = ?")
+        ->execute([$jobToken]);
+
+    try {
+        $request = json_decode((string)($job['request_payload'] ?? ''), true, 512, JSON_THROW_ON_ERROR);
+        $user = asset_download_job_user((int)($job['user_id'] ?? 0));
+        if (!$user) {
+            throw new RuntimeException('Download user not found.');
+        }
+        $targetPath = asset_download_job_result_target($jobToken, (string)($job['output_type'] ?? 'excel'));
+        if (is_file($targetPath)) {
+            @unlink($targetPath);
+        }
+        $outputType = (string)($request['output'] ?? 'excel');
+        $meta = null;
+        if ($outputType === 'excel') {
+            $meta = asset_download_export_excel($request, $user, $targetPath);
+        } else {
+            $context = asset_download_runtime_context($request, $user);
+            $groups = asset_download_dataset($request, $user, $context);
+            if ($outputType === 'pdf') {
+                $meta = asset_download_export_pdf($request, $groups, $targetPath);
+            } elseif ($outputType === 'zip') {
+                $meta = asset_download_export_zip($request, $groups, $targetPath);
+            } else {
+                throw new RuntimeException('Unsupported download output.');
+            }
+        }
+        if (!$meta || !is_file((string)($meta['path'] ?? ''))) {
+            throw new RuntimeException('Download file could not be created.');
+        }
+        db()->prepare("UPDATE asset_download_jobs SET status = 'completed', result_filename = ?, result_path = ?, completed_at = NOW(), expires_at = DATE_ADD(NOW(), INTERVAL 1 DAY), updated_at = NOW() WHERE job_token = ?")
+            ->execute([
+                (string)($meta['download_name'] ?? basename((string)$meta['path'])),
+                (string)$meta['path'],
+                $jobToken,
+            ]);
+    } catch (Throwable $e) {
+        db()->prepare("UPDATE asset_download_jobs SET status = 'failed', error_message = ?, updated_at = NOW() WHERE job_token = ?")
+            ->execute([mb_substr($e->getMessage(), 0, 65000), $jobToken]);
+    }
+}
+
+function asset_download_job_status_payload(string $jobToken, array $user): array
+{
+    $job = asset_download_job_fetch_by_token($jobToken);
+    if (!$job || (int)($job['user_id'] ?? 0) !== (int)($user['id'] ?? 0)) {
+        throw new RuntimeException('Download job not found.');
+    }
+    $status = (string)($job['status'] ?? 'pending');
+    if (asset_download_is_windows() && $status !== 'completed' && $status !== 'failed') {
+        asset_download_process_job($jobToken);
+        $job = asset_download_job_fetch_by_token($jobToken) ?? $job;
+        $status = (string)($job['status'] ?? 'pending');
+    }
+    $payload = [
+        'ok' => true,
+        'status' => $status,
+        'job_token' => $jobToken,
+    ];
+    if ($status === 'completed') {
+        $payload['download_url'] = 'index.php?page=download_job_file&job=' . rawurlencode($jobToken);
+        $payload['filename'] = (string)($job['result_filename'] ?? '');
+    } elseif ($status === 'failed') {
+        $payload['message'] = trim((string)($job['error_message'] ?? 'Download failed.'));
+    }
+    return $payload;
+}
+
+function asset_download_stream_job_file(string $jobToken, array $user): void
+{
+    $job = asset_download_job_fetch_by_token($jobToken);
+    if (!$job || (int)($job['user_id'] ?? 0) !== (int)($user['id'] ?? 0)) {
+        http_response_code(404);
+        exit('File not found.');
+    }
+    if ((string)($job['status'] ?? '') !== 'completed') {
+        http_response_code(409);
+        exit('Download is not ready yet.');
+    }
+    $path = trim((string)($job['result_path'] ?? ''));
+    if ($path === '' || !is_file($path)) {
+        db()->prepare("UPDATE asset_download_jobs SET status = 'failed', error_message = ?, updated_at = NOW() WHERE job_token = ?")
+            ->execute(['Generated file is missing.', $jobToken]);
+        http_response_code(410);
+        exit('Generated file is missing.');
+    }
+    $filename = trim((string)($job['result_filename'] ?? basename($path)));
+    $ext = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
+    $contentType = match ($ext) {
+        'pdf' => 'application/pdf',
+        'zip' => 'application/zip',
+        default => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    };
+    header('Content-Type: ' . $contentType);
+    header('Content-Disposition: attachment; filename="' . str_replace('"', '', $filename) . '"');
+    header('Content-Length: ' . (string)filesize($path));
+    readfile($path);
+    exit;
 }
 
 function asset_download_prepare_runtime(string $mode = 'download'): string
@@ -7937,44 +8501,22 @@ function asset_download_signal_completion(string $token): void
     );
 }
 
-function asset_download_filtered_assets_for_segment(int $segmentId, array $request, array $user): array
+function asset_download_filtered_assets_for_segment(int $segmentId, array $request, array $user, ?array $context = null): array
 {
-    $level1Label = (string)($request['level1_label'] ?? '');
-    $selectedLevel1Values = array_flip(array_map('strval', (array)($request['level1_values'] ?? [])));
-    $segmentConfig = (array)($request['segments'][$segmentId] ?? []);
-    if (!$segmentConfig) {
-        return [];
-    }
-    $assets = asset_download_accessible_assets_for_segment($segmentId, $user, (string)($request['view_scope'] ?? 'my_office'));
-    $filterFieldMap = [];
-    foreach (asset_download_effective_filter_fields($segmentId) as $field) {
-        $filterFieldMap[(string)$field['field_key']] = $field;
-    }
     $matched = [];
-    foreach ($assets as $asset) {
-        if (!asset_download_matches_common_filters($asset, $segmentId, (array)($request['common_filters'] ?? []))) {
-            continue;
+    foreach (asset_download_grouped_assets_for_segment($segmentId, $request, $user, $context) as $groupAssets) {
+        foreach ($groupAssets as $asset) {
+            $matched[] = $asset;
         }
-        $level1Value = $level1Label !== ''
-            ? asset_download_level1_value_for_asset($asset, $level1Label, $segmentId)
-            : 'files';
-        if ($level1Label !== '' && $selectedLevel1Values && !isset($selectedLevel1Values[$level1Value])) {
-            continue;
-        }
-        if (!asset_download_matches_segment_filters($asset, $filterFieldMap, (array)($segmentConfig['filters'] ?? []))) {
-            continue;
-        }
-        $matched[] = $asset;
     }
-    asset_download_sort_assets_by_common($matched, (array)($request['common_sorts'] ?? []), $segmentId);
     return $matched;
 }
 
-function asset_download_append_excel_rows(\PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet, int $startRow, array $assets, array $selectedFieldKeys, int $segmentId, array $commonColumns = [], string $level1Label = '', bool $includeLevel1Column = true): int
+function asset_download_append_excel_rows(\PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet, int $startRow, array $assets, array $selectedFieldKeys, int $segmentId, array $commonColumns = [], string $level1Label = '', bool $includeLevel1Column = true, ?array $fields = null): int
 {
-    $headers = asset_download_table_headers($selectedFieldKeys, $segmentId, $commonColumns, $level1Label, $includeLevel1Column);
+    $headers = asset_download_table_headers($selectedFieldKeys, $segmentId, $commonColumns, $level1Label, $includeLevel1Column, $fields);
     $fieldMap = [];
-    foreach (get_asset_fields(false, $segmentId) as $field) {
+    foreach (($fields ?? get_asset_fields(false, $segmentId)) as $field) {
         $fieldMap[(string)$field['field_key']] = $field;
     }
     $rowNum = $startRow;
@@ -8009,14 +8551,17 @@ function asset_download_append_excel_rows(\PhpOffice\PhpSpreadsheet\Worksheet\Wo
     return $rowNum;
 }
 
-function asset_download_export_excel(array $request, array $user): void
+function asset_download_export_excel(array $request, array $user, ?string $destinationPath = null): ?array
 {
     ensure_library('PhpOffice\\PhpSpreadsheet\\Spreadsheet', 'PhpSpreadsheet is not installed.');
     $cacheDir = asset_download_prepare_runtime('excel_export');
+    $context = asset_download_runtime_context($request, $user);
     $book = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
     \PhpOffice\PhpSpreadsheet\Settings::setLocale('en');
     $sheetIndex = 0;
     foreach ($request['segments'] as $segmentId => $segmentConfig) {
+        $segmentContext = (array)($context['segments'][(int)$segmentId] ?? []);
+        $segmentFields = (array)($segmentContext['fields'] ?? $segmentConfig['fields'] ?? []);
         $sheet = $sheetIndex === 0 ? $book->getActiveSheet() : $book->createSheet($sheetIndex);
         $safeTitle = substr(preg_replace('/[\\\\\\/\\?\\*\\[\\]:]/', '', asset_download_safe_name((string)$segmentConfig['segment']['segment_name'])), 0, 31);
         $sheet->setTitle($safeTitle !== '' ? $safeTitle : ('Segment' . ($sheetIndex + 1)));
@@ -8025,7 +8570,8 @@ function asset_download_export_excel(array $request, array $user): void
             (int)$segmentId,
             (array)($request['common_columns'] ?? []),
             (string)$request['level1_label'],
-            true
+            true,
+            $segmentFields
         );
         $rowNum = 1;
         $col = 1;
@@ -8034,7 +8580,7 @@ function asset_download_export_excel(array $request, array $user): void
             $col++;
         }
         $rowNum++;
-        $matchedAssets = asset_download_filtered_assets_for_segment((int)$segmentId, $request, $user);
+        $matchedAssets = asset_download_filtered_assets_for_segment((int)$segmentId, $request, $user, $context);
         $rowNum = asset_download_append_excel_rows(
             $sheet,
             $rowNum,
@@ -8043,7 +8589,8 @@ function asset_download_export_excel(array $request, array $user): void
             (int)$segmentId,
             (array)($request['common_columns'] ?? []),
             (string)$request['level1_label'],
-            true
+            true,
+            $segmentFields
         );
         $sheetIndex++;
     }
@@ -8053,29 +8600,31 @@ function asset_download_export_excel(array $request, array $user): void
     }
     $xlsxPath = $tmpFile . '.xlsx';
     @unlink($xlsxPath);
-    header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    header('Content-Disposition: attachment; filename="' . asset_download_build_name([
-        'segment' => 'download',
-        'field_name' => 'report',
-        'office_name' => '',
-        'asset_number' => date('Ymd_His'),
-    ]) . '.xlsx"');
-    header('Cache-Control: max-age=0');
-    asset_download_signal_completion((string)($request['download_token'] ?? ''));
     $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($book);
     $writer->setPreCalculateFormulas(false);
     $writer->setUseDiskCaching(true, $cacheDir);
-    $writer->save($xlsxPath);
+    $targetPath = $destinationPath ?: $xlsxPath;
+    $writer->save($targetPath);
     $book->disconnectWorksheets();
     unset($book);
-    header('Content-Length: ' . (string)filesize($xlsxPath));
-    readfile($xlsxPath);
+    $downloadName = asset_download_job_output_filename(array_merge($request, ['output' => 'excel']));
+    if ($destinationPath !== null) {
+        @unlink($tmpFile);
+        @unlink($xlsxPath);
+        return ['path' => $destinationPath, 'download_name' => $downloadName];
+    }
+    header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    header('Content-Disposition: attachment; filename="' . $downloadName . '"');
+    header('Cache-Control: max-age=0');
+    asset_download_signal_completion((string)($request['download_token'] ?? ''));
+    header('Content-Length: ' . (string)filesize($targetPath));
+    readfile($targetPath);
     @unlink($xlsxPath);
     @unlink($tmpFile);
     exit;
 }
 
-function asset_download_export_pdf(array $request, array $groups): void
+function asset_download_export_pdf(array $request, array $groups, ?string $destinationPath = null): ?array
 {
     $html = '<html><head><meta charset="utf-8"><style>'
         . '@page{size:A4 landscape;margin:20px 18px 28px 18px;}'
@@ -8108,7 +8657,8 @@ function asset_download_export_pdf(array $request, array $groups): void
                 (int)$segmentId,
                 (array)($request['common_columns'] ?? []),
                 (string)$request['level1_label'],
-                false
+                false,
+                (array)($segmentConfig['fields'] ?? [])
             );
             $rows = asset_download_table_rows(
                 $segmentData['assets'],
@@ -8116,7 +8666,8 @@ function asset_download_export_pdf(array $request, array $groups): void
                 (int)$segmentId,
                 (array)($request['common_columns'] ?? []),
                 (string)$request['level1_label'],
-                false
+                false,
+                (array)($segmentConfig['fields'] ?? [])
             );
             $headerCount = count($headers);
             $tableClass = $headerCount >= 14 ? 'tight' : ($headerCount >= 10 ? 'compact' : '');
@@ -8141,16 +8692,17 @@ function asset_download_export_pdf(array $request, array $groups): void
         $html .= '</section>';
     }
     $html .= '<script type="text/php">if (isset($pdf)) { $font = $fontMetrics->getFont("Helvetica", "normal"); $pdf->page_text(760, 575, "Page {PAGE_NUM} of {PAGE_COUNT}", $font, 9, array(0,0,0)); }</script></body></html>';
+    $downloadName = asset_download_job_output_filename(array_merge($request, ['output' => 'pdf']));
+    if ($destinationPath !== null) {
+        export_pdf($html, $downloadName, 'landscape', $destinationPath);
+        return ['path' => $destinationPath, 'download_name' => $downloadName];
+    }
     asset_download_signal_completion((string)($request['download_token'] ?? ''));
-    export_pdf($html, asset_download_build_name([
-        'segment' => 'download',
-        'field_name' => 'report',
-        'office_name' => '',
-        'asset_number' => date('Ymd_His'),
-    ]) . '.pdf');
+    export_pdf($html, $downloadName);
+    return null;
 }
 
-function asset_download_export_zip(array $request, array $groups): void
+function asset_download_export_zip(array $request, array $groups, ?string $destinationPath = null): ?array
 {
     $tmpFile = tempnam(sys_get_temp_dir(), 'assetdl_');
     if ($tmpFile === false) {
@@ -8167,27 +8719,32 @@ function asset_download_export_zip(array $request, array $groups): void
     $addedFileCount = 0;
     $useHierarchy = !empty($request['zip_use_hierarchy']);
     $folderTemplate = trim((string)($request['zip_folder_template'] ?? ''));
+    $segmentFieldLabelMaps = [];
+    foreach ((array)($request['segments'] ?? []) as $segmentId => $segmentConfig) {
+        $labelMap = [];
+        foreach ((array)($segmentConfig['fields'] ?? []) as $field) {
+            $fieldKey = (string)($field['field_key'] ?? '');
+            if ($fieldKey === '') {
+                continue;
+            }
+            $labelMap[$fieldKey] = (string)($field['label'] ?? $fieldKey);
+        }
+        $segmentFieldLabelMaps[(int)$segmentId] = $labelMap;
+    }
     foreach ($groups as $groupValue => $group) {
-        $groupFolder = asset_download_safe_name((string)$groupValue);
         foreach ($request['segments'] as $segmentId => $segmentConfig) {
             $segmentData = $group['segments'][$segmentId] ?? null;
             if (!$segmentData) {
                 continue;
             }
+            $fieldLabelMap = (array)($segmentFieldLabelMaps[(int)$segmentId] ?? []);
             foreach ($segmentData['assets'] as $assetIndex => $asset) {
                 $folderParts = [];
                 if (!$useHierarchy) {
                     $folderParts[] = 'files';
                 }
                 foreach ($segmentConfig['selected_zip_field_keys'] as $fieldKey) {
-                    $fieldMeta = null;
-                    foreach ($segmentConfig['fields'] as $field) {
-                        if ((string)($field['field_key'] ?? '') === $fieldKey) {
-                            $fieldMeta = $field;
-                            break;
-                        }
-                    }
-                    $fieldLabel = (string)($fieldMeta['label'] ?? $fieldKey);
+                    $fieldLabel = (string)($fieldLabelMap[$fieldKey] ?? $fieldKey);
                     $fieldFiles = array_values($asset['files'][$fieldKey] ?? []);
                     $fieldFileCount = count($fieldFiles);
                     foreach ($fieldFiles as $fileIndex => $fileRow) {
@@ -8235,13 +8792,14 @@ function asset_download_export_zip(array $request, array $groups): void
     if (!is_file($zipPath)) {
         throw new RuntimeException('ZIP archive could not be created.');
     }
+    $downloadName = asset_download_job_output_filename(array_merge($request, ['output' => 'zip']));
+    if ($destinationPath !== null) {
+        @copy($zipPath, $destinationPath);
+        @unlink($zipPath);
+        return ['path' => $destinationPath, 'download_name' => $downloadName];
+    }
     header('Content-Type: application/zip');
-    header('Content-Disposition: attachment; filename="' . asset_download_build_name([
-        'segment' => 'download',
-        'field_name' => 'files',
-        'office_name' => '',
-        'asset_number' => date('Ymd_His'),
-    ]) . '.zip"');
+    header('Content-Disposition: attachment; filename="' . $downloadName . '"');
     asset_download_signal_completion((string)($request['download_token'] ?? ''));
     header('Content-Length: ' . (string)filesize($zipPath));
     readfile($zipPath);
@@ -8257,10 +8815,11 @@ function asset_handle_hierarchical_download(array $input, array $user, string $v
     }
     $request = $parsed['request'];
     asset_download_prepare_runtime((string)($request['output'] ?? 'download'));
+    $context = asset_download_runtime_context($request, $user);
     if ($request['output'] === 'excel') {
         asset_download_export_excel($request, $user);
     }
-    $groups = asset_download_dataset($request, $user);
+    $groups = asset_download_dataset($request, $user, $context);
     if ($request['output'] === 'pdf') {
         asset_download_export_pdf($request, $groups);
     }

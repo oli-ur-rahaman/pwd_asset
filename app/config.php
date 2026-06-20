@@ -2,7 +2,7 @@
 return [
     'db' => [
         'host' => '127.0.0.1',
-        'name' => 'pwd_asset',
+        'name' => 'survey_db',
         'user' => 'root',
         'pass' => '',
         'charset' => 'utf8mb4',

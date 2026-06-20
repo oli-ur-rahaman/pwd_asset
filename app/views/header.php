@@ -48,7 +48,7 @@
             <button type="button" class="welcome-modal-close modal-close" data-close="global-tutorial-modal" aria-label="Close">Ã—</button>
         </div>
         <div class="field-help-video hidden" id="global-tutorial-video">
-            <video id="global-tutorial-player" class="hidden" controls preload="metadata"></video>
+            <video id="global-tutorial-player" class="hidden" controls preload="none"></video>
             <iframe
                 id="global-tutorial-iframe"
                 class="hidden"

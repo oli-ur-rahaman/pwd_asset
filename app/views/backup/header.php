@@ -6,6 +6,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <?php $info = get_info_row(); ?>
     <?php $themeKey = asset_normalize_theme_key((string)($info['ui_theme_key'] ?? '')); ?>
+<?php $globalTutorialUrl = (string)($info['video_tutorial_url'] ?? ''); ?>
+<?php $globalTutorialEmbedUrl = (string)(asset_youtube_embed_url($globalTutorialUrl) ?? ''); ?>
+<?php $globalHostedTutorialUrl = (string)(asset_global_tutorial_stream_url($info) ?? ''); ?>
+<?php $globalHostedTutorialName = (string)($info['hosted_tutorial_video_original_name'] ?? $info['hosted_tutorial_video_path'] ?? ''); ?>
     <title><?= e((string)($info['site_name'] ?? 'PWD Asset Management System')); ?></title>
     <link rel="stylesheet" href="public/assets/style.css">
 </head>
@@ -29,7 +33,7 @@
             <?php endif; ?>
         <?php endif; ?>
         <a href="index.php?page=profile">Profile</a>
-        <a href="<?= e((string)($info['video_tutorial_url'] ?? '#')); ?>" target="_blank" rel="noopener">Tutorial</a>
+        <button type="button" class="button-link nav-tutorial-button" data-global-tutorial-open data-tutorial-url="<?= e($globalTutorialUrl); ?>" data-tutorial-embed-url="<?= e($globalTutorialEmbedUrl); ?>" data-tutorial-hosted-url="<?= e($globalHostedTutorialUrl); ?>" data-tutorial-hosted-name="<?= e($globalHostedTutorialName); ?>">Tutorial</button>
         <form method="post" action="index.php" class="logout-form">
             <?= csrf_input(); ?>
             <input type="hidden" name="action" value="logout">
@@ -37,6 +41,31 @@
         </form>
     </div>
 </nav>
+<div class="modal-backdrop" id="global-tutorial-modal" aria-hidden="true">
+    <div class="modal-card modal-wide" role="dialog" aria-modal="true" aria-labelledby="global-tutorial-title">
+        <div class="flash-modal-head">
+            <h3 id="global-tutorial-title">Tutorial</h3>
+            <button type="button" class="welcome-modal-close modal-close" data-close="global-tutorial-modal" aria-label="Close">Ã—</button>
+        </div>
+        <div class="field-help-video hidden" id="global-tutorial-video">
+            <video id="global-tutorial-player" class="hidden" controls preload="metadata"></video>
+            <iframe
+                id="global-tutorial-iframe"
+                class="hidden"
+                src=""
+                title="Global tutorial"
+                loading="lazy"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                allowfullscreen
+            ></iframe>
+            <p><a href="#" target="_blank" rel="noopener" id="global-tutorial-link">Open tutorial</a></p>
+        </div>
+        <div class="alert error hidden" id="global-tutorial-empty">No tutorial video is configured.</div>
+        <div class="modal-actions">
+            <button type="button" class="modal-close" data-close="global-tutorial-modal">Close</button>
+        </div>
+    </div>
+</div>
 <main class="container">
 <?php
     $success_message = flash('success');

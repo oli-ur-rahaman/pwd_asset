@@ -33,7 +33,7 @@ if ($downloadMode === 'level3') {
         ];
     }
 
-    $renderDownloadChoiceGroup = static function (string $name, array $options, array $selected = [], string $blankLabel = '', bool $defaultChecked = false, string $inputAttributes = ''): void {
+    $renderDownloadChoiceGroup = static function (string $name, array $options, array $selected = [], string $blankLabel = ''): void {
         $selectedLookup = array_flip(array_map('strval', $selected));
         if (!$options) {
             echo '<p class="muted">No options available.</p>';
@@ -45,8 +45,7 @@ if ($downloadMode === 'level3') {
             $label = (string)$label;
             $isBlank = $value === '__blank__';
             echo '<label class="inline-check download-inline-check">';
-            $isChecked = $defaultChecked || isset($selectedLookup[$value]);
-            echo '<input type="checkbox" name="' . e($name) . '[]" value="' . e($value) . '"' . ($isChecked ? ' checked' : '') . $inputAttributes . '>';
+            echo '<input type="checkbox" name="' . e($name) . '[]" value="' . e($value) . '"' . (isset($selectedLookup[$value]) ? ' checked' : '') . '>';
             echo '<span>' . e($isBlank && $blankLabel !== '' ? $blankLabel : $label) . '</span>';
             echo '</label>';
         }
@@ -55,7 +54,6 @@ if ($downloadMode === 'level3') {
 
     $renderDownloadFilterControl = static function (string $inputBase, array $filterMeta, string $mode = 'segment') use ($renderDownloadChoiceGroup): void {
         $type = (string)($filterMeta['data_type'] ?? 'text');
-        $formAttr = $mode === 'common' ? ' form="download-data-form"' : '';
         if ($type === 'office') {
             $zones = (array)($filterMeta['zones'] ?? []);
             $circles = (array)($filterMeta['circles'] ?? []);
@@ -69,7 +67,7 @@ if ($downloadMode === 'level3') {
             foreach ($zones as $zoneId => $zoneMeta) {
                 echo '<div class="download-filter-tree-node depth-1">';
                 echo '<label class="download-tree-check">';
-                    echo '<input type="checkbox" name="' . e($inputBase . '[zone_ids][]') . '" value="' . e((string)$zoneId) . '"' . ($mode === 'common' ? ' checked' : '') . $formAttr . '>';
+                echo '<input type="checkbox" name="' . e($inputBase . '[zone_ids][]') . '" value="' . e((string)$zoneId) . '">';
                 echo '<span>' . e((string)($zoneMeta['name'] ?? '')) . '</span>';
                 echo '</label>';
                 $zoneHasChild = false;
@@ -83,7 +81,7 @@ if ($downloadMode === 'level3') {
                     }
                     echo '<div class="download-filter-tree-node depth-2">';
                     echo '<label class="download-tree-check">';
-                    echo '<input type="checkbox" name="' . e($inputBase . '[circle_ids][]') . '" value="' . e((string)$circleId) . '"' . ($mode === 'common' ? ' checked' : '') . $formAttr . '>';
+                    echo '<input type="checkbox" name="' . e($inputBase . '[circle_ids][]') . '" value="' . e((string)$circleId) . '">';
                     echo '<span>' . e((string)($circleMeta['name'] ?? '')) . '</span>';
                     echo '</label>';
                     $circleHasChild = false;
@@ -97,7 +95,7 @@ if ($downloadMode === 'level3') {
                         }
                         echo '<div class="download-filter-tree-node depth-3">';
                         echo '<label class="download-tree-check">';
-                        echo '<input type="checkbox" name="' . e($inputBase . '[division_ids][]') . '" value="' . e((string)$divisionId) . '"' . ($mode === 'common' ? ' checked' : '') . $formAttr . '>';
+                        echo '<input type="checkbox" name="' . e($inputBase . '[division_ids][]') . '" value="' . e((string)$divisionId) . '">';
                         echo '<span>' . e((string)($divisionMeta['name'] ?? '')) . '</span>';
                         echo '</label>';
                         $divisionHasChild = false;
@@ -111,7 +109,7 @@ if ($downloadMode === 'level3') {
                             }
                             echo '<div class="download-filter-tree-node depth-4">';
                             echo '<label class="download-tree-check">';
-                            echo '<input type="checkbox" name="' . e($inputBase . '[subdivision_ids][]') . '" value="' . e((string)$subdivisionId) . '"' . ($mode === 'common' ? ' checked' : '') . $formAttr . '>';
+                            echo '<input type="checkbox" name="' . e($inputBase . '[subdivision_ids][]') . '" value="' . e((string)$subdivisionId) . '">';
                             echo '<span>' . e((string)($subdivisionMeta['name'] ?? '')) . '</span>';
                             echo '</label>';
                             echo '</div>';
@@ -151,7 +149,7 @@ if ($downloadMode === 'level3') {
                 $children = (array)($secondaryMap[(string)$primaryValue] ?? []);
                 echo '<div class="download-filter-tree-node depth-1">';
                 echo '<label class="download-tree-check">';
-                echo '<input type="checkbox" name="' . e($inputBase . '[values][]') . '" value="' . e((string)$primaryValue) . '" data-conditional-primary-checkbox' . ($mode === 'common' ? ' checked' : '') . $formAttr . '>';
+                echo '<input type="checkbox" name="' . e($inputBase . '[values][]') . '" value="' . e((string)$primaryValue) . '" data-conditional-primary-checkbox>';
                 echo '<span>' . e((string)$primaryLabel) . '</span>';
                 echo '</label>';
                 if ($children) {
@@ -159,7 +157,7 @@ if ($downloadMode === 'level3') {
                     foreach ($children as $childValue => $childOptionLabel) {
                         echo '<div class="download-filter-tree-node depth-2">';
                         echo '<label class="download-tree-check">';
-                        echo '<input type="checkbox" name="' . e($childBase . '[values][]') . '" value="' . e((string)$childValue) . '"' . ($mode === 'common' ? ' checked' : '') . $formAttr . '>';
+                        echo '<input type="checkbox" name="' . e($childBase . '[values][]') . '" value="' . e((string)$childValue) . '">';
                         echo '<span>' . e((string)$childOptionLabel) . '</span>';
                         echo '</label>';
                         echo '</div>';
@@ -171,7 +169,7 @@ if ($downloadMode === 'level3') {
             if (!empty($filterMeta['has_blank'])) {
                 echo '<div class="download-filter-tree-node depth-1">';
                 echo '<label class="download-tree-check">';
-                echo '<input type="checkbox" name="' . e($inputBase . '[values][]') . '" value="__blank__"' . ($mode === 'common' ? ' checked' : '') . $formAttr . '>';
+                echo '<input type="checkbox" name="' . e($inputBase . '[values][]') . '" value="__blank__">';
                 echo '<span>Blank</span>';
                 echo '</label>';
                 echo '</div>';
@@ -182,20 +180,20 @@ if ($downloadMode === 'level3') {
         if ($type === 'date') {
             echo '<div class="download-filter-body download-filter-range">';
             echo '<div class="download-date-range">';
-            echo '<label>From<input type="date" name="' . e($inputBase . '[from]') . '"' . $formAttr . '></label>';
-            echo '<label>To<input type="date" name="' . e($inputBase . '[to]') . '"' . $formAttr . '></label>';
+            echo '<label>From<input type="date" name="' . e($inputBase . '[from]') . '"></label>';
+            echo '<label>To<input type="date" name="' . e($inputBase . '[to]') . '"></label>';
             echo '</div>';
-            echo '<label class="inline-check download-inline-check"><input type="checkbox" name="' . e($inputBase . '[blank]') . '" value="1"' . $formAttr . '><span>Blank</span></label>';
+            echo '<label class="inline-check download-inline-check"><input type="checkbox" name="' . e($inputBase . '[blank]') . '" value="1"><span>Blank</span></label>';
             echo '</div>';
             return;
         }
         if ($type === 'number') {
             echo '<div class="download-filter-body download-filter-range">';
             echo '<div class="download-date-range">';
-            echo '<label>From<input type="number" step="0.01" name="' . e($inputBase . '[from]') . '"' . $formAttr . '></label>';
-            echo '<label>To<input type="number" step="0.01" name="' . e($inputBase . '[to]') . '"' . $formAttr . '></label>';
+            echo '<label>From<input type="number" step="0.01" name="' . e($inputBase . '[from]') . '"></label>';
+            echo '<label>To<input type="number" step="0.01" name="' . e($inputBase . '[to]') . '"></label>';
             echo '</div>';
-            echo '<label class="inline-check download-inline-check"><input type="checkbox" name="' . e($inputBase . '[blank]') . '" value="1"' . $formAttr . '><span>Blank</span></label>';
+            echo '<label class="inline-check download-inline-check"><input type="checkbox" name="' . e($inputBase . '[blank]') . '" value="1"><span>Blank</span></label>';
             echo '</div>';
             return;
         }
@@ -203,7 +201,7 @@ if ($downloadMode === 'level3') {
         if ($type === 'file') {
             $optionMap = ['__has_file__' => 'Have file', '__no_file__' => 'No file'];
             echo '<div class="download-filter-body">';
-            $renderDownloadChoiceGroup($inputBase . '[values]', $optionMap, [], '', $mode === 'common', $formAttr);
+            $renderDownloadChoiceGroup($inputBase . '[values]', $optionMap);
             echo '</div>';
             return;
         }
@@ -217,7 +215,7 @@ if ($downloadMode === 'level3') {
                 $optionMap['__blank__'] = 'Blank';
             }
             echo '<div class="download-filter-body">';
-            $renderDownloadChoiceGroup($inputBase . '[values]', $optionMap, [], 'Blank', $mode === 'common', $formAttr);
+            $renderDownloadChoiceGroup($inputBase . '[values]', $optionMap, [], 'Blank');
             echo '</div>';
             return;
         }
@@ -228,12 +226,12 @@ if ($downloadMode === 'level3') {
             $optionMap['__blank__'] = 'Blank';
         }
         echo '<div class="download-filter-body">';
-        $renderDownloadChoiceGroup($inputBase . '[values]', $optionMap, [], 'Blank', $mode === 'common', $formAttr);
+        $renderDownloadChoiceGroup($inputBase . '[values]', $optionMap, [], 'Blank');
         echo '</div>';
     };
     ?>
 <div data-download-fragment-level3>
-    <section class="download-layer-card" data-download-level1-filter-section>
+    <section class="download-layer-card">
         <div class="download-layer-head">
             <h4>Level 3 Filters</h4>
             <p class="hint">Only filters are shown here. Level_1 filters are separate, and segment filters appear only for segments and fields currently checked in Level_2.</p>
@@ -327,8 +325,6 @@ if ($downloadMode === 'level3') {
         <?php endforeach; ?>
     </div>
     <div class="modal-actions">
-        <button type="button" class="btn-small button-link" data-common-filter-check-all>Check All</button>
-        <button type="button" class="btn-small button-link" data-common-filter-uncheck-all>Uncheck All</button>
         <button type="button" class="modal-close" data-close="download-common-filter-modal">Close</button>
     </div>
 </div>
@@ -338,7 +334,6 @@ if ($downloadMode === 'level3') {
 
 $downloadLevel1Labels = array_values(array_unique(array_merge(['Office'], asset_download_selected_level1_labels())));
 $downloadLevel1DefaultLabel = $downloadLevel1Labels[0] ?? 'Office';
-$downloadCommonFilterCatalog = asset_download_common_field_catalog($user, $currentOfficeViewScope);
 $downloadCommonOptionMap = ['__office__' => 'Office'];
 foreach ($downloadLevel1Labels as $label) {
     if ($label === 'Office') {
@@ -426,15 +421,15 @@ $downloadLevel3Url = 'index.php?' . http_build_query([
                     <div class="download-preview-list download-token-helper-grid">
                         <?php foreach ($downloadNamingTokens as $token): ?>
                             <div class="download-preview-row">
-                                <span class="download-preview-label" title="<?= e('{' . $token . '}'); ?>"><code>{<?= e($token); ?>}</code></span>
+                                <span class="download-preview-label"><code>{<?= e($token); ?></code></span>
                             </div>
                         <?php endforeach; ?>
                     </div>
                 </section>
-                <section class="download-layer-card" data-download-level1-card>
+                <section class="download-layer-card" data-download-non-zip-only>
                     <div class="download-layer-head">
                         <h4>Level 1 Setup</h4>
-                        <p class="hint">For PDF and Excel, choose one field as `is_level`. For ZIP, this table stays available only for field visibility and common filtering.</p>
+                        <p class="hint">For PDF and Excel, manage all Level_1 fields in one table. Choose one field as `is_level`. The remaining fields keep their sequence and sort direction here.</p>
                     </div>
                     <?php if (!$downloadModuleReady): ?>
                         <p class="muted">No Level 1 field is available. Configure Download Manager first.</p>
@@ -444,12 +439,11 @@ $downloadLevel3Url = 'index.php?' . http_build_query([
                             <table class="download-manager-table download-level1-table">
                                 <thead>
                                     <tr>
-                                        <th data-download-level1-col="field">Field Name</th>
-                                        <th data-download-level1-col="show">Show</th>
-                                        <th data-download-level1-col="is_level">Is_Level1</th>
-                                        <th data-download-level1-col="serial">Serial</th>
-                                        <th data-download-level1-col="filter">Filter</th>
-                                        <th data-download-level1-col="sorting">Sorting</th>
+                                        <th>Field Name</th>
+                                        <th>Show</th>
+                                        <th>Is_Level1</th>
+                                        <th>Serial</th>
+                                        <th>Sorting</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -457,47 +451,30 @@ $downloadLevel3Url = 'index.php?' . http_build_query([
                                     <?php foreach ($downloadLevel1Labels as $label): ?>
                                         <?php
                                             $commonKey = $label === 'Office' ? '__office__' : $label;
-                                            $commonMeta = $downloadCommonFilterCatalog[$commonKey] ?? null;
-                                            $filterIdentifier = $commonKey;
-                                            if ($commonMeta === null && $commonKey !== '__office__') {
-                                                foreach ($downloadCommonFilterCatalog as $catalogIdentifier => $catalogMeta) {
-                                                    if ((string)($catalogMeta['child_label'] ?? '') === $commonKey) {
-                                                        $commonMeta = $catalogMeta;
-                                                        $filterIdentifier = (string)$catalogIdentifier;
-                                                        break;
-                                                    }
-                                                }
-                                            }
-                                            if ($commonMeta && (string)($commonMeta['data_type'] ?? '') === 'conditional_secondary' && !empty($commonMeta['parent_identifier'])) {
-                                                $filterIdentifier = (string)$commonMeta['parent_identifier'];
-                                            }
                                             $isSelectedLevel = $label === $downloadLevel1DefaultLabel;
                                         ?>
-                                        <tr data-download-level1-row data-level1-label="<?= e((string)$label); ?>" data-common-field="<?= e((string)$commonKey); ?>" data-common-filter-identifier="<?= e((string)$filterIdentifier); ?>" data-is-office="<?= $commonKey === '__office__' ? '1' : '0'; ?>">
-                                            <td data-download-level1-col="field"><?= e((string)$label); ?></td>
-                                            <td data-download-level1-col="show">
+                                        <tr data-download-level1-row data-level1-label="<?= e((string)$label); ?>" data-common-field="<?= e((string)$commonKey); ?>" data-is-office="<?= $commonKey === '__office__' ? '1' : '0'; ?>">
+                                            <td><?= e((string)$label); ?></td>
+                                            <td>
                                                 <label class="inline-check download-inline-check">
                                                     <input type="checkbox" <?= $isSelectedLevel ? 'checked disabled' : 'checked'; ?> data-download-level1-visible>
                                                     <span></span>
                                                 </label>
                                             </td>
-                                            <td data-download-level1-col="is_level">
+                                            <td>
                                                 <label class="inline-check download-inline-check">
                                                     <input type="radio" name="download_level1_choice" value="<?= e((string)$label); ?>" <?= $isSelectedLevel ? 'checked' : ''; ?> data-download-level1-choice>
                                                     <span></span>
                                                 </label>
                                             </td>
-                                            <td data-download-level1-col="serial">
+                                            <td>
                                                 <input type="number" min="1" value="<?= $level1RowSerial; ?>" data-download-level1-serial <?= $isSelectedLevel ? 'disabled' : ''; ?>>
                                                 <input type="checkbox" name="download_common_columns[]" value="<?= e((string)$commonKey); ?>" <?= $isSelectedLevel ? '' : 'checked'; ?> hidden data-download-common-column-input>
                                                 <input type="hidden" name="download_common_column_order[<?= e((string)$commonKey); ?>]" value="<?= $level1RowSerial; ?>" data-download-common-column-order>
                                                 <input type="checkbox" name="download_common_sort[<?= e((string)$commonKey); ?>][enabled]" value="1" <?= $isSelectedLevel ? '' : 'checked'; ?> hidden data-download-common-sort-enabled>
                                                 <input type="hidden" name="download_common_sort[<?= e((string)$commonKey); ?>][order]" value="<?= $level1RowSerial; ?>" data-download-common-sort-order>
                                             </td>
-                                            <td data-download-level1-col="filter">
-                                                <button type="button" class="btn-small button-link" data-common-filter-open="<?= e((string)$filterIdentifier); ?>">Filter</button>
-                                            </td>
-                                            <td data-download-level1-col="sorting">
+                                            <td>
                                                 <select name="download_common_sort[<?= e((string)$commonKey); ?>][dir]" data-download-sort-direction <?= $commonKey === '__office__' ? 'disabled' : ''; ?>>
                                                     <?php if ($commonKey === '__office__'): ?>
                                                         <option value="asc" selected>Default hierarchy</option>

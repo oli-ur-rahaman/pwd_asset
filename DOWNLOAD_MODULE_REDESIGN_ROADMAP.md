@@ -1,316 +1,214 @@
 # Download Module Redesign Roadmap
 
 ## Status
-- Current status: **Runtime refactor in active progress**
-- Existing state: the revised 3-page runtime modal is now partially implemented and wired to backend parsing/export rules
-- This roadmap now reflects the **new target structure**
-- Last update: `2026-06-19` (Level_3 hierarchy filter refinement applied)
+- Current status: **Phases 1-4 completed**
+- Last update: `2026-06-20`
 
-## Revised Core Idea
-The download flow will be reorganized into **three pages inside one download experience**. The UI should feel like moving through separate pages inside the same modal, with a clear top bar or folder-style navigation:
+## Current Problem
+The download module is functionally rich, but the runtime path is still doing too much repeated work:
 
-1. `Level_1`
-2. `Level_2`
-3. `Level_3`
+1. it rebuilds segment field maps repeatedly
+2. it reloads and re-filters assets separately for Excel and dataset grouping
+3. it resolves common-field metadata and hierarchy logic multiple times
+4. the Level_1 table does not yet expose filter buttons directly, even though the common-field filter modal already exists
 
-This same concept should also be reflected in the superadmin `Download Manager` page so the planning and runtime flow stay aligned.
+This roadmap replaces the earlier generic runtime-refactor note with a **performance-first phased implementation plan**.
 
-## Revised Page Design
+## New UI Requirement Included In This Plan
+The `Level_1` table in the runtime download modal must now include:
 
-### Page `Level_1`
-This page controls the **common fields across all segments** plus **Office**.
+1. one extra column before `Sorting`
+2. that column contains a `Filter` button
+3. clicking it opens the same modal previously used from the `Level_1 Fields` section of `Level_3`
+4. for conditional dropdown pairs:
+   - primary row and secondary row both open the **same shared modal**
+5. common-field filter modals must include:
+   - `Check All`
+   - `Uncheck All`
+6. when a common filter modal opens for list / hierarchy / conditional choices:
+   - all available items are checked by default
 
-Purpose:
-- user selects exactly one field, or `Office`, as the `Level_1` grouping field
-- user chooses the items/values under that Level_1 field
-- user defines which other common fields should appear in the report table
-- user can define the sequence/order of those common fields
-- user can define ascending/descending sorting for those common fields
-- the field selected as `Level_1` must not appear again in the remaining sort/filter choices
+## Refactor Goals
 
-Expected contents:
-- one selector for `Level_1` field
-- available options:
-  - all common fields across active segments
-  - `Office`
-- one item-selection area for the chosen Level_1 field
-- one sequence/ordering area for the remaining common fields
-- one compact sort setup area for the remaining common fields
+### Goal 1: faster request preparation
+Build one reusable **download runtime context** per request instead of repeatedly resolving:
+- assets
+- fields
+- filter field maps
+- label-to-field maps
+- common field maps
 
-Notes:
-- this page defines the cross-segment/common part of the report
-- these common fields should not be shown again in `Level_2`
+### Goal 2: earlier pruning
+Apply:
+- common filters
+- segment filters
+- Level_1 selection
 
-### Page `Level_2`
-This page controls the **segment-specific fields** that appear in the report/table.
+before expensive row building and output formatting.
 
-Purpose:
-- user selects the segments to include
-- user selects the fields inside those selected segments
-- common fields are excluded here because they are managed in `Level_1`
+### Goal 3: export reuse
+Make Excel / PDF / ZIP all read from the same prepared runtime dataset or segment-level prepared lists where possible.
 
-Rules:
-- for `PDF` and `Excel`, all eligible segment fields may appear
-- for `ZIP`, only file fields should appear
-- for `PDF`/`Excel`, file fields should render as summaries like:
-  - `1 dwg, 4 pdf`
+### Goal 4: safer UI-to-backend alignment
+The runtime `Level_1` filter UI should map directly to the existing common-filter parser, not add a second filter system.
 
-Expected contents:
-- selected segment list
-- per-segment field list
-- common fields excluded from these lists
+## Phases
 
-### Page `Level_3`
-This page controls **filters only**.
-
-Purpose:
-- user selects the segment field values to use as filters
-- no sorting UI is required here in the revised model
-
-Rules:
-- filter UI is segment-wise
-- filter fields are shown as compact collapsible controls
-- a 4-column compact layout is preferred
-- all filter fields are selected/openable by default
-- if a field is the chosen `Level_1`, it must not appear here
-
-Expected contents:
-- per-segment filter sections
-- collapsible compact filter cards/buttons
-- 4-column layout where possible
-
-## Revised Output Rules
-
-### PDF
-- one new page per `Level_1` item
-- inside that Level_1 page:
-  - separate table per segment
-- default first column: `SL`
-
-### Excel
-- separate sheet per segment
-- default first column: `SL`
-- second column: chosen `Level_1`
-
-### ZIP
-- file only
-- only file fields are eligible
-
-## Download Manager Alignment
-The superadmin `Download Manager` page should now mirror the revised structure using a top navigation/tab/folder style:
-
-1. `Level_1`
-2. `Level_2`
-3. `Level_3`
-
-Its purpose is to keep planning/configuration understandable before or while the runtime modal is refactored.
-
-### Download Manager page expectations
-
-#### `Level_1` tab
-- show common fields across active segments
-- also show `Office`
-- allow choosing candidate Level_1 field(s)
-- show that future sequence and sort controls belong here
-
-#### `Level_2` tab
-- show segment-wise non-common fields
-- exclude common fields from the displayed lists
-- communicate that this page corresponds to segment/field appearance in report output
-
-#### `Level_3` tab
-- keep segment-wise filter/sort field management visible here for now
-- add segment-wise token management
-- current persistence of field disabling/enabling must keep working after refresh
-- common fields must appear as token candidates by default
-
-## Revised Task Mapping
-
-### Task 1: roadmap alignment
+### Phase 0: planning and roadmap alignment
 Status: **Completed**
-- rewrite roadmap to match the revised 3-page structure
-- explicitly separate:
-  - common-field controls
-  - segment-field controls
-  - filter controls
 
-### Task 2: Download Manager UI redesign
+Deliverables:
+- rewrite roadmap around performance refactor
+- include the new `Level_1` filter-column requirement
+- define execution order so changes land safely
+
+### Phase 1: Level_1 filter-column integration
 Status: **Completed**
-- convert page into top-tab / folder-like multi-page layout
-- add:
-  - `Level_1` tab
-  - `Level_2` tab
-  - `Level_3` tab
-- preserve current working save actions while improving structure
 
-### Task 3: Download Manager data presentation update
+Scope:
+- add `Filter` column to the runtime `Level_1` table
+- wire row buttons to the existing common filter modal
+- map conditional child row to the same modal as its parent row
+- add `Check All` / `Uncheck All` buttons in the common filter modal
+- make common list/hierarchy/conditional filter options checked by default when rendered
+
+Expected gain:
+- user-facing usability improvement
+- no major speed gain yet
+- creates clean alignment between Level_1 setup and common filter logic
+
+### Phase 2: request-context foundation
 Status: **Completed**
-- `Level_1`:
-  - show common fields
-  - include `Office`
-- `Level_2`:
-  - show segment-wise non-common fields
-- `Level_3`:
-  - keep current filter/sort configuration surface visible
 
-### Task 4: runtime download modal refactor
+Scope:
+- add one request-scoped `download context`
+- preload once:
+  - selected segments
+  - accessible assets per selected segment
+  - segment field maps
+  - segment filter-field maps
+  - common label maps
+  - reusable hierarchy metadata
+- cache prepared structures by request signature inside runtime
+
+Expected gain:
+- removes repeated helper work
+- lowers repeated DB fetches and repeated field-map rebuilds
+
+### Phase 3: early filtering and grouped dataset reuse
 Status: **Completed**
-- refactor the actual download modal to match the same 3-page structure
-- keep `Download` / `Cancel` as shared modal actions outside the page bodies
-- move sort responsibility out of `Level_3`
-- add runtime `Level_1` sections for:
-  - file format
-  - Level_1 field/value selection
-  - common columns
-  - common sorting
-- update `Level_2` so it now shows **segment-specific fields only**
-- keep `Level_3` filters-only in the runtime modal
-- fix the runtime bug where the selected `Level_1` field could still reappear in `Level_2`
 
-### Task 5: runtime export alignment
-Status: **In Progress**
-- ensure Excel follows:
-  - one sheet per segment
-  - first column `SL`
-  - second column chosen `Level_1`
-- ensure PDF follows:
-  - one new page per Level_1 item
-  - separate segment tables
-- ensure ZIP follows:
-  - file-only logic
-- completed in this phase:
-  - `Office` is now available as a runtime `Level_1` option
-  - common columns selected in `Level_1` are now carried into export headers/rows
-  - common sorting selected in `Level_1` now drives row ordering inside each segment output
-  - `Level_2` no longer forces common fields to be selected as segment fields
-  - PDF renderer updated toward the revised structure:
-    - landscape output
-    - one Level_1 group per page section
-    - separate table per segment
-    - wrapped cell content
-    - repeating table header support
-    - page numbering
-  - ZIP builder updated toward the revised structure:
-    - `Level_1 → selected common fields → segment → file field → file`
-    - file names now use the superadmin-configurable naming template
-    - zero-file ZIP runs now return a valid archive instead of a corrupted response
-  - naming token system upgraded:
-    - default hardcoded tokens reduced to:
-      - `office_name`
-      - `sub-division`
-      - `division`
-      - `circle`
-      - `zone`
-      - `segment`
-      - `field_name`
-      - `office_type`
-      - `asset_number`
-    - common labels across all active segments now become token candidates by default
-    - superadmin-declared token fields are included through field-level token selection
-    - `Download Manager` Level_3 now manages:
-      - filter fields
-      - sort fields
-      - token fields
-    - token placeholders now support hyphenated names like `{sub-division}`
-- still to verify carefully:
-  - actual Excel/PDF/ZIP output files against all revised scenarios
-  - any remaining gaps between export naming/layout and the final revised spec
+Scope:
+- move common filter pruning and segment filter pruning earlier
+- build one grouped dataset for PDF / ZIP
+- build one filtered-per-segment list for Excel from the same context
+- stop recomputing the same matched asset lists in separate export paths
 
-### Task 6: regression verification
-Status: **In Progress**
-- confirm `Download Manager` save behavior survives refresh
-- confirm no existing board features break
-- confirm the later runtime refactor does not break permissions or export structure
-- completed in this phase:
-  - syntax checks passed for `app/lib/asset.php` and `app/views/board.php`
-  - browser check completed with `ee_syl@pwd.gov.bd`
-  - verified runtime modal now shows:
-    - `Level_1` common columns/sorting
-    - `Level_2` segment-specific fields only
-  - direct HTTP download verification completed:
-    - PDF response confirmed as valid `%PDF`
-    - ZIP response confirmed as valid `PK` archive
-- still pending:
-  - targeted export-file verification for Excel/PDF/ZIP
-  - broader regression sweep after export verification
+Expected gain:
+- biggest backend runtime improvement for medium and large downloads
 
-### Task 7: Level_3 filter UX refinement
+### Phase 4: format-specific tightening
 Status: **Completed**
-- aligned office filter presentation to nested hierarchy style
-- changed runtime dropdown/yes-no/text-like filter options to present-value-only behavior
-- refined conditional filter behavior:
-  - segment filters now render primary + secondary in one hierarchy block
-  - common/Level_1 filters now use the same hierarchy block instead of separate primary/secondary controls
-  - Level_1 conditional button title now uses `Primary - Secondary`
-- changed runtime segment filter presentation from generic collapsible blocks to card-style filter boxes
-- added hierarchy checkbox behavior:
-  - checking a parent auto-checks all descendants
-  - unchecking a parent auto-unchecks all descendants
-  - partially selected descendants make the parent indeterminate
 
-### Task 8: Level_3 filter request hardening
+Scope:
+- Excel:
+  - use prepared field maps instead of re-reading fields inside row writers
+  - avoid unnecessary per-cell repeated logic
+- PDF:
+  - keep markup simple and compact
+  - reuse prepared rows and headers
+- ZIP:
+  - build file path plan once
+  - reuse token maps and folder-part calculations where possible
+
+Expected gain:
+- noticeable reduction in generation overhead after filtering is done
+
+### Phase 5: optional heavy-download strategy
 Status: **Completed**
-- normalized runtime common-filter payload before export processing
-- normalized runtime segment-filter payload before export processing
-- restricted segment filters to:
-  - valid configured filter fields
-  - currently selected Level_2 fields only
-- restricted choice-based filter values to valid present-item options only
-- kept date/number/file filter payloads explicit and clean before dataset building
 
-### Task 9: non-Level_1 filter completion
-Status: **Completed**
-- completed field-type-specific non-Level_1 filter rendering for:
-  - date
-  - number
-  - file
-  - yes/no
-  - dropdown / text / BIMH-style text-value filters
-  - conditional hierarchy filters
-- finalized segment-side filter card bodies so the field controls are grouped consistently
-- fixed hierarchy submission behavior so partially selected parents remain checked + indeterminate
+Scope:
+- background job / queued generation
+- saved-result reuse
+- very large export handling without holding one long browser request
 
-## What To Check Now
+Implemented:
+- queued download-job table and filesystem storage
+- detached worker runner for background generation
+- job-status polling and completed-file endpoint
+- cached-result reuse for same user + same request signature
+- modal submit switched from direct long request to queued download flow
 
-### Download Manager structure
-- top tab/folder navigation appears clearly
-- clicking each tab feels like moving to a separate page inside one surface
-- active tab is visually obvious
+## Execution Order
 
-### `Level_1` tab
-- common fields are shown
-- `Office` is shown
-- page communicates future sequence/sort responsibility clearly
+1. Phase 1: Level_1 filter-column integration
+2. Phase 2: request-context foundation
+3. Phase 3: early filtering and grouped dataset reuse
+4. Phase 4: format-specific tightening
+5. mark phases complete and define next test scope
 
-### `Level_2` tab
-- fields are shown segment-wise
-- common fields are excluded from segment field lists
+## Code Targets
 
-### `Level_3` tab
-- current filter/sort disabling still saves
-- current token disabling still saves
-- removed fields stay removed after refresh
-- common labels appear as token candidates by default before the first save
-- naming helper shows only:
-  - default tokens
-  - common-token labels
+### UI files
+- `app/views/download_modal_fragment.php`
+- `app/views/board.php`
 
-### Runtime `Level_3` modal
-- `Office` filter opens as nested:
-  - Zone
-  - Circle under Zone
-  - Division under Circle
-  - Sub-division under Division
-- normal dropdown / yes-no / text-like filters show only values currently present in data
-- segment conditional filters show one hierarchy card:
-  - primary item
-  - matching secondary items nested under it
-- common conditional filters now follow the same hierarchy-tree pattern
-- hierarchy trees now support parent / child auto-checking with indeterminate parent state
-  - superadmin-declared token labels
+### Backend runtime
+- `app/lib/asset.php`
 
-## Next Implementation Focus
-The next major coding task should now be:
+Likely focus areas:
+- `asset_download_request_from_input()`
+- `asset_download_dataset()`
+- `asset_download_filtered_assets_for_segment()`
+- `asset_download_export_excel()`
+- `asset_download_export_pdf()`
+- `asset_download_export_zip()`
+- new request-context helper(s)
 
-1. finish **runtime export verification and edge-case hardening**
-2. then close the remaining gaps in Excel/PDF/ZIP layout/naming behavior against the revised spec
+## What To Test After Phase 1
+
+1. open `Download Data`
+2. in `Level_1`, verify a new `Filter` column exists
+3. click filter button for:
+   - Office
+   - normal dropdown/text-like common field
+   - conditional primary field
+   - conditional secondary field
+4. verify primary and secondary conditional rows open the same modal
+5. verify `Check All` and `Uncheck All` work
+6. verify hierarchy parents update correctly after bulk checking/unchecking
+
+## What To Test After Phase 2 and 3
+
+1. Excel download still works
+2. PDF download still works
+3. ZIP download still works
+4. same filters produce same results as before
+5. large runs open faster and finish faster than before
+6. login and board loading are not slowed by the download refactor
+
+## Completion Log
+
+- `2026-06-20`: roadmap rewritten around performance refactor and Level_1 filter integration
+- `2026-06-20`: Phase 1 completed
+  - added `Filter` column in runtime `Level_1` table
+  - Level_1 rows now open the existing common-filter modal
+  - conditional primary/secondary rows share the same modal
+  - added `Check All` and `Uncheck All`
+  - common modal list / hierarchy options now render checked by default
+- `2026-06-20`: Phase 2 completed
+  - added request-scoped download runtime context
+  - preloads accessible assets, fields, and effective filter field maps once per request
+- `2026-06-20`: Phase 3 completed
+  - added grouped-per-segment filtered asset reuse
+  - Excel and dataset grouping now reuse the same filtered segment pass
+  - reduced repeated `get_asset_fields()` calls in header/row builders for Excel and PDF
+- `2026-06-20`: Phase 4 completed
+  - added base filename-token caching per asset and segment
+  - ZIP export now prebuilds per-segment field-label maps instead of rescanning field metadata inside nested loops
+  - reduced repeated common-token hydration during file export
+- `2026-06-20`: Phase 5 completed
+  - added async download job table and worker script
+  - added status polling endpoint and completed-file endpoint
+  - switched modal submit to queued job flow
+  - added same-request cached-result reuse for completed downloads
