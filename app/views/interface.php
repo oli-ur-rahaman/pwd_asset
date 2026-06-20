@@ -51,13 +51,23 @@ $info = get_info_row();
 </section>
 
 <section class="card">
-    <h2>Video Tutorial URL</h2>
-    <form method="post" action="index.php" class="grid">
+    <h2>Video Tutorial</h2>
+    <form method="post" action="index.php" class="grid" enctype="multipart/form-data">
         <?= csrf_input(); ?>
         <input type="hidden" name="action" value="save_interface">
+        <p class="hint">Use Tutorial URL for external video links. Use Hosted Tutorial Video or Hosted Tutorial Server Filename for private MP4 tutorial playback inside the system. Hosted UI upload supports up to 500 MB. Larger MP4 files upload by FileZilla to <code><?= e(asset_tutorial_video_manual_path_note()); ?></code>.</p>
         <label>Video Tutorial URL
             <input type="url" name="video_tutorial_url" placeholder="https://..." value="<?= e((string)($info['video_tutorial_url'] ?? '')); ?>">
         </label>
+        <label>Hosted Tutorial Video (MP4 up to 500 MB)
+            <input type="file" name="global_tutorial_video_file" accept="video/mp4">
+            <span class="hint">UI upload supports MP4 up to 500 MB. Larger files upload by FileZilla to <code><?= e(asset_tutorial_video_manual_path_note()); ?></code> and register the filename below.</span>
+        </label>
+        <label>Hosted Tutorial Server Filename
+            <input type="text" name="global_hosted_tutorial_video_filename" placeholder="example.mp4">
+            <?php if (!empty($info['hosted_tutorial_video_path'])): ?><span class="hint">Current hosted video: <?= e((string)($info['hosted_tutorial_video_original_name'] ?? $info['hosted_tutorial_video_path'] ?? '')); ?></span><?php endif; ?>
+        </label>
+        <?php if (!empty($info['hosted_tutorial_video_path'])): ?><label class="inline-check"><input type="checkbox" name="remove_global_hosted_tutorial_video" value="1"> Remove hosted video</label><?php endif; ?>
         <button type="submit">Save</button>
     </form>
 </section>

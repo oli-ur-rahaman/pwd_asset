@@ -1049,7 +1049,8 @@ tbody tr:hover td:first-child {
 .field-help-body { display: grid; gap: 10px; color: #36516d; }
 .field-help-body p { margin: 0; }
 .field-help-video { margin-top: 16px; display: grid; gap: 10px; }
-.field-help-video iframe {
+.field-help-video iframe,
+.field-help-video video {
   width: 100%;
   min-height: 320px;
   border: 0;

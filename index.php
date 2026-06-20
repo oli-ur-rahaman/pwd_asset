@@ -377,7 +377,7 @@ if ($action === 'create_asset_field' || $action === 'update_asset_field') {
         exit('Not allowed.');
     }
     $fieldId = input_int('field_id');
-    $validation = validate_asset_field_definition($_POST, $action === 'update_asset_field' ? $fieldId : null);
+    $validation = validate_asset_field_definition($_POST, $_FILES, $action === 'update_asset_field' ? $fieldId : null);
     if ($validation['errors']) {
         flash('error', implode(' ', $validation['errors']));
         $adminRedirect();
@@ -1047,6 +1047,41 @@ if ($action === 'update_profile') {
     redirect('index.php?page=profile');
 }
 
+if ($action === 'save_login_page_video_link_setting') {
+    if (!can_manage_superadmin_scope()) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
+    $existing = get_info_row();
+    save_info_row(
+        $existing['video_tutorial_url'] ?? null,
+        $existing['login_message'] ?? null,
+        [
+            'site_name' => $existing['site_name'] ?? null,
+            'welcome_message' => $existing['welcome_message'] ?? null,
+            'ui_theme_key' => $existing['ui_theme_key'] ?? asset_default_theme_key(),
+            'asset_subcategory_enabled' => (int)($existing['asset_subcategory_enabled'] ?? 1),
+            'asset_number_visible_to_users' => (int)($existing['asset_number_visible_to_users'] ?? 1),
+            'login_video_link_enabled' => !empty($_POST['login_video_link_enabled']) ? 1 : 0,
+            'download_default_filters_json' => $existing['download_default_filters_json'] ?? null,
+            'download_naming_tokens_text' => $existing['download_naming_tokens_text'] ?? null,
+            'asset_filter_distinct_threshold' => (int)($existing['asset_filter_distinct_threshold'] ?? 20),
+            'i_opr_repair' => $existing['i_opr_repair'] ?? null,
+            'i_opr_other' => $existing['i_opr_other'] ?? null,
+            'i_dev_pw' => $existing['i_dev_pw'] ?? null,
+            'i_opr_min' => $existing['i_opr_min'] ?? null,
+            'i_dev_min' => $existing['i_dev_min'] ?? null,
+            'i_opr' => $existing['i_opr'] ?? null,
+            'i_dev' => $existing['i_dev'] ?? null,
+            'hosted_tutorial_video_path' => $existing['hosted_tutorial_video_path'] ?? null,
+            'hosted_tutorial_video_original_name' => $existing['hosted_tutorial_video_original_name'] ?? null,
+            'hosted_tutorial_video_size' => $existing['hosted_tutorial_video_size'] ?? null,
+        ]
+    );
+    flash('success', 'Login page video link setting saved.');
+    redirect('index.php?page=profile');
+}
+
 if ($action === 'reset_user_password') {
     if (!can_manage_superadmin_scope()) {
         http_response_code(403);
@@ -1119,6 +1154,7 @@ if ($action === 'save_interface') {
     }
     $existing = get_info_row();
     $extras = [];
+    $createdTutorialFiles = [];
     if (array_key_exists('site_name', $_POST)) {
         $extras['site_name'] = input_str('site_name');
     }
@@ -1127,6 +1163,18 @@ if ($action === 'save_interface') {
     }
     if (array_key_exists('ui_theme_key', $_POST)) {
         $extras['ui_theme_key'] = input_str('ui_theme_key');
+    }
+    if (array_key_exists('video_tutorial_url', $_POST)) {
+        $tutorialUpload = asset_extract_uploaded_tutorial_video((array)($_FILES['global_tutorial_video_file'] ?? []));
+        $tutorialFilename = trim((string)($_POST['global_hosted_tutorial_video_filename'] ?? ''));
+        $removeTutorial = !empty($_POST['remove_global_hosted_tutorial_video']);
+        $errors = [];
+        asset_validate_tutorial_video_input($tutorialUpload, $tutorialFilename, $removeTutorial, 'Global hosted tutorial video', $errors);
+        if ($errors) {
+            flash('error', implode(' ', $errors));
+            redirect('index.php?page=interface');
+        }
+        $extras = array_merge($extras, asset_assign_global_tutorial_video($tutorialUpload, $tutorialFilename, $removeTutorial, $createdTutorialFiles));
     }
     save_info_row(
         array_key_exists('video_tutorial_url', $_POST) ? input_str('video_tutorial_url') : ($existing['video_tutorial_url'] ?? null),
@@ -1218,6 +1266,13 @@ if ($page === 'audit_export') {
     }
     asset_audit_export(current_user(), 'my_office', $_GET);
     exit;
+}
+
+if ($page === 'field_tutorial_video') {
+    stream_field_tutorial_video((int)request_str('id', '0'));
+}
+if ($page === 'global_tutorial_video') {
+    stream_global_tutorial_video();
 }
 if ($page === 'office_order_file') {
     stream_office_order_file((int)request_str('id', '0'));

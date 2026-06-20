@@ -478,6 +478,9 @@ function get_info_row(): ?array
 function save_info_row(?string $video_url, ?string $login_message, array $extras = []): void
 {
     $existing = get_info_row();
+    $hosted_tutorial_video_path = $extras['hosted_tutorial_video_path'] ?? ($existing['hosted_tutorial_video_path'] ?? null);
+    $hosted_tutorial_video_original_name = $extras['hosted_tutorial_video_original_name'] ?? ($existing['hosted_tutorial_video_original_name'] ?? null);
+    $hosted_tutorial_video_size = $extras['hosted_tutorial_video_size'] ?? ($existing['hosted_tutorial_video_size'] ?? null);
     $site_name = $extras['site_name'] ?? ($existing['site_name'] ?? null);
     $welcome_message = $extras['welcome_message'] ?? ($existing['welcome_message'] ?? null);
     $ui_theme_key = asset_normalize_theme_key((string)($extras['ui_theme_key'] ?? ($existing['ui_theme_key'] ?? asset_default_theme_key())));
@@ -487,6 +490,9 @@ function save_info_row(?string $video_url, ?string $login_message, array $extras
     $asset_number_visible_to_users = array_key_exists('asset_number_visible_to_users', $extras)
         ? (int)$extras['asset_number_visible_to_users']
         : (int)($existing['asset_number_visible_to_users'] ?? 1);
+    $login_video_link_enabled = array_key_exists('login_video_link_enabled', $extras)
+        ? (int)$extras['login_video_link_enabled']
+        : (int)($existing['login_video_link_enabled'] ?? 1);
     $download_default_filters_json = array_key_exists('download_default_filters_json', $extras)
         ? $extras['download_default_filters_json']
         : ($existing['download_default_filters_json'] ?? null);
@@ -504,12 +510,12 @@ function save_info_row(?string $video_url, ?string $login_message, array $extras
     $opr_msg = $extras['i_opr'] ?? ($existing['i_opr'] ?? null);
     $dev_msg = $extras['i_dev'] ?? ($existing['i_dev'] ?? null);
     if ($existing) {
-        $stmt = db()->prepare('UPDATE info SET site_name = ?, video_tutorial_url = ?, login_message = ?, welcome_message = ?, ui_theme_key = ?, asset_subcategory_enabled = ?, asset_number_visible_to_users = ?, download_default_filters_json = ?, download_naming_tokens_text = ?, asset_filter_distinct_threshold = ?, i_opr_repair = ?, i_opr_other = ?, i_dev_pw = ?, i_opr_min = ?, i_dev_min = ?, i_opr = ?, i_dev = ?, updated_at = NOW() WHERE id = ?');
-        $stmt->execute([$site_name, $video_url, $login_message, $welcome_message, $ui_theme_key, $asset_subcategory_enabled, $asset_number_visible_to_users, $download_default_filters_json, $download_naming_tokens_text, $asset_filter_distinct_threshold, $opr_repair, $opr_other, $dev_pw, $opr_min, $dev_min, $opr_msg, $dev_msg, (int)$existing['id']]);
+        $stmt = db()->prepare('UPDATE info SET site_name = ?, video_tutorial_url = ?, hosted_tutorial_video_path = ?, hosted_tutorial_video_original_name = ?, hosted_tutorial_video_size = ?, login_message = ?, welcome_message = ?, ui_theme_key = ?, asset_subcategory_enabled = ?, asset_number_visible_to_users = ?, login_video_link_enabled = ?, download_default_filters_json = ?, download_naming_tokens_text = ?, asset_filter_distinct_threshold = ?, i_opr_repair = ?, i_opr_other = ?, i_dev_pw = ?, i_opr_min = ?, i_dev_min = ?, i_opr = ?, i_dev = ?, updated_at = NOW() WHERE id = ?');
+        $stmt->execute([$site_name, $video_url, $hosted_tutorial_video_path, $hosted_tutorial_video_original_name, $hosted_tutorial_video_size, $login_message, $welcome_message, $ui_theme_key, $asset_subcategory_enabled, $asset_number_visible_to_users, $login_video_link_enabled, $download_default_filters_json, $download_naming_tokens_text, $asset_filter_distinct_threshold, $opr_repair, $opr_other, $dev_pw, $opr_min, $dev_min, $opr_msg, $dev_msg, (int)$existing['id']]);
         return;
     }
-    $stmt = db()->prepare('INSERT INTO info (site_name, video_tutorial_url, login_message, welcome_message, ui_theme_key, asset_subcategory_enabled, asset_number_visible_to_users, download_default_filters_json, download_naming_tokens_text, asset_filter_distinct_threshold, i_opr_repair, i_opr_other, i_dev_pw, i_opr_min, i_dev_min, i_opr, i_dev, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())');
-    $stmt->execute([$site_name, $video_url, $login_message, $welcome_message, $ui_theme_key, $asset_subcategory_enabled, $asset_number_visible_to_users, $download_default_filters_json, $download_naming_tokens_text, $asset_filter_distinct_threshold, $opr_repair, $opr_other, $dev_pw, $opr_min, $dev_min, $opr_msg, $dev_msg]);
+    $stmt = db()->prepare('INSERT INTO info (site_name, video_tutorial_url, hosted_tutorial_video_path, hosted_tutorial_video_original_name, hosted_tutorial_video_size, login_message, welcome_message, ui_theme_key, asset_subcategory_enabled, asset_number_visible_to_users, login_video_link_enabled, download_default_filters_json, download_naming_tokens_text, asset_filter_distinct_threshold, i_opr_repair, i_opr_other, i_dev_pw, i_opr_min, i_dev_min, i_opr, i_dev, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())');
+    $stmt->execute([$site_name, $video_url, $hosted_tutorial_video_path, $hosted_tutorial_video_original_name, $hosted_tutorial_video_size, $login_message, $welcome_message, $ui_theme_key, $asset_subcategory_enabled, $asset_number_visible_to_users, $login_video_link_enabled, $download_default_filters_json, $download_naming_tokens_text, $asset_filter_distinct_threshold, $opr_repair, $opr_other, $dev_pw, $opr_min, $dev_min, $opr_msg, $dev_msg]);
 }
 
 function get_office_name_for_user(array $user): string

@@ -255,7 +255,7 @@ $numberRuleExamples = asset_number_format_rule_examples();
                         <td><span class="<?= $isActive ? 'status-active' : 'status-inactive'; ?>"><?= $isActive ? 'Active' : 'Disabled'; ?></span></td>
                         <td>
                             <div class="action-row">
-                                <form method="post" action="index.php" id="<?= e($formId); ?>" class="office-inline-form">
+                                <form method="post" action="index.php" id="<?= e($formId); ?>" class="office-inline-form" enctype="multipart/form-data">
                                     <?= csrf_input(); ?>
                                     <input type="hidden" name="action" value="update_asset_category">
                                     <input type="hidden" name="segment_id" value="<?= e((string)$activeSegmentId); ?>">
@@ -354,7 +354,7 @@ $numberRuleExamples = asset_number_format_rule_examples();
 
 <section class="card">
     <h2>Asset Fields / সম্পদের কলাম</h2>
-    <form method="post" action="index.php" class="grid asset-field-form" data-asset-field-form>
+    <form method="post" action="index.php" class="grid asset-field-form" data-asset-field-form enctype="multipart/form-data">
         <?= csrf_input(); ?>
         <input type="hidden" name="action" value="create_asset_field">
         <input type="hidden" name="segment_id" value="<?= e((string)$activeSegmentId); ?>">
@@ -380,6 +380,13 @@ $numberRuleExamples = asset_number_format_rule_examples();
         </label>
         <label>Tutorial URL
             <input type="url" name="video_tutorial_url" placeholder="https://www.youtube.com/watch?v=...">
+        </label>
+        <label>Hosted Tutorial Video (MP4 up to 500 MB)
+            <input type="file" name="tutorial_video_file" accept="video/mp4">
+            <span class="hint">UI upload supports MP4 up to 500 MB. Larger files upload by FileZilla to <code><?= e(asset_tutorial_video_manual_path_note()); ?></code> and register the filename below.</span>
+        </label>
+        <label>Hosted Tutorial Server Filename
+            <input type="text" name="hosted_tutorial_video_filename" placeholder="example.mp4">
         </label>
         <div class="field-config-group" data-field-config="dropdown">
             <label>Dropdown Options
@@ -422,6 +429,17 @@ $numberRuleExamples = asset_number_format_rule_examples();
         <div class="field-config-group" data-field-config="conditional">
             <label>Secondary Tutorial URL
                 <input type="url" name="secondary_video_tutorial_url" placeholder="https://www.youtube.com/watch?v=...">
+            </label>
+        </div>
+        <div class="field-config-group" data-field-config="conditional">
+            <label>Secondary Hosted Tutorial Video (MP4 up to 500 MB)
+                <input type="file" name="secondary_tutorial_video_file" accept="video/mp4">
+                <span class="hint">UI upload supports MP4 up to 500 MB. Larger files upload by FileZilla to <code><?= e(asset_tutorial_video_manual_path_note()); ?></code> and register the filename below.</span>
+            </label>
+        </div>
+        <div class="field-config-group" data-field-config="conditional">
+            <label>Secondary Hosted Tutorial Server Filename
+                <input type="text" name="secondary_hosted_tutorial_video_filename" placeholder="example.mp4">
             </label>
         </div>
         <div class="field-config-group" data-field-config="conditional">
@@ -528,6 +546,15 @@ $numberRuleExamples = asset_number_format_rule_examples();
                                 <label>Tutorial URL
                                     <input form="<?= e($formId); ?>" class="inline-edit" type="url" name="video_tutorial_url" value="<?= e((string)($field['video_tutorial_url'] ?? '')); ?>" placeholder="https://www.youtube.com/watch?v=...">
                                 </label>
+                                <label>Hosted Tutorial Video (MP4 up to 500 MB)
+                                    <input form="<?= e($formId); ?>" class="inline-edit" type="file" name="tutorial_video_file" accept="video/mp4">
+                                    <span class="hint">UI upload supports MP4 up to 500 MB. Larger files upload by FileZilla to <code><?= e(asset_tutorial_video_manual_path_note()); ?></code> and register the filename below.</span>
+                                </label>
+                                <label>Hosted Tutorial Server Filename
+                                    <input form="<?= e($formId); ?>" class="inline-edit" type="text" name="hosted_tutorial_video_filename" value="" placeholder="example.mp4">
+                                    <?php if (asset_field_has_hosted_tutorial($field)): ?><span class="hint">Current hosted video: <?= e((string)($field['hosted_tutorial_video_original_name'] ?? $field['hosted_tutorial_video_path'] ?? '')); ?></span><?php endif; ?>
+                                </label>
+                                <?php if (asset_field_has_hosted_tutorial($field)): ?><label class="inline-check"><input form="<?= e($formId); ?>" type="checkbox" name="remove_hosted_tutorial_video" value="1"> Remove hosted video</label><?php endif; ?>
                             </div>
                             <div class="field-config-group" data-field-config="number">
                                 <label>
@@ -562,6 +589,15 @@ $numberRuleExamples = asset_number_format_rule_examples();
                                 <label>Secondary Tutorial URL
                                     <input form="<?= e($formId); ?>" class="inline-edit" type="url" name="secondary_video_tutorial_url" value="<?= e((string)($conditionalChild['video_tutorial_url'] ?? '')); ?>" placeholder="https://www.youtube.com/watch?v=...">
                                 </label>
+                                <label>Secondary Hosted Tutorial Video (MP4 up to 500 MB)
+                                    <input form="<?= e($formId); ?>" class="inline-edit" type="file" name="secondary_tutorial_video_file" accept="video/mp4">
+                                    <span class="hint">UI upload supports MP4 up to 500 MB. Larger files upload by FileZilla to <code><?= e(asset_tutorial_video_manual_path_note()); ?></code> and register the filename below.</span>
+                                </label>
+                                <label>Secondary Hosted Tutorial Server Filename
+                                    <input form="<?= e($formId); ?>" class="inline-edit" type="text" name="secondary_hosted_tutorial_video_filename" value="" placeholder="example.mp4">
+                                    <?php if ($conditionalChild && asset_field_has_hosted_tutorial($conditionalChild)): ?><span class="hint">Current hosted video: <?= e((string)($conditionalChild['hosted_tutorial_video_original_name'] ?? $conditionalChild['hosted_tutorial_video_path'] ?? '')); ?></span><?php endif; ?>
+                                </label>
+                                <?php if ($conditionalChild && asset_field_has_hosted_tutorial($conditionalChild)): ?><label class="inline-check"><input form="<?= e($formId); ?>" type="checkbox" name="remove_secondary_hosted_tutorial_video" value="1"> Remove secondary hosted video</label><?php endif; ?>
                                 <label>Primary Dropdown Options
                                     <textarea form="<?= e($formId); ?>" class="inline-edit field-options-box" name="conditional_primary_options_text" rows="3" placeholder="One primary option per line"><?= e(implode("\n", $optionLines)); ?></textarea>
                                 </label>
@@ -594,7 +630,7 @@ $numberRuleExamples = asset_number_format_rule_examples();
                         <td><span class="<?= $isActive ? 'status-active' : 'status-inactive'; ?>"><?= $isActive ? 'Active' : 'Disabled'; ?></span></td>
                         <td>
                             <div class="action-row">
-                                <form method="post" action="index.php" id="<?= e($formId); ?>" class="office-inline-form">
+                                <form method="post" action="index.php" id="<?= e($formId); ?>" class="office-inline-form" enctype="multipart/form-data">
                                     <?= csrf_input(); ?>
                                     <input type="hidden" name="action" value="update_asset_field">
                                     <input type="hidden" name="segment_id" value="<?= e((string)$activeSegmentId); ?>">

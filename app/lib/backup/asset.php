@@ -534,6 +534,11 @@ function asset_default_segment_name(): string
 
 function get_asset_segments(bool $includeInactive = false): array
 {
+    static $cache = [];
+    $cacheKey = $includeInactive ? '1' : '0';
+    if (array_key_exists($cacheKey, $cache)) {
+        return $cache[$cacheKey];
+    }
     $sql = 'SELECT * FROM segments';
     if (!$includeInactive) {
         $sql .= ' WHERE active_status = 1';
@@ -544,7 +549,8 @@ function get_asset_segments(bool $includeInactive = false): array
         asset_default_segment_id();
         $rows = db()->query($sql)->fetchAll();
     }
-    return $rows;
+    $cache[$cacheKey] = $rows;
+    return $cache[$cacheKey];
 }
 
 function create_asset_segment(string $segmentName, ?int $sortOrder = null): int
@@ -1980,7 +1986,11 @@ function asset_ensure_scope_visibility_rows(?int $segmentId = null): void
 
 function asset_scope_visibility_settings(?int $segmentId = null): array
 {
+    static $cache = [];
     $normalizedSegmentId = asset_normalize_segment_id($segmentId);
+    if (array_key_exists($normalizedSegmentId, $cache)) {
+        return $cache[$normalizedSegmentId];
+    }
     asset_ensure_scope_visibility_rows($normalizedSegmentId);
     $stmt = db()->prepare('SELECT * FROM segment_office_scope_visibility WHERE segment_id = ? ORDER BY office_type ASC');
     $stmt->execute([$normalizedSegmentId]);
@@ -2004,7 +2014,8 @@ function asset_scope_visibility_settings(?int $segmentId = null): array
         ];
     }
     ksort($settings);
-    return $settings;
+    $cache[$normalizedSegmentId] = $settings;
+    return $cache[$normalizedSegmentId];
 }
 
 function asset_scope_visibility_for_office_type(int $officeType, ?int $segmentId = null): array
@@ -3445,15 +3456,22 @@ function delete_asset_subcategory(int $id, ?int $segmentId = null): bool
 
 function get_asset_fields(bool $includeInactive = false, ?int $segmentId = null): array
 {
+    static $cache = [];
+    $normalizedSegmentId = asset_normalize_segment_id($segmentId);
+    $cacheKey = ($includeInactive ? '1' : '0') . ':' . $normalizedSegmentId;
+    if (array_key_exists($cacheKey, $cache)) {
+        return $cache[$cacheKey];
+    }
     $sql = 'SELECT * FROM asset_fields WHERE deleted_at IS NULL AND segment_id = ?';
-    $params = [asset_normalize_segment_id($segmentId)];
+    $params = [$normalizedSegmentId];
     if (!$includeInactive) {
         $sql .= ' AND active_status = 1';
     }
     $sql .= ' ORDER BY sort_order ASC, id ASC';
     $stmt = db()->prepare($sql);
     $stmt->execute($params);
-    return $stmt->fetchAll();
+    $cache[$cacheKey] = $stmt->fetchAll();
+    return $cache[$cacheKey];
 }
 
 function get_asset_field(int $id, ?int $segmentId = null): ?array
@@ -3466,10 +3484,20 @@ function get_asset_field(int $id, ?int $segmentId = null): ?array
 
 function get_asset_field_by_key(string $fieldKey, ?int $segmentId = null): ?array
 {
-    $stmt = db()->prepare('SELECT * FROM asset_fields WHERE segment_id = ? AND field_key = ? LIMIT 1');
-    $stmt->execute([asset_normalize_segment_id($segmentId), $fieldKey]);
-    $row = $stmt->fetch();
-    return $row ?: null;
+    static $cache = [];
+    $normalizedSegmentId = asset_normalize_segment_id($segmentId);
+    $cacheKey = $normalizedSegmentId . ':' . $fieldKey;
+    if (array_key_exists($cacheKey, $cache)) {
+        return $cache[$cacheKey];
+    }
+    foreach (get_asset_fields(true, $normalizedSegmentId) as $field) {
+        if ((string)($field['field_key'] ?? '') === $fieldKey) {
+            $cache[$cacheKey] = $field;
+            return $cache[$cacheKey];
+        }
+    }
+    $cache[$cacheKey] = null;
+    return null;
 }
 
 function get_asset_field_options(int $fieldId, bool $includeInactive = false): array
@@ -5590,11 +5618,18 @@ function asset_download_safe_name(string $value, string $fallback = 'Blank'): st
 
 function asset_download_field_for_label(string $label, int $segmentId): ?array
 {
+    static $cache = [];
+    $cacheKey = $segmentId . ':' . $label;
+    if (array_key_exists($cacheKey, $cache)) {
+        return $cache[$cacheKey];
+    }
     foreach (get_asset_fields(false, $segmentId) as $field) {
         if (trim((string)($field['label'] ?? '')) === $label) {
-            return $field;
+            $cache[$cacheKey] = $field;
+            return $cache[$cacheKey];
         }
     }
+    $cache[$cacheKey] = null;
     return null;
 }
 
@@ -5676,19 +5711,36 @@ function asset_download_level1_value_for_asset(array $asset, string $label, int 
 
 function asset_download_accessible_assets_for_segment(int $segmentId, array $user, string $viewScope = 'my_office'): array
 {
+    static $cache = [];
+    $userId = (int)($user['id'] ?? 0);
+    $cacheKey = implode(':', [$segmentId, $userId, $viewScope, is_superadmin() ? 'superadmin' : 'user']);
+    if (array_key_exists($cacheKey, $cache)) {
+        return $cache[$cacheKey];
+    }
     $filters = ['segment_id' => $segmentId];
     if (!is_superadmin()) {
         $filters['office_view_scope'] = $viewScope;
     }
-    return get_assets($filters, $user);
+    $cache[$cacheKey] = get_assets($filters, $user);
+    return $cache[$cacheKey];
 }
 
 function asset_download_level1_catalog(array $user, string $viewScope = 'my_office'): array
 {
+    static $cache = [];
+    $userId = (int)($user['id'] ?? 0);
+    $cacheKey = $userId . ':' . $viewScope . ':' . (is_superadmin() ? 'superadmin' : 'user');
+    if (array_key_exists($cacheKey, $cache)) {
+        return $cache[$cacheKey];
+    }
     $catalog = [];
     $officeValues = [];
-    foreach (get_asset_segments(false) as $segment) {
-        foreach (asset_download_accessible_assets_for_segment((int)$segment['id'], $user, $viewScope) as $asset) {
+    $segments = get_asset_segments(false);
+    $assetsBySegment = [];
+    foreach ($segments as $segment) {
+        $segmentId = (int)($segment['id'] ?? 0);
+        $assetsBySegment[$segmentId] = asset_download_accessible_assets_for_segment($segmentId, $user, $viewScope);
+        foreach ($assetsBySegment[$segmentId] as $asset) {
             $value = trim((string)(asset_download_office_hierarchy($asset)['office_name'] ?? ''));
             $value = $value === '' ? 'Blank' : $value;
             $officeValues[$value] = $value;
@@ -5699,13 +5751,13 @@ function asset_download_level1_catalog(array $user, string $viewScope = 'my_offi
     $catalog['Office'] = $officeItems;
     foreach (asset_download_selected_level1_labels() as $label) {
         $values = [];
-        foreach (get_asset_segments(false) as $segment) {
+        foreach ($segments as $segment) {
             $segmentId = (int)$segment['id'];
             $field = asset_download_field_for_label($label, $segmentId);
             if (!$field) {
                 continue;
             }
-            foreach (asset_download_accessible_assets_for_segment($segmentId, $user, $viewScope) as $asset) {
+            foreach (($assetsBySegment[$segmentId] ?? []) as $asset) {
                 $value = asset_download_level1_value_for_asset($asset, $label, $segmentId);
                 $values[$value] = $value;
             }
@@ -5715,7 +5767,8 @@ function asset_download_level1_catalog(array $user, string $viewScope = 'my_offi
         $catalog[$label] = $items;
     }
     ksort($catalog, SORT_NATURAL | SORT_FLAG_CASE);
-    return $catalog;
+    $cache[$cacheKey] = $catalog;
+    return $cache[$cacheKey];
 }
 
 function asset_download_sort_option_map(int $segmentId): array
@@ -6157,6 +6210,12 @@ function asset_audit_count_cell(array $assets, array $field, string $levelKey, a
 
 function asset_audit_segments(array $user, string $viewScope = 'my_office'): array
 {
+    static $cache = [];
+    $userId = (int)($user['id'] ?? 0);
+    $cacheKey = $userId . ':' . $viewScope . ':' . (is_superadmin() ? 'superadmin' : 'user');
+    if (array_key_exists($cacheKey, $cache)) {
+        return $cache[$cacheKey];
+    }
     $segments = [];
     foreach (get_asset_segments(false) as $segment) {
         $segmentId = (int)$segment['id'];
@@ -6171,7 +6230,8 @@ function asset_audit_segments(array $user, string $viewScope = 'my_office'): arr
             'assets' => $assets,
         ];
     }
-    return $segments;
+    $cache[$cacheKey] = $segments;
+    return $cache[$cacheKey];
 }
 
 function asset_audit_asset_label(array $asset): string
@@ -8734,6 +8794,10 @@ function reset_office_user_password(string $kind, int $officeId): string
 
 function get_offices_overview(): array
 {
+    static $cache = null;
+    if ($cache !== null) {
+        return $cache;
+    }
     $zones = db()->query('SELECT * FROM zones ORDER BY office_name')->fetchAll();
     $circles = db()->query('SELECT c.*, z.office_name AS zone_name FROM circles c LEFT JOIN zones z ON z.id = c.zone_id ORDER BY c.office_name')->fetchAll();
     $divisions = db()->query('SELECT d.*, z.office_name AS zone_name, c.office_name AS circle_name FROM divisions d LEFT JOIN zones z ON z.id = d.zone_id LEFT JOIN circles c ON c.id = d.circle_id ORDER BY d.office_name')->fetchAll();
@@ -8776,12 +8840,13 @@ function get_offices_overview(): array
     }
     unset($subdivision);
 
-    return [
+    $cache = [
         'zones' => $zones,
         'circles' => $circles,
         'divisions' => $divisions,
         'subdivisions' => $subdivisions,
     ];
+    return $cache;
 }
 
 function asset_template_storage_dir(): string

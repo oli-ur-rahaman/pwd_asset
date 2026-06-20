@@ -123,6 +123,8 @@ foreach ($fields as $field) {
         'information' => (string)($field['field_information'] ?? ''),
         'tutorial_url' => (string)($field['video_tutorial_url'] ?? ''),
         'tutorial_embed_url' => (string)(asset_youtube_embed_url((string)($field['video_tutorial_url'] ?? '')) ?? ''),
+        'hosted_tutorial_url' => (string)(asset_field_hosted_tutorial_stream_url($field) ?? ''),
+        'hosted_tutorial_name' => (string)($field['hosted_tutorial_video_original_name'] ?? $field['hosted_tutorial_video_path'] ?? ''),
         'has_help' => asset_field_has_help($field),
     ];
 }
@@ -260,6 +262,8 @@ $renderFieldHelpButton = static function (?array $meta, string $buttonClass = 'f
         data-help-information="<?= e((string)($meta['information'] ?? '')); ?>"
         data-help-url="<?= e((string)($meta['tutorial_url'] ?? '')); ?>"
         data-help-embed-url="<?= e((string)($meta['tutorial_embed_url'] ?? '')); ?>"
+        data-help-hosted-url="<?= e((string)($meta['hosted_tutorial_url'] ?? '')); ?>"
+        data-help-hosted-name="<?= e((string)($meta['hosted_tutorial_name'] ?? '')); ?>"
         title="<?= e($title); ?>"
         aria-label="<?= e($title); ?>"
     >i</button>
@@ -2010,8 +2014,10 @@ if (is_superadmin()) {
             <p class="field-help-label" id="field-help-label"></p>
             <div class="field-help-body" id="field-help-body"></div>
             <div class="field-help-video hidden" id="field-help-video">
+                <video id="field-help-player" class="hidden" controls preload="metadata"></video>
                 <iframe
                     id="field-help-iframe"
+                    class="hidden"
                     src=""
                     title="Field tutorial"
                     loading="lazy"
@@ -2561,20 +2567,23 @@ window.initializeDownloadModalUi = function () {
         openWaitModal();
         startDownloadCompletionPolling(token);
     });
-    document.querySelectorAll('[data-common-filter-open]').forEach(function (button) {
-        button.addEventListener('click', function () {
-            var identifier = button.getAttribute('data-common-filter-open');
-            if (!commonFilterModal) {
-                return;
-            }
-            loadLevel3Content().finally(function () {
-                commonFilterModal.setAttribute('aria-hidden', 'false');
-                commonFilterModal.classList.add('open');
-                commonFilterModal.querySelectorAll('[data-common-filter-panel]').forEach(function (panel) {
-                    panel.classList.toggle('hidden', panel.getAttribute('data-common-filter-panel') !== identifier);
-                });
-                syncHierarchyTrees();
+    document.addEventListener('click', function (event) {
+        var commonFilterButton = event.target.closest('[data-common-filter-open]');
+        if (!commonFilterButton) {
+            return;
+        }
+        event.preventDefault();
+        var identifier = commonFilterButton.getAttribute('data-common-filter-open');
+        if (!commonFilterModal) {
+            return;
+        }
+        loadLevel3Content().finally(function () {
+            commonFilterModal.setAttribute('aria-hidden', 'false');
+            commonFilterModal.classList.add('open');
+            commonFilterModal.querySelectorAll('[data-common-filter-panel]').forEach(function (panel) {
+                panel.classList.toggle('hidden', panel.getAttribute('data-common-filter-panel') !== identifier);
             });
+            syncHierarchyTrees();
         });
     });
     document.addEventListener('change', function (event) {

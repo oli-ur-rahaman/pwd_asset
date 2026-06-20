@@ -37,7 +37,9 @@
                     <button type="submit">Sign in</button>
                     <div class="login-links">
                         <a href="#" class="forgot-link" id="forgot-link">Forget Password</a>
-                        <a href="<?= e((string)($info['video_tutorial_url'] ?? '#')); ?>" class="video-link" target="_blank" rel="noopener">Video Tutorial</a>
+                        <?php if ((int)($info['login_video_link_enabled'] ?? 1) === 1 && trim((string)($info['video_tutorial_url'] ?? '')) !== ''): ?>
+                            <a href="<?= e((string)($info['video_tutorial_url'] ?? '#')); ?>" class="video-link" target="_blank" rel="noopener">Video Tutorial</a>
+                        <?php endif; ?>
                     </div>
                 </div>
             </form>

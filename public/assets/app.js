@@ -317,8 +317,38 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (modalId === 'field-help-modal') {
             const iframe = document.getElementById('field-help-iframe');
+            const player = document.getElementById('field-help-player');
             if (iframe) {
                 iframe.src = '';
+                iframe.classList.add('hidden');
+            }
+            if (player) {
+                player.pause();
+                player.removeAttribute('src');
+                player.load();
+                player.classList.add('hidden');
+            }
+        }
+        if (modalId === 'global-tutorial-modal') {
+            const iframe = document.getElementById('global-tutorial-iframe');
+            const player = document.getElementById('global-tutorial-player');
+            const empty = document.getElementById('global-tutorial-empty');
+            const videoBlock = document.getElementById('global-tutorial-video');
+            if (iframe) {
+                iframe.src = '';
+                iframe.classList.add('hidden');
+            }
+            if (player) {
+                player.pause();
+                player.removeAttribute('src');
+                player.load();
+                player.classList.add('hidden');
+            }
+            if (videoBlock) {
+                videoBlock.classList.add('hidden');
+            }
+            if (empty) {
+                empty.classList.add('hidden');
             }
         }
     };
@@ -398,6 +428,53 @@ document.addEventListener('DOMContentLoaded', () => {
         closeModalById(button.getAttribute('data-close'));
     });
 
+    document.querySelectorAll('[data-global-tutorial-open]').forEach((button) => {
+        button.addEventListener('click', (event) => {
+            event.preventDefault();
+            const modal = document.getElementById('global-tutorial-modal');
+            const videoBlock = document.getElementById('global-tutorial-video');
+            const player = document.getElementById('global-tutorial-player');
+            const iframe = document.getElementById('global-tutorial-iframe');
+            const link = document.getElementById('global-tutorial-link');
+            const empty = document.getElementById('global-tutorial-empty');
+            if (!modal || !videoBlock || !player || !iframe || !link || !empty) {
+                return;
+            }
+            const tutorialUrl = button.getAttribute('data-tutorial-url') || '';
+            const embedUrl = button.getAttribute('data-tutorial-embed-url') || '';
+            const hostedUrl = button.getAttribute('data-tutorial-hosted-url') || '';
+            const hostedName = button.getAttribute('data-tutorial-hosted-name') || '';
+            empty.classList.add('hidden');
+            videoBlock.classList.add('hidden');
+            player.pause();
+            player.removeAttribute('src');
+            player.load();
+            player.classList.add('hidden');
+            iframe.src = '';
+            iframe.classList.add('hidden');
+            link.href = '#';
+            link.textContent = 'Open tutorial';
+            if (hostedUrl) {
+                videoBlock.classList.remove('hidden');
+                player.classList.remove('hidden');
+                player.src = hostedUrl;
+                link.href = hostedUrl;
+                link.textContent = hostedName ? ('Open ' + hostedName) : 'Open hosted video';
+            } else if (tutorialUrl) {
+                videoBlock.classList.remove('hidden');
+                if (embedUrl) {
+                    iframe.classList.remove('hidden');
+                    iframe.src = embedUrl;
+                }
+                link.href = tutorialUrl;
+            } else {
+                empty.classList.remove('hidden');
+            }
+            modal.classList.add('open');
+            modal.setAttribute('aria-hidden', 'false');
+        });
+    });
+
     document.querySelectorAll('[data-field-help]').forEach((button) => {
         button.addEventListener('click', (event) => {
             event.preventDefault();
@@ -411,11 +488,14 @@ document.addEventListener('DOMContentLoaded', () => {
             const body = document.getElementById('field-help-body');
             const videoBlock = document.getElementById('field-help-video');
             const iframe = document.getElementById('field-help-iframe');
+            const player = document.getElementById('field-help-player');
             const link = document.getElementById('field-help-link');
             const helpLabel = button.getAttribute('data-help-label') || 'Field';
             const information = button.getAttribute('data-help-information') || '';
             const tutorialUrl = button.getAttribute('data-help-url') || '';
             const embedUrl = button.getAttribute('data-help-embed-url') || '';
+            const hostedUrl = button.getAttribute('data-help-hosted-url') || '';
+            const hostedName = button.getAttribute('data-help-hosted-name') || '';
             if (title) {
                 title.textContent = 'Field Information';
             }
@@ -425,15 +505,40 @@ document.addEventListener('DOMContentLoaded', () => {
             if (body) {
                 body.innerHTML = renderHelpInformationHtml(information);
             }
-            if (videoBlock && iframe && link) {
-                if (tutorialUrl) {
+            if (videoBlock && iframe && player && link) {
+                if (hostedUrl) {
                     videoBlock.classList.remove('hidden');
-                    iframe.src = embedUrl || '';
+                    player.classList.remove('hidden');
+                    player.src = hostedUrl;
+                    iframe.classList.add('hidden');
+                    iframe.src = '';
+                    link.href = hostedUrl;
+                    link.textContent = hostedName ? ('Open ' + hostedName) : 'Open hosted video';
+                } else if (tutorialUrl) {
+                    videoBlock.classList.remove('hidden');
+                    player.pause();
+                    player.removeAttribute('src');
+                    player.load();
+                    player.classList.add('hidden');
+                    if (embedUrl) {
+                        iframe.classList.remove('hidden');
+                        iframe.src = embedUrl;
+                    } else {
+                        iframe.classList.add('hidden');
+                        iframe.src = '';
+                    }
                     link.href = tutorialUrl;
+                    link.textContent = 'Open tutorial';
                 } else {
                     videoBlock.classList.add('hidden');
+                    player.pause();
+                    player.removeAttribute('src');
+                    player.load();
+                    player.classList.add('hidden');
+                    iframe.classList.add('hidden');
                     iframe.src = '';
                     link.href = '#';
+                    link.textContent = 'Open tutorial';
                 }
             }
             modal.classList.add('open');

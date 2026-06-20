@@ -34,6 +34,20 @@ $superadminUsers = is_superadmin() ? get_superadmin_additional_users() : [];
 </section>
 
 <?php if (is_superadmin()): ?>
+    <?php $info = get_info_row() ?? []; ?>
+    <section class="card">
+        <h2>Login Page Video Link</h2>
+        <form method="post" action="index.php" class="grid profile-form">
+            <?= csrf_input(); ?>
+            <input type="hidden" name="action" value="save_login_page_video_link_setting">
+            <label class="checkbox-label">
+                <input type="checkbox" name="login_video_link_enabled" value="1" <?= (int)($info['login_video_link_enabled'] ?? 1) === 1 ? 'checked' : ''; ?>>
+                Show the `Video Tutorial` link on the login page
+            </label>
+            <button type="submit" class="btn-small">Save Setting</button>
+        </form>
+    </section>
+
     <section class="card">
         <h2>BIMH Data</h2>
         <p class="hint">This is a global BIMH master upload. If a BIMH ID already exists, that row will be updated. If the BIMH ID is new, a new row will be created. Duplicate BIMH IDs cannot exist in the database because `BIMH ID` is the unique primary key.</p>
