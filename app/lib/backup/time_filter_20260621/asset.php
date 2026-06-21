@@ -5798,13 +5798,9 @@ function get_assets(array $filters = [], ?array $user = null, bool $includeDelet
     $assetIds = array_map(fn($row) => (int)$row['id'], $rows);
     $valuesByAsset = get_asset_values_for_assets($assetIds);
     $filesByAsset = get_asset_files_for_assets($assetIds);
-    $valueTimesByAsset = get_asset_value_time_map_for_assets($assetIds);
-    $fileTimesByAsset = get_asset_file_time_map_for_assets($assetIds);
     foreach ($rows as &$row) {
         $row['values'] = $valuesByAsset[(int)$row['id']] ?? [];
         $row['files'] = $filesByAsset[(int)$row['id']] ?? [];
-        $row['value_timestamps'] = $valueTimesByAsset[(int)$row['id']] ?? [];
-        $row['file_timestamps'] = $fileTimesByAsset[(int)$row['id']] ?? [];
         $row['office_name'] = office_name_from_type_id((int)$row['office_type'], (int)$row['office_id']);
         $row['office_type_label'] = asset_office_type_label((int)$row['office_type']);
     }
@@ -5939,30 +5935,6 @@ function get_asset_values_for_assets(array $assetIds): array
     return $map;
 }
 
-function get_asset_value_time_map_for_assets(array $assetIds): array
-{
-    if (!$assetIds) {
-        return [];
-    }
-    $placeholders = implode(',', array_fill(0, count($assetIds), '?'));
-    $stmt = db()->prepare(
-        "SELECT v.asset_id, f.field_key, COALESCE(v.updated_at, v.created_at) AS value_timestamp
-         FROM asset_values v
-         JOIN asset_fields f ON f.id = v.field_id
-         WHERE v.asset_id IN ({$placeholders})"
-    );
-    $stmt->execute($assetIds);
-    $map = [];
-    foreach ($stmt->fetchAll() as $row) {
-        $timestamp = trim((string)($row['value_timestamp'] ?? ''));
-        if ($timestamp === '') {
-            continue;
-        }
-        $map[(int)$row['asset_id']][(string)$row['field_key']] = $timestamp;
-    }
-    return $map;
-}
-
 function get_asset_field_files(int $assetId, int $fieldId): array
 {
     $stmt = db()->prepare('SELECT * FROM asset_file_values WHERE asset_id = ? AND field_id = ? ORDER BY id ASC');
@@ -5994,66 +5966,6 @@ function get_asset_files_for_assets(array $assetIds): array
         $map[(int)$row['asset_id']][(string)$row['field_key']][] = $row;
     }
     return $map;
-}
-
-function get_asset_file_time_map_for_assets(array $assetIds): array
-{
-    if (!$assetIds) {
-        return [];
-    }
-    $placeholders = implode(',', array_fill(0, count($assetIds), '?'));
-    $stmt = db()->prepare(
-        "SELECT f.asset_id, af.field_key, MAX(f.created_at) AS value_timestamp
-         FROM asset_file_values f
-         JOIN asset_fields af ON af.id = f.field_id
-         WHERE f.asset_id IN ({$placeholders})
-         GROUP BY f.asset_id, af.field_key"
-    );
-    $stmt->execute($assetIds);
-    $map = [];
-    foreach ($stmt->fetchAll() as $row) {
-        $timestamp = trim((string)($row['value_timestamp'] ?? ''));
-        if ($timestamp === '') {
-            continue;
-        }
-        $map[(int)$row['asset_id']][(string)$row['field_key']] = $timestamp;
-    }
-    return $map;
-}
-
-function asset_row_field_timestamp(array $asset, string $fieldKey): ?int
-{
-    $fileTimestamp = trim((string)(($asset['file_timestamps'][$fieldKey] ?? '')));
-    if ($fileTimestamp !== '') {
-        $unix = strtotime($fileTimestamp);
-        return $unix === false ? null : $unix;
-    }
-    $valueTimestamp = trim((string)(($asset['value_timestamps'][$fieldKey] ?? '')));
-    if ($valueTimestamp !== '') {
-        $unix = strtotime($valueTimestamp);
-        return $unix === false ? null : $unix;
-    }
-    return null;
-}
-
-function asset_filter_rows_by_field_time(array $rows, string $fieldKey, ?int $startTimestamp, ?int $endTimestamp): array
-{
-    if ($fieldKey === '' || ($startTimestamp === null && $endTimestamp === null)) {
-        return $rows;
-    }
-    return array_values(array_filter($rows, static function (array $row) use ($fieldKey, $startTimestamp, $endTimestamp): bool {
-        $fieldTimestamp = asset_row_field_timestamp($row, $fieldKey);
-        if ($fieldTimestamp === null) {
-            return false;
-        }
-        if ($startTimestamp !== null && $fieldTimestamp < $startTimestamp) {
-            return false;
-        }
-        if ($endTimestamp !== null && $fieldTimestamp > $endTimestamp) {
-            return false;
-        }
-        return true;
-    }));
 }
 
 function sync_asset_file_values(int $assetId, array $fileOperations, array &$cleanup = []): void

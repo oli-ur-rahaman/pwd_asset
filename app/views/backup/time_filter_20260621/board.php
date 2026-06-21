@@ -82,29 +82,6 @@ $sortColumn = request_str('sort_col', '');
 $sortDirection = strtolower(request_str('sort_dir', 'asc')) === 'desc' ? 'desc' : 'asc';
 $filters['sort_col'] = $sortColumn;
 $filters['sort_dir'] = $sortDirection;
-$parseBoardDateTime = static function (string $raw): ?int {
-    $raw = trim($raw);
-    if ($raw === '') {
-        return null;
-    }
-    $timestamp = strtotime($raw);
-    return $timestamp === false ? null : $timestamp;
-};
-$formatBoardDateTimeInput = static function (string $raw) use ($parseBoardDateTime): string {
-    $timestamp = $parseBoardDateTime($raw);
-    return $timestamp === null ? '' : date('Y-m-d\TH:i', $timestamp);
-};
-$timeFilterCategoryId = (int)request_str('time_filter_category_id', '0');
-$timeFilterFieldKey = request_str('time_filter_field', '');
-$timeFilterStartRaw = request_str('time_filter_start', '');
-$timeFilterEndRaw = request_str('time_filter_end', '');
-$timeFilterFromBeginning = request_str('time_filter_from_beginning', '') === '1';
-$timeFilterTillNow = request_str('time_filter_till_now', '') === '1';
-$timeFilterStartTimestamp = $timeFilterFromBeginning ? null : $parseBoardDateTime($timeFilterStartRaw);
-$timeFilterEndTimestamp = $timeFilterTillNow ? null : $parseBoardDateTime($timeFilterEndRaw);
-$timeFilterActive = $timeFilterCategoryId > 0
-    && $timeFilterFieldKey !== ''
-    && ($timeFilterFromBeginning || $timeFilterTillNow || $timeFilterStartTimestamp !== null || $timeFilterEndTimestamp !== null);
 $baseScopeAssets = $scopeAccessAvailable
     ? get_assets(['office_view_scope' => $currentOfficeViewScope, 'segment_id' => $activeSegmentId], $user)
     : [];
@@ -151,14 +128,6 @@ foreach ($fields as $field) {
         'has_help' => asset_field_has_help($field),
     ];
 }
-if ($timeFilterFieldKey !== '') {
-    $timeFilterField = $fieldMap[$timeFilterFieldKey] ?? null;
-    if (!$timeFilterField || (int)($timeFilterField['active_status'] ?? 0) !== 1 || (int)($timeFilterField['is_displayed'] ?? 0) !== 1) {
-        $timeFilterFieldKey = '';
-        $timeFilterActive = false;
-        $timeFilterCategoryId = 0;
-    }
-}
 $bimhPickerData = asset_bimh_picker_rows($user);
 $bimhPickerScope = asset_bimh_picker_scope($user);
 $availableTableColumns = asset_table_available_columns($fields, $uiFieldLabels, $currentOfficeViewScope, $activeSegmentId);
@@ -186,21 +155,6 @@ foreach ($fields as $field) {
     }
 }
 $groupedAssets = $scopeAccessAvailable ? get_assets_grouped_by_category($filters, $user) : [];
-if ($timeFilterActive) {
-    foreach ($groupedAssets as &$group) {
-        $categoryId = (int)($group['category']['id'] ?? 0);
-        if ($categoryId !== $timeFilterCategoryId) {
-            continue;
-        }
-        $group['assets'] = asset_filter_rows_by_field_time(
-            (array)($group['assets'] ?? []),
-            $timeFilterFieldKey,
-            $timeFilterStartTimestamp,
-            $timeFilterEndTimestamp
-        );
-    }
-    unset($group);
-}
 $displayedAssets = [];
 foreach ($groupedAssets as $group) {
     foreach (($group['assets'] ?? []) as $assetRow) {
@@ -845,30 +799,6 @@ if (is_superadmin()) {
                 $assets = $group['assets'];
                 $prefCategoryId = asset_table_preference_category_id((int)$category['id'], $currentOfficeViewScope);
                 $visibleColumnKeys = resolve_asset_table_visible_column_keys($prefCategoryId, $availableTableColumns, $columnPreferenceMap);
-                $timeFilterForCategory = $timeFilterActive && (int)$category['id'] === $timeFilterCategoryId;
-                $refreshParams = array_diff_key(
-                    array_merge($_GET, ['page' => 'board', 'office_view_scope' => $currentOfficeViewScope, 'segment_id' => $activeSegmentId]),
-                    [
-                        'sort_col' => true,
-                        'sort_dir' => true,
-                        'time_filter_category_id' => true,
-                        'time_filter_field' => true,
-                        'time_filter_start' => true,
-                        'time_filter_end' => true,
-                        'time_filter_from_beginning' => true,
-                        'time_filter_till_now' => true,
-                    ]
-                );
-                $timeFilterFieldsForCategory = [];
-                foreach ($fields as $field) {
-                    if ((int)($field['active_status'] ?? 0) !== 1 || (int)($field['is_displayed'] ?? 0) !== 1) {
-                        continue;
-                    }
-                    if (empty($visibleColumnKeys[$field['field_key']])) {
-                        continue;
-                    }
-                    $timeFilterFieldsForCategory[] = $field;
-                }
                 $visibleFieldCount = 0;
                 foreach ($fields as $field) {
                     if ((int)$field['is_displayed'] === 1 && (int)$field['active_status'] === 1 && !empty($visibleColumnKeys[$field['field_key']])) {
@@ -884,9 +814,8 @@ if (is_superadmin()) {
                     <h2><?= e($category['name']); ?></h2>
                     <div class="card-head-actions">
                         <div class="muted"><?= count($assets); ?> row(s)</div>
-                        <a href="index.php?<?= e(http_build_query($refreshParams)); ?>" class="btn-small button-link">Refresh</a>
+                        <a href="index.php?<?= e(http_build_query(array_diff_key(array_merge($_GET, ['page' => 'board', 'office_view_scope' => $currentOfficeViewScope, 'segment_id' => $activeSegmentId]), ['sort_col' => true, 'sort_dir' => true]))); ?>" class="btn-small button-link">Refresh</a>
                         <button type="button" class="btn-small" data-modal="columns-modal-<?= (int)$category['id']; ?>">Columns</button>
-                        <button type="button" class="btn-small<?= $timeFilterForCategory ? ' btn-secondary' : ''; ?>" data-modal="time-filter-modal-<?= (int)$category['id']; ?>">Time Filter</button>
                     </div>
                 </div>
                 <div class="table-wrap">
@@ -914,32 +843,23 @@ if (is_superadmin()) {
                                     $sortClass = static function (string $columnKey) use ($sortColumn): string {
                                         return $sortColumn === $columnKey ? ' sortable-head is-active' : ' sortable-head';
                                     };
-                                    $timeFilterIndicator = static function (string $columnKey) use ($timeFilterForCategory, $timeFilterFieldKey): string {
-                                        if (!$timeFilterForCategory || $timeFilterFieldKey !== $columnKey) {
-                                            return '';
-                                        }
-                                        return ' ⏱';
-                                    };
-                                    $headerCellClass = static function (string $columnKey) use ($sortColumn, $timeFilterForCategory, $timeFilterFieldKey): string {
-                                        return ($sortColumn === $columnKey || ($timeFilterForCategory && $timeFilterFieldKey === $columnKey)) ? 'sort-active' : '';
-                                    };
                                 ?>
-                                <th class="<?= $headerCellClass('__sl'); ?>"><a href="<?= e($headerSortUrl('__sl')); ?>" class="<?= trim($sortClass('__sl')); ?>">SL No<?= e($sortIndicator('__sl')); ?></a></th>
-                                <?php if ($showAssetNumber && !empty($visibleColumnKeys['asset_number'])): ?><th class="<?= $headerCellClass('asset_number'); ?>"><a href="<?= e($headerSortUrl('asset_number')); ?>" class="<?= trim($sortClass('asset_number')); ?>">Asset Number<?= e($sortIndicator('asset_number')); ?></a></th><?php endif; ?>
-                                <?php if ((is_superadmin() || $isUnderMeView) && !empty($visibleColumnKeys['office_name'])): ?><th class="<?= $headerCellClass('office_name'); ?>"><a href="<?= e($headerSortUrl('office_name')); ?>" class="<?= trim($sortClass('office_name')); ?>">Office<?= e($sortIndicator('office_name')); ?></a></th><?php endif; ?>
-                                <?php if ($subcategoryEnabled && !empty($visibleColumnKeys['subcategory_name'])): ?><th class="<?= $headerCellClass('subcategory_name'); ?>"><a href="<?= e($headerSortUrl('subcategory_name')); ?>" class="<?= trim($sortClass('subcategory_name')); ?>">Sub-category<?= e($sortIndicator('subcategory_name')); ?></a></th><?php endif; ?>
-                                <?php if (!empty($visibleColumnKeys['data_provider'])): ?><th class="<?= $headerCellClass('data_provider'); ?>"><a href="<?= e($headerSortUrl('data_provider')); ?>" class="<?= trim($sortClass('data_provider')); ?>">Data Provider<?= e($sortIndicator('data_provider')); ?></a></th><?php endif; ?>
+                                <th class="<?= $sortColumn === '__sl' ? 'sort-active' : ''; ?>"><a href="<?= e($headerSortUrl('__sl')); ?>" class="<?= trim($sortClass('__sl')); ?>">SL No<?= e($sortIndicator('__sl')); ?></a></th>
+                                <?php if ($showAssetNumber && !empty($visibleColumnKeys['asset_number'])): ?><th class="<?= $sortColumn === 'asset_number' ? 'sort-active' : ''; ?>"><a href="<?= e($headerSortUrl('asset_number')); ?>" class="<?= trim($sortClass('asset_number')); ?>">Asset Number<?= e($sortIndicator('asset_number')); ?></a></th><?php endif; ?>
+                                <?php if ((is_superadmin() || $isUnderMeView) && !empty($visibleColumnKeys['office_name'])): ?><th class="<?= $sortColumn === 'office_name' ? 'sort-active' : ''; ?>"><a href="<?= e($headerSortUrl('office_name')); ?>" class="<?= trim($sortClass('office_name')); ?>">Office<?= e($sortIndicator('office_name')); ?></a></th><?php endif; ?>
+                                <?php if ($subcategoryEnabled && !empty($visibleColumnKeys['subcategory_name'])): ?><th class="<?= $sortColumn === 'subcategory_name' ? 'sort-active' : ''; ?>"><a href="<?= e($headerSortUrl('subcategory_name')); ?>" class="<?= trim($sortClass('subcategory_name')); ?>">Sub-category<?= e($sortIndicator('subcategory_name')); ?></a></th><?php endif; ?>
+                                <?php if (!empty($visibleColumnKeys['data_provider'])): ?><th class="<?= $sortColumn === 'data_provider' ? 'sort-active' : ''; ?>"><a href="<?= e($headerSortUrl('data_provider')); ?>" class="<?= trim($sortClass('data_provider')); ?>">Data Provider<?= e($sortIndicator('data_provider')); ?></a></th><?php endif; ?>
                                 <?php foreach ($fields as $field): ?>
                                     <?php if ((int)$field['is_displayed'] === 1 && (int)$field['active_status'] === 1 && !empty($visibleColumnKeys[$field['field_key']])): ?>
                                         <?php $fieldSortKey = (string)$field['field_key']; ?>
-                                        <th class="<?= $headerCellClass($fieldSortKey); ?>">
+                                        <th class="<?= $sortColumn === $fieldSortKey ? 'sort-active' : ''; ?>">
                                             <div class="field-head-row">
-                                                <a href="<?= e($headerSortUrl($fieldSortKey)); ?>" class="<?= trim($sortClass($fieldSortKey)); ?>"><?= e((string)($uiFieldLabels[$field['field_key']] ?? $field['label'])); ?><?= $fieldMandatoryMarker($field); ?><?= e($sortIndicator($fieldSortKey)); ?><?= e($timeFilterIndicator($fieldSortKey)); ?></a>
+                                                <a href="<?= e($headerSortUrl($fieldSortKey)); ?>" class="<?= trim($sortClass($fieldSortKey)); ?>"><?= e((string)($uiFieldLabels[$field['field_key']] ?? $field['label'])); ?><?= $fieldMandatoryMarker($field); ?><?= e($sortIndicator($fieldSortKey)); ?></a>
                                                 <?php $renderFieldHelpButton($fieldHelpMeta[$field['field_key']] ?? null, 'field-help-button field-help-table', 'Field information'); ?>
                                             </div>
                                         </th>
                                         <?php if ((string)($field['data_type'] ?? '') === 'bimh' && !empty($visibleColumnKeys[$field['field_key'] . '__est_name'])): ?>
-                                            <th class="<?= $headerCellClass($fieldSortKey . '__est_name'); ?>">
+                                            <th class="<?= $sortColumn === $fieldSortKey . '__est_name' ? 'sort-active' : ''; ?>">
                                                 <a href="<?= e($headerSortUrl($fieldSortKey . '__est_name')); ?>" class="<?= trim($sortClass($fieldSortKey . '__est_name')); ?>">Est Name<?= e($sortIndicator($fieldSortKey . '__est_name')); ?></a>
                                             </th>
                                         <?php endif; ?>
@@ -1073,60 +993,6 @@ if (is_superadmin()) {
                                 <button type="submit" name="apply_to_all" value="1" class="btn-secondary">Apply Visibility to All Tables</button>
                             <?php endif; ?>
                             <button type="button" class="modal-close" data-close="columns-modal-<?= (int)$category['id']; ?>">Cancel</button>
-                        </div>
-                    </form>
-                </div>
-            </div>
-            <div class="modal-backdrop" id="time-filter-modal-<?= (int)$category['id']; ?>" aria-hidden="true">
-                <div class="modal-card time-filter-modal-card" role="dialog" aria-modal="true" aria-labelledby="time-filter-title-<?= (int)$category['id']; ?>">
-                    <div class="flash-modal-head">
-                        <h3 id="time-filter-title-<?= (int)$category['id']; ?>">Time Filter: <?= e($category['name']); ?></h3>
-                        <button type="button" class="welcome-modal-close modal-close" data-close="time-filter-modal-<?= (int)$category['id']; ?>" aria-label="Close">×</button>
-                    </div>
-                    <form method="get" action="index.php" class="grid time-filter-form">
-                        <input type="hidden" name="page" value="board">
-                        <?php foreach ($_GET as $paramKey => $paramValue): ?>
-                            <?php if (in_array((string)$paramKey, ['page', 'time_filter_category_id', 'time_filter_field', 'time_filter_start', 'time_filter_end', 'time_filter_from_beginning', 'time_filter_till_now'], true)): ?>
-                                <?php continue; ?>
-                            <?php endif; ?>
-                            <?php if (is_array($paramValue)): ?>
-                                <?php continue; ?>
-                            <?php endif; ?>
-                            <input type="hidden" name="<?= e((string)$paramKey); ?>" value="<?= e((string)$paramValue); ?>">
-                        <?php endforeach; ?>
-                        <input type="hidden" name="time_filter_category_id" value="<?= (int)$category['id']; ?>">
-                        <label>Field Name
-                            <select name="time_filter_field" required>
-                                <option value="">Select field</option>
-                                <?php foreach ($timeFilterFieldsForCategory as $timeField): ?>
-                                    <?php $timeFieldKey = (string)$timeField['field_key']; ?>
-                                    <option value="<?= e($timeFieldKey); ?>" <?= $timeFilterForCategory && $timeFilterFieldKey === $timeFieldKey ? 'selected' : ''; ?>>
-                                        <?= e((string)($uiFieldLabels[$timeFieldKey] ?? $timeField['label'])); ?>
-                                    </option>
-                                <?php endforeach; ?>
-                            </select>
-                        </label>
-                        <div class="time-filter-datetime-row">
-                            <label>Start Time
-                                <input type="datetime-local" name="time_filter_start" value="<?= e($timeFilterForCategory ? $formatBoardDateTimeInput($timeFilterStartRaw) : ''); ?>" <?= $timeFilterForCategory && $timeFilterFromBeginning ? 'disabled' : ''; ?> data-time-filter-start>
-                            </label>
-                            <label class="inline-check">
-                                <input type="checkbox" name="time_filter_from_beginning" value="1" <?= $timeFilterForCategory && $timeFilterFromBeginning ? 'checked' : ''; ?> data-time-filter-from-beginning>
-                                <span>From the beginning</span>
-                            </label>
-                        </div>
-                        <div class="time-filter-datetime-row">
-                            <label>End Time
-                                <input type="datetime-local" name="time_filter_end" value="<?= e($timeFilterForCategory ? $formatBoardDateTimeInput($timeFilterEndRaw) : ''); ?>" <?= $timeFilterForCategory && $timeFilterTillNow ? 'disabled' : ''; ?> data-time-filter-end>
-                            </label>
-                            <label class="inline-check">
-                                <input type="checkbox" name="time_filter_till_now" value="1" <?= $timeFilterForCategory && $timeFilterTillNow ? 'checked' : ''; ?> data-time-filter-till-now>
-                                <span>Till now</span>
-                            </label>
-                        </div>
-                        <div class="modal-actions">
-                            <button type="submit">Apply Filter</button>
-                            <button type="button" class="modal-close" data-close="time-filter-modal-<?= (int)$category['id']; ?>">Close</button>
                         </div>
                     </form>
                 </div>
@@ -2911,37 +2777,8 @@ window.initializeDownloadModalUi = function () {
     syncHierarchyTrees();
 };
 
-window.initializeBoardTimeFilters = function () {
-    document.querySelectorAll('.time-filter-form').forEach(function (form) {
-        if (form.getAttribute('data-time-filter-bound') === '1') {
-            return;
-        }
-        form.setAttribute('data-time-filter-bound', '1');
-        var fromBeginning = form.querySelector('[data-time-filter-from-beginning]');
-        var startInput = form.querySelector('[data-time-filter-start]');
-        var tillNow = form.querySelector('[data-time-filter-till-now]');
-        var endInput = form.querySelector('[data-time-filter-end]');
-        var sync = function () {
-            if (fromBeginning && startInput) {
-                startInput.disabled = fromBeginning.checked;
-            }
-            if (tillNow && endInput) {
-                endInput.disabled = tillNow.checked;
-            }
-        };
-        if (fromBeginning) {
-            fromBeginning.addEventListener('change', sync);
-        }
-        if (tillNow) {
-            tillNow.addEventListener('change', sync);
-        }
-        sync();
-    });
-};
-
 document.addEventListener('DOMContentLoaded', function () {
     window.initializeDownloadModalUi();
-    window.initializeBoardTimeFilters();
 });
 </script>
 

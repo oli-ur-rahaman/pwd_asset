@@ -813,16 +813,6 @@ tbody tr:hover td:first-child {
 .board-grid, .asset-category-grid { display: grid; gap: 20px; }
 .operational-budget-card .card-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 10px; }
 .card-head-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.time-filter-modal-card { width: min(620px, 100%); }
-.time-filter-datetime-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 12px;
-  align-items: end;
-}
-.time-filter-datetime-row .inline-check {
-  min-height: 44px;
-}
 .action-icon-row { display: inline-flex; align-items: center; gap: 6px; }
 .table-action-icon {
   width: 28px;
@@ -1249,7 +1239,6 @@ tbody tr:hover td:first-child {
   }
   .asset-history-head,
   .asset-history-detail-row { display: grid; }
-  .time-filter-datetime-row { grid-template-columns: minmax(0, 1fr); }
   .column-visibility-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
