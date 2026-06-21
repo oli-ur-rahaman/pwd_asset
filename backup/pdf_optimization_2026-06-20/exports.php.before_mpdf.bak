@@ -1,0 +1,144 @@
+<?php
+function export_excel_font_name(): string
+{
+    return 'Nirmala UI';
+}
+
+function export_pdf_font_family(): string
+{
+    return 'Siyam Rupali';
+}
+
+function export_apply_spreadsheet_font(\PhpOffice\PhpSpreadsheet\Spreadsheet $spreadsheet): void
+{
+    $spreadsheet->getDefaultStyle()->getFont()->setName(export_excel_font_name());
+    $spreadsheet->getDefaultStyle()->getFont()->setSize(11);
+}
+
+function export_pdf_font_css(): string
+{
+    $fontPath = dirname(__DIR__, 2) . '/public/assets/fonts/siyamrupali.ttf';
+    if (!is_file($fontPath)) {
+        return '';
+    }
+    $fontData = @file_get_contents($fontPath);
+    if ($fontData === false || $fontData === '') {
+        return '';
+    }
+    $fontUri = 'data:font/truetype;charset=utf-8;base64,' . base64_encode($fontData);
+    return '@font-face{font-family:"' . export_pdf_font_family() . '";src:url("' . $fontUri . '") format("truetype");font-weight:normal;font-style:normal;}';
+}
+
+function export_inject_pdf_font_css(string $html): string
+{
+    $css = export_pdf_font_css();
+    if ($css === '') {
+        return $html;
+    }
+    $style = '<style>' . $css . ' body{font-family:"' . export_pdf_font_family() . '",DejaVu Sans,Arial,sans-serif;} </style>';
+    if (stripos($html, '<head>') !== false) {
+        return preg_replace('/<head>/i', '<head>' . $style, $html, 1) ?? ($style . $html);
+    }
+    return $style . $html;
+}
+
+function ensure_library(string $class, string $message): void
+{
+    if (!class_exists($class)) {
+        http_response_code(500);
+        echo $message;
+        exit;
+    }
+}
+
+function export_excel(array $rows, array $headers, string $filename, ?string $sheet_title = null): void
+{
+    ensure_library('PhpOffice\\PhpSpreadsheet\\Spreadsheet', 'PhpSpreadsheet is not installed.');
+
+    $sheet = new PhpOffice\PhpSpreadsheet\Spreadsheet();
+    export_apply_spreadsheet_font($sheet);
+    $active = $sheet->getActiveSheet();
+    if ($sheet_title) {
+        $safe = preg_replace('/[\\\\\\/\\?\\*\\[\\]:]/', '', $sheet_title);
+        $safe = substr($safe, 0, 31);
+        $active->setTitle($safe === '' ? 'Sheet1' : $safe);
+    }
+
+    $col = 1;
+    foreach ($headers as $header) {
+        $active->setCellValue([$col, 1], $header);
+        $col++;
+    }
+
+    $rowNum = 2;
+    foreach ($rows as $row) {
+        $col = 1;
+        foreach ($headers as $key => $header) {
+            $value = $row[$key] ?? '';
+            $active->setCellValue([$col, $rowNum], $value);
+            $col++;
+        }
+        $rowNum++;
+    }
+
+    header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    header('Content-Disposition: attachment; filename="' . $filename . '"');
+    header('Cache-Control: max-age=0');
+
+    $writer = new PhpOffice\PhpSpreadsheet\Writer\Xlsx($sheet);
+    $writer->save('php://output');
+    exit;
+}
+
+function export_pdf(string $html, string $filename, string $orientation = 'landscape', ?string $destinationPath = null): ?string
+{
+    ensure_library('Dompdf\\Dompdf', 'dompdf is not installed.');
+    ensure_library('Dompdf\\Options', 'dompdf is not installed.');
+
+    $orientation = strtolower(trim($orientation));
+    if (!in_array($orientation, ['portrait', 'landscape'], true)) {
+        $orientation = 'landscape';
+    }
+
+    $options = new Dompdf\Options();
+    $options->set('chroot', dirname(__DIR__, 2));
+    $options->set('defaultFont', export_pdf_font_family());
+
+    $dompdf = new Dompdf\Dompdf($options);
+    $dompdf->loadHtml(export_inject_pdf_font_css($html), 'UTF-8');
+    $dompdf->setPaper('A4', $orientation);
+    $dompdf->render();
+    if ($destinationPath !== null) {
+        file_put_contents($destinationPath, $dompdf->output());
+        return $destinationPath;
+    }
+    $dompdf->stream($filename, ['Attachment' => true]);
+    exit;
+}
+
+function render_table_html(string $title, array $headers, array $rows): string
+{
+    $thead = '';
+    foreach ($headers as $header) {
+        $thead .= '<th>' . e($header) . '</th>';
+    }
+
+    $tbody = '';
+    foreach ($rows as $row) {
+        $tbody .= '<tr>';
+        foreach (array_keys($headers) as $key) {
+            $tbody .= '<td>' . e((string)($row[$key] ?? '')) . '</td>';
+        }
+        $tbody .= '</tr>';
+    }
+
+    return '<html><head><style>
+        body{font-family:"' . export_pdf_font_family() . '",DejaVu Sans,Arial,sans-serif;font-size:12px;}
+        table{width:100%;border-collapse:collapse;}
+        th,td{border:1px solid #444;padding:6px;text-align:center;}
+        h2{text-align:center;}
+    </style></head><body>'
+        . '<h2>' . e($title) . '</h2>'
+        . '<table><thead><tr>' . $thead . '</tr></thead><tbody>' . $tbody . '</tbody></table>'
+        . '</body></html>';
+}
