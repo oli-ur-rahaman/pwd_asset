@@ -7397,6 +7397,7 @@ function asset_audit_export_page_excel(array $user, string $viewScope, string $l
     $choices = asset_audit_level_choices($user, $viewScope);
     $levelLabel = (string)($choices[$levelKey] ?? 'Row_count');
     $book = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+    export_apply_spreadsheet_font($book);
     $sections = asset_audit_page_sections($user, $viewScope, $levelKey);
     $headers = ['sl_no' => 'SL No', 'field_name' => 'Field Name', 'count' => 'Count'];
     foreach ($sections as $sheetIndex => $section) {
@@ -7437,8 +7438,8 @@ function asset_audit_export_page_pdf(array $user, string $viewScope, string $lev
     $choices = asset_audit_level_choices($user, $viewScope);
     $levelLabel = (string)($choices[$levelKey] ?? 'Row_count');
     $sections = asset_audit_page_sections($user, $viewScope, $levelKey);
-    $html = '<html><head><style>
-        body{font-family:Arial,sans-serif;font-size:11px;color:#17324d;}
+    $html = '<html><head><meta charset="utf-8"><style>
+        body{font-family:' . export_pdf_font_family() . ',DejaVu Sans,Arial,sans-serif;font-size:11px;color:#17324d;}
         h1{margin:0 0 10px;}
         h2{margin:18px 0 8px;font-size:15px;}
         p{margin:0 0 12px;}
@@ -7477,6 +7478,7 @@ function asset_audit_export_detail_excel(array $payload, string $mode): void
         $headers = ['sl_no' => 'SL', 'item' => 'Items', 'status' => 'Provide/Not-provide'];
     }
     $book = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+    export_apply_spreadsheet_font($book);
     $sheet = $book->getActiveSheet();
     $sheet->setTitle('Audit Detail');
     $col = 1;
@@ -7561,8 +7563,8 @@ function asset_audit_export_detail_pdf(array $payload, string $mode): void
         }
         $tbody .= '</tr>';
     }
-    $html = '<html><head><style>
-        body{font-family:Arial,sans-serif;font-size:11px;color:#17324d;}
+    $html = '<html><head><meta charset="utf-8"><style>
+        body{font-family:' . export_pdf_font_family() . ',DejaVu Sans,Arial,sans-serif;font-size:11px;color:#17324d;}
         h2{margin:0 0 12px;text-align:center;font-size:16px;}
         table{width:100%;border-collapse:collapse;table-layout:fixed;}
         th,td{border:1px solid #444;padding:6px;vertical-align:top;word-wrap:break-word;}
@@ -8557,6 +8559,7 @@ function asset_download_export_excel(array $request, array $user, ?string $desti
     $cacheDir = asset_download_prepare_runtime('excel_export');
     $context = asset_download_runtime_context($request, $user);
     $book = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+    export_apply_spreadsheet_font($book);
     \PhpOffice\PhpSpreadsheet\Settings::setLocale('en');
     $sheetIndex = 0;
     foreach ($request['segments'] as $segmentId => $segmentConfig) {
@@ -8627,26 +8630,19 @@ function asset_download_export_excel(array $request, array $user, ?string $desti
 function asset_download_export_pdf(array $request, array $groups, ?string $destinationPath = null): ?array
 {
     $html = '<html><head><meta charset="utf-8"><style>'
-        . '@page{size:A4 landscape;margin:20px 18px 28px 18px;}'
-        . 'body{font-family:DejaVu Sans,Arial,sans-serif;font-size:9px;color:#111;}'
-        . 'h2,h3{margin:0 0 8px;}'
+        . 'body{font-family:' . export_pdf_font_family() . ',DejaVu Sans,Arial,sans-serif;color:#111;}'
+        . '.pdf-level1-title{margin:0 0 10px;font-size:15px;line-height:1.2;font-weight:700;}'
+        . '.pdf-segment-title{margin:0 0 8px;font-size:8px;line-height:1.25;font-weight:700;}'
         . '.group{page-break-after:always;}'
         . '.group:last-child{page-break-after:auto;}'
-        . '.group-head{margin-bottom:10px;padding-bottom:6px;border-bottom:2px solid #1f4f82;}'
         . '.segment-block{margin-bottom:16px;}'
-        . 'table{width:100%;border-collapse:collapse;table-layout:fixed;margin-bottom:12px;}'
-        . 'table.compact{font-size:8px;}'
-        . 'table.tight{font-size:7px;}'
-        . 'thead{display:table-header-group;}'
-        . 'tr{page-break-inside:avoid;}'
-        . 'th,td{border:1px solid #444;padding:4px;vertical-align:top;text-align:left;word-wrap:break-word;word-break:break-word;white-space:pre-wrap;overflow-wrap:anywhere;}'
-        . 'th{background:#eef4fb;font-weight:700;}'
-        . '.muted{color:#666;}'
-        . '.page-footer{position:fixed;bottom:-12px;left:0;right:0;text-align:right;font-size:9px;color:#444;}'
-        . '</style></head><body>'
-        . '<div class="page-footer">Page <span class="page-number"></span></div>';
+        . '.pdf-report-table{width:100%;border-collapse:collapse;margin-bottom:12px;table-layout:auto;}'
+        . '.pdf-report-table th,.pdf-report-table td{border:1px solid #444;padding:3px;vertical-align:top;text-align:left;font-size:8px;line-height:1.25;font-weight:400;}'
+        . '.pdf-report-table th{background:#eef4fb;font-weight:700;}'
+        . '.muted{color:#666;font-size:8px;line-height:1.25;}'
+        . '</style></head><body>';
     foreach ($groups as $groupValue => $group) {
-        $html .= '<section class="group"><h2>' . e((string)$request['level1_label']) . ': ' . e((string)$groupValue) . '</h2>';
+        $html .= '<section class="group"><div class="pdf-level1-title">' . e((string)$request['level1_label']) . ': ' . e((string)$groupValue) . '</div>';
         foreach ($request['segments'] as $segmentId => $segmentConfig) {
             $segmentData = $group['segments'][$segmentId] ?? null;
             if (!$segmentData) {
@@ -8669,10 +8665,8 @@ function asset_download_export_pdf(array $request, array $groups, ?string $desti
                 false,
                 (array)($segmentConfig['fields'] ?? [])
             );
-            $headerCount = count($headers);
-            $tableClass = $headerCount >= 14 ? 'tight' : ($headerCount >= 10 ? 'compact' : '');
-            $html .= '<div class="segment-block"><h3>' . e((string)$segmentConfig['segment']['segment_name']) . '</h3>';
-            $html .= '<table' . ($tableClass !== '' ? ' class="' . $tableClass . '"' : '') . '><thead><tr>';
+            $html .= '<div class="segment-block"><div class="pdf-segment-title">' . e((string)$segmentConfig['segment']['segment_name']) . '</div>';
+            $html .= '<table class="pdf-report-table"><thead><tr>';
             foreach ($headers as $header) {
                 $html .= '<th>' . e((string)$header) . '</th>';
             }
@@ -8691,7 +8685,7 @@ function asset_download_export_pdf(array $request, array $groups, ?string $desti
         }
         $html .= '</section>';
     }
-    $html .= '<script type="text/php">if (isset($pdf)) { $font = $fontMetrics->getFont("Helvetica", "normal"); $pdf->page_text(760, 575, "Page {PAGE_NUM} of {PAGE_COUNT}", $font, 9, array(0,0,0)); }</script></body></html>';
+    $html .= '</body></html>';
     $downloadName = asset_download_job_output_filename(array_merge($request, ['output' => 'pdf']));
     if ($destinationPath !== null) {
         export_pdf($html, $downloadName, 'landscape', $destinationPath);
@@ -10444,6 +10438,7 @@ function build_asset_template_autogen_workbook(?int $segmentId = null): \PhpOffi
     );
 
     $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+    export_apply_spreadsheet_font($spreadsheet);
     $dataSheet = $spreadsheet->getActiveSheet();
     $dataSheet->setTitle(asset_template_data_sheet_name($segmentId));
     $dropdownSheet = new \PhpOffice\PhpSpreadsheet\Worksheet\Worksheet(
@@ -11181,6 +11176,9 @@ function commit_asset_import_review(array $user): array
     }
     return ['saved' => $saved, 'errors' => $errors, 'remaining' => count($invalidRows)];
 }
+
+
+
 
 
 

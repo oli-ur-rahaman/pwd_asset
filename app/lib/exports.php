@@ -101,8 +101,11 @@ function export_inject_browser_pdf_page_css(string $html, string $orientation): 
 {
     $pageStyle = '<meta charset="utf-8"><style>'
         . export_pdf_font_face_css()
-        . '@page{size:A4 ' . ($orientation === 'portrait' ? 'portrait' : 'landscape') . ';margin:12mm 10mm 12mm 10mm;}'
+        . '@page{size:A4 ' . ($orientation === 'portrait' ? 'portrait' : 'landscape') . ';margin:15mm 10mm 12mm 10mm;'
+        . '@bottom-center{content:"Page " counter(page);font-family:"' . export_pdf_font_family() . '", sans-serif;font-size:8px;color:#333;}'
+        . '}'
         . 'html,body,table,thead,tbody,tr,td,th,div,span,p{font-family:"' . export_pdf_font_family() . '", sans-serif !important;}'
+        . 'body{margin:0;padding:0;}'
         . '</style>';
     if (stripos($html, '<head>') !== false) {
         return preg_replace('/<head>/i', '<head>' . $pageStyle, $html, 1) ?? ($pageStyle . $html);

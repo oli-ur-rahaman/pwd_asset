@@ -7438,11 +7438,17 @@ function asset_audit_export_page_pdf(array $user, string $viewScope, string $lev
     $choices = asset_audit_level_choices($user, $viewScope);
     $levelLabel = (string)($choices[$levelKey] ?? 'Row_count');
     $sections = asset_audit_page_sections($user, $viewScope, $levelKey);
+    $generatedAt = date('d-m-Y h:i A');
+    $footerText = asset_pdf_css_content_escape('Audit | ' . $levelLabel);
     $html = '<html><head><meta charset="utf-8"><style>
+        @page{
+            @bottom-center{content:"' . $footerText . ' | Page " counter(page);font-family:' . export_pdf_font_family() . ',DejaVu Sans,Arial,sans-serif;font-size:8px;color:#333;}
+        }
         body{font-family:' . export_pdf_font_family() . ',DejaVu Sans,Arial,sans-serif;font-size:11px;color:#17324d;}
         h1{margin:0 0 10px;}
         h2{margin:18px 0 8px;font-size:15px;}
         p{margin:0 0 12px;}
+        .meta{margin:0 0 12px;font-size:10px;color:#4b6178;}
         table{width:100%;border-collapse:collapse;margin-bottom:14px;table-layout:fixed;}
         th,td{border:1px solid #9ab0c4;padding:5px 6px;vertical-align:top;word-wrap:break-word;}
         th{background:#e8f0f8;}
@@ -7450,7 +7456,7 @@ function asset_audit_export_page_pdf(array $user, string $viewScope, string $lev
         .col-name{width:74%;}
         .col-count{width:18%;}
     </style></head><body>';
-    $html .= '<h1>Audit</h1><p>Audit Level: ' . e($levelLabel) . '</p>';
+    $html .= '<h1>Audit</h1><p>Audit Level: ' . e($levelLabel) . '</p><p class="meta">Downloaded on: ' . e($generatedAt) . '</p>';
     foreach ($sections as $section) {
         $html .= '<h2>' . e((string)$section['segment_name']) . '</h2><table><thead><tr><th class="col-sl">SL No</th><th class="col-name">Field Name</th><th class="col-count">Count</th></tr></thead><tbody>';
         foreach ((array)($section['rows'] ?? []) as $row) {
@@ -7520,6 +7526,8 @@ function asset_audit_export_detail_pdf(array $payload, string $mode): void
 {
     $rows = asset_audit_detail_rows_for_export($payload, $mode);
     $title = (string)($payload['field_label'] ?? 'Audit Detail') . ' - ' . (string)($payload['level_label'] ?? '');
+    $generatedAt = date('d-m-Y h:i A');
+    $footerText = asset_pdf_css_content_escape($title);
     $isOffice = ((string)($payload['level_label'] ?? '')) === 'Office';
     $isHierarchy = ($payload['kind'] ?? 'list') === 'hierarchy';
     $primaryLabel = trim((string)($payload['primary_label'] ?? '')) ?: 'Primary Field';
@@ -7564,12 +7572,16 @@ function asset_audit_export_detail_pdf(array $payload, string $mode): void
         $tbody .= '</tr>';
     }
     $html = '<html><head><meta charset="utf-8"><style>
+        @page{
+            @bottom-center{content:"' . $footerText . ' | Page " counter(page);font-family:' . export_pdf_font_family() . ',DejaVu Sans,Arial,sans-serif;font-size:8px;color:#333;}
+        }
         body{font-family:' . export_pdf_font_family() . ',DejaVu Sans,Arial,sans-serif;font-size:11px;color:#17324d;}
         h2{margin:0 0 12px;text-align:center;font-size:16px;}
+        .meta{margin:0 0 12px;text-align:center;font-size:10px;color:#4b6178;}
         table{width:100%;border-collapse:collapse;table-layout:fixed;}
         th,td{border:1px solid #444;padding:6px;vertical-align:top;word-wrap:break-word;}
         th{background:#e8f0f8;}
-    </style></head><body><h2>' . e($title) . '</h2><table><thead><tr>' . $thead . '</tr></thead><tbody>' . $tbody . '</tbody></table></body></html>';
+    </style></head><body><h2>' . e($title) . '</h2><div class="meta">Downloaded on: ' . e($generatedAt) . '</div><table><thead><tr>' . $thead . '</tr></thead><tbody>' . $tbody . '</tbody></table></body></html>';
     export_pdf($html, 'audit_detail_' . asset_download_safe_name((string)($payload['field_label'] ?? 'detail')) . '.pdf', 'portrait');
 }
 
@@ -7735,6 +7747,12 @@ function asset_download_request_common_filter_meta(array $user, string $viewScop
     return $meta;
 }
 
+function asset_pdf_css_content_escape(string $value): string
+{
+    $value = str_replace(["\\", '"', "\r", "\n"], ["\\\\", '\\"', ' ', ' '], $value);
+    return trim(preg_replace('/\s+/', ' ', $value) ?? $value);
+}
+
 function asset_download_normalize_common_filters(array $inputFilters, array $catalog): array
 {
     $normalized = [];
@@ -7806,9 +7824,16 @@ function asset_download_request_signature(array $request, array $user): string
 {
     $signature = $request;
     unset($signature['download_token']);
+    $assetLibPath = __FILE__;
+    $exportsLibPath = __DIR__ . '/exports.php';
+    $renderVersion = [
+        'asset_php_mtime' => is_file($assetLibPath) ? (int)filemtime($assetLibPath) : 0,
+        'exports_php_mtime' => is_file($exportsLibPath) ? (int)filemtime($exportsLibPath) : 0,
+    ];
     return md5(json_encode([
         'user_id' => (int)($user['id'] ?? 0),
         'superadmin' => is_superadmin() ? 1 : 0,
+        'render_version' => $renderVersion,
         'request' => $signature,
     ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
 }
@@ -8629,19 +8654,30 @@ function asset_download_export_excel(array $request, array $user, ?string $desti
 
 function asset_download_export_pdf(array $request, array $groups, ?string $destinationPath = null): ?array
 {
+    $level1Label = (string)($request['level1_label'] ?? 'Group');
+    $generatedAt = date('d-m-Y h:i A');
+    $groupValues = array_keys($groups);
+    $footerText = count($groupValues) === 1
+        ? asset_pdf_css_content_escape($level1Label . ': ' . (string)$groupValues[0])
+        : asset_pdf_css_content_escape($level1Label);
     $html = '<html><head><meta charset="utf-8"><style>'
-        . 'body{font-family:' . export_pdf_font_family() . ',DejaVu Sans,Arial,sans-serif;font-size:6.75px;line-height:1.2;color:#111;}'
-        . 'h2,h3{margin:0 0 8px;}'
+        . '@page{'
+        . '@bottom-center{content:"' . $footerText . ' | Page " counter(page);font-family:' . export_pdf_font_family() . ',DejaVu Sans,Arial,sans-serif;font-size:8px;color:#333;}'
+        . '}'
+        . 'body{font-family:' . export_pdf_font_family() . ',DejaVu Sans,Arial,sans-serif;color:#111;}'
+        . '.pdf-level1-title{margin:0 0 10px;font-size:15px;line-height:1.2;font-weight:700;}'
+        . '.pdf-generated-at{margin:0 0 10px;font-size:8px;line-height:1.25;color:#4b4b4b;}'
+        . '.pdf-segment-title{margin:0 0 8px;font-size:8px;line-height:1.25;font-weight:700;}'
         . '.group{page-break-after:always;}'
         . '.group:last-child{page-break-after:auto;}'
         . '.segment-block{margin-bottom:16px;}'
-        . 'table{width:100%;border-collapse:collapse;margin-bottom:12px;}'
-        . 'th,td{border:1px solid #444;padding:3px;vertical-align:top;text-align:left;}'
-        . 'th{background:#eef4fb;font-weight:700;}'
-        . '.muted{color:#666;}'
+        . '.pdf-report-table{width:100%;border-collapse:collapse;margin-bottom:12px;table-layout:auto;}'
+        . '.pdf-report-table th,.pdf-report-table td{border:1px solid #444;padding:3px;vertical-align:top;text-align:left;font-size:8px;line-height:1.25;font-weight:400;}'
+        . '.pdf-report-table th{background:#eef4fb;font-weight:700;}'
+        . '.muted{color:#666;font-size:8px;line-height:1.25;}'
         . '</style></head><body>';
     foreach ($groups as $groupValue => $group) {
-        $html .= '<section class="group"><h2>' . e((string)$request['level1_label']) . ': ' . e((string)$groupValue) . '</h2>';
+        $html .= '<section class="group"><div class="pdf-level1-title">' . e($level1Label) . ': ' . e((string)$groupValue) . '</div><div class="pdf-generated-at">Downloaded on: ' . e($generatedAt) . '</div>';
         foreach ($request['segments'] as $segmentId => $segmentConfig) {
             $segmentData = $group['segments'][$segmentId] ?? null;
             if (!$segmentData) {
@@ -8664,8 +8700,8 @@ function asset_download_export_pdf(array $request, array $groups, ?string $desti
                 false,
                 (array)($segmentConfig['fields'] ?? [])
             );
-            $html .= '<div class="segment-block"><h3>' . e((string)$segmentConfig['segment']['segment_name']) . '</h3>';
-            $html .= '<table><thead><tr>';
+            $html .= '<div class="segment-block"><div class="pdf-segment-title">' . e((string)$segmentConfig['segment']['segment_name']) . '</div>';
+            $html .= '<table class="pdf-report-table"><thead><tr>';
             foreach ($headers as $header) {
                 $html .= '<th>' . e((string)$header) . '</th>';
             }
