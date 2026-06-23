@@ -716,11 +716,12 @@ if (is_superadmin()) {
                 <?php
                     $conditionalPrimaryOptions = [];
                     $activePrimaryValues = [];
+                    $fullConditionalMap = asset_decode_conditional_map($field);
                     foreach (array_keys((array)($activeCatalogField['options'] ?? [])) as $optionValue) {
                         $activePrimaryValues[(string)$optionValue] = true;
                     }
-                    foreach (($catalogField['options'] ?? []) as $optionValue => $optionLabel) {
-                        $conditionalPrimaryOptions[] = ['value' => (string)$optionValue, 'label' => (string)$optionLabel, 'disabled' => !isset($activePrimaryValues[(string)$optionValue])];
+                    foreach ($fullConditionalMap as $optionValue => $childValues) {
+                        $conditionalPrimaryOptions[] = ['value' => (string)$optionValue, 'label' => (string)$optionValue, 'disabled' => !isset($activePrimaryValues[(string)$optionValue])];
                     }
                     if (!empty($activeCatalogField['has_blank'])) {
                         $activePrimaryValues['__blank__'] = true;
@@ -747,7 +748,7 @@ if (is_superadmin()) {
                         $childActiveField = $activeFilterCatalog['fields'][$childField['field_key']] ?? null;
                         $childOptions = [];
                         $seenChildOptions = [];
-                        foreach ((array)($catalogField['secondary_options_map'] ?? []) as $primaryValue => $children) {
+                        foreach ((array)$fullConditionalMap as $primaryValue => $children) {
                             foreach ((array)$children as $childValue) {
                                 if (isset($seenChildOptions[$childValue])) {
                                     continue;
@@ -778,10 +779,19 @@ if (is_superadmin()) {
                 <?php
                     $fieldPickerOptions = [];
                     $activeFieldValues = [];
+                    $fullFieldOptions = [];
                     foreach (array_keys((array)($activeCatalogField['options'] ?? [])) as $optionValue) {
                         $activeFieldValues[(string)$optionValue] = true;
                     }
-                    foreach ($catalogField['options'] as $optionValue => $optionLabel) {
+                    if (in_array($fieldType, ['dropdown', 'yes_no'], true)) {
+                        foreach (get_asset_field_options((int)$field['id']) as $option) {
+                            $fullFieldOptions[(string)$option['option_value']] = (string)$option['option_value'];
+                        }
+                    }
+                    if (!$fullFieldOptions) {
+                        $fullFieldOptions = (array)($catalogField['options'] ?? []);
+                    }
+                    foreach ($fullFieldOptions as $optionValue => $optionLabel) {
                         $fieldPickerOptions[] = ['value' => (string)$optionValue, 'label' => (string)$optionLabel, 'disabled' => !isset($activeFieldValues[(string)$optionValue])];
                     }
                     if (!empty($catalogField['has_blank']) || !empty($activeCatalogField['has_blank'])) {
