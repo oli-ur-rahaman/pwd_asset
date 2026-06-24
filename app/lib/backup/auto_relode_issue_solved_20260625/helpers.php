@@ -8,24 +8,8 @@ function base_url(string $path = ''): string
 {
     global $config;
     $base = rtrim($config['app']['base_url'], '/');
-    if ($base === '') {
-        $scriptName = str_replace('\\', '/', (string)($_SERVER['SCRIPT_NAME'] ?? ''));
-        $scriptDir = rtrim(str_replace('\\', '/', dirname($scriptName)), '/');
-        $base = ($scriptDir === '' || $scriptDir === '.') ? '' : $scriptDir;
-    }
     $path = ltrim($path, '/');
-    if ($base === '') {
-        return $path === '' ? '/' : '/' . $path;
-    }
-    return $path === '' ? $base . '/' : $base . '/' . $path;
-}
-
-function asset_url(string $path): string
-{
-    $normalizedPath = ltrim($path, '/');
-    $absolutePath = dirname(__DIR__, 2) . '/' . str_replace('/', DIRECTORY_SEPARATOR, $normalizedPath);
-    $version = is_file($absolutePath) ? (string)((int)filemtime($absolutePath)) : date('Ymd');
-    return base_url($normalizedPath) . '?v=' . rawurlencode($version);
+    return $base === '' ? '/' . $path : $base . '/' . $path;
 }
 
 function redirect(string $path): void

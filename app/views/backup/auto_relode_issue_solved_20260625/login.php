@@ -5,13 +5,13 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title><?= e((string)($info['site_name'] ?? 'PWD Asset Management System')); ?></title>
-    <link rel="stylesheet" href="<?= e(asset_url('public/assets/style.css')); ?>">
+    <link rel="stylesheet" href="public/assets/style.css">
 </head>
 <body class="auth-body">
 <div class="auth-wrap">
     <div class="auth-logo-row">
         <div class="logo-stack" aria-hidden="true">
-                    <img src="<?= e(asset_url('public/assets/login_logo.png')); ?>" alt="Organization Logo" class="auth-logo">
+            <img src="public/assets/login_logo.png" alt="Organization Logo" class="auth-logo">
         </div>
     </div>
     <div class="auth-title-row">
@@ -74,7 +74,7 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 });
 </script>
-<script src="<?= e(asset_url('public/assets/app.js')); ?>"></script>
+<script src="public/assets/app.js"></script>
 </body>
 </html>
 

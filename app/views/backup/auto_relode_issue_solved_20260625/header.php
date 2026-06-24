@@ -11,7 +11,7 @@
 <?php $globalHostedTutorialUrl = (string)(asset_global_tutorial_stream_url($info) ?? ''); ?>
 <?php $globalHostedTutorialName = (string)($info['hosted_tutorial_video_original_name'] ?? $info['hosted_tutorial_video_path'] ?? ''); ?>
     <title><?= e((string)($info['site_name'] ?? 'PWD Asset Management System')); ?></title>
-    <link rel="stylesheet" href="<?= e(asset_url('public/assets/style.css')); ?>">
+    <link rel="stylesheet" href="public/assets/style.css">
 </head>
 <body class="theme-<?= e($themeKey); ?>">
 <nav class="nav">
