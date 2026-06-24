@@ -5570,52 +5570,6 @@ function build_asset_filter_catalog(array $assets, array $fields, ?int $segmentI
     return $catalog;
 }
 
-function asset_board_pagination_batch_size(): int
-{
-    return 50;
-}
-
-function asset_board_has_active_filters(array $filters, array $fields, ?int $segmentId = null): bool
-{
-    $segmentId = asset_normalize_segment_id($segmentId);
-    foreach (['zone_id', 'circle_id', 'division_id', 'subdivision_id', 'category_id'] as $key) {
-        if ((int)($filters[$key] ?? 0) > 0) {
-            return true;
-        }
-    }
-    if (asset_subcategory_enabled($segmentId) && (int)($filters['subcategory_id'] ?? 0) > 0) {
-        return true;
-    }
-    foreach ($fields as $field) {
-        if ((int)($field['active_status'] ?? 0) !== 1) {
-            continue;
-        }
-        $fieldKey = (string)($field['field_key'] ?? '');
-        if ($fieldKey === '') {
-            continue;
-        }
-        $filterKey = 'field_filter_' . $fieldKey;
-        $value = trim((string)($filters[$filterKey] ?? ''));
-        $from = trim((string)($filters[$filterKey . '_from'] ?? ''));
-        $to = trim((string)($filters[$filterKey . '_to'] ?? ''));
-        if ($value !== '' || $from !== '' || $to !== '') {
-            return true;
-        }
-    }
-    return false;
-}
-
-function asset_board_pagination_enabled(array $filters, array $fields, ?int $segmentId = null, bool $timeFilterActive = false): bool
-{
-    if ($timeFilterActive) {
-        return false;
-    }
-    if (trim((string)($filters['sort_col'] ?? '')) !== '') {
-        return false;
-    }
-    return !asset_board_has_active_filters($filters, $fields, $segmentId);
-}
-
 function asset_download_common_field_catalog(array $user, string $viewScope = 'my_office'): array
 {
     $catalog = [];

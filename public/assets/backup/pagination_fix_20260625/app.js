@@ -682,11 +682,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    const bindInlineFileInput = (input) => {
-        if (!input || input.getAttribute('data-inline-file-bound') === '1') {
-            return;
-        }
-        input.setAttribute('data-inline-file-bound', '1');
+    document.querySelectorAll('[data-inline-file-input]').forEach((input) => {
         input.addEventListener('change', () => {
             const files = Array.from(input.files || []);
             if (!files.length) {
@@ -735,58 +731,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const form = input.closest('form');
             if (form) {
                 form.submit();
-            }
-        });
-    };
-
-    const bindInlineFileInputsIn = (root = document) => {
-        root.querySelectorAll('[data-inline-file-input]').forEach((input) => bindInlineFileInput(input));
-    };
-
-    bindInlineFileInputsIn(document);
-
-    document.querySelectorAll('[data-load-more-table]').forEach((button) => {
-        button.addEventListener('click', async () => {
-            const footer = button.closest('[data-table-pagination-footer]');
-            const card = button.closest('.operational-budget-card');
-            const body = card?.querySelector('[data-asset-table-body]');
-            if (!footer || !body) {
-                return;
-            }
-            const baseUrl = button.getAttribute('data-load-url') || '';
-            if (!baseUrl) {
-                return;
-            }
-            const loadedCount = Number.parseInt(body.getAttribute('data-loaded-count') || '0', 10) || 0;
-            const requestUrl = new URL(baseUrl, window.location.href);
-            requestUrl.searchParams.set('offset', String(loadedCount));
-            button.disabled = true;
-            button.textContent = 'Loading...';
-            try {
-                const response = await fetch(requestUrl.toString(), {
-                    headers: { 'X-Requested-With': 'XMLHttpRequest' },
-                    credentials: 'same-origin',
-                });
-                const payload = await response.json();
-                if (!response.ok || !payload?.ok) {
-                    throw new Error(payload?.message || 'Unable to load more rows.');
-                }
-                const wrapper = document.createElement('tbody');
-                wrapper.innerHTML = payload.html || '';
-                Array.from(wrapper.children).forEach((row) => body.appendChild(row));
-                bindInlineFileInputsIn(body);
-                body.setAttribute('data-loaded-count', String(payload.loaded_count || loadedCount));
-                body.setAttribute('data-total-count', String(payload.total_count || body.getAttribute('data-total-count') || '0'));
-                if (!payload.has_more) {
-                    footer.remove();
-                } else {
-                    button.disabled = false;
-                    button.textContent = 'Load More';
-                }
-            } catch (error) {
-                window.alert(error instanceof Error ? error.message : 'Unable to load more rows.');
-                button.disabled = false;
-                button.textContent = 'Load More';
             }
         });
     });

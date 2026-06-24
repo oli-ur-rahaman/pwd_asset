@@ -208,8 +208,6 @@ foreach ($groupedAssets as $group) {
     }
 }
 $activeFilterCatalog = build_asset_filter_catalog($displayedAssets, $fields, $activeSegmentId);
-$paginationEnabled = asset_board_pagination_enabled($filters, $fields, $activeSegmentId, $timeFilterActive);
-$paginationBatchSize = asset_board_pagination_batch_size();
 $categoryNameById = [];
 foreach ($categories as $category) {
     $categoryNameById[(int)$category['id']] = (string)$category['name'];
@@ -855,9 +853,6 @@ if (is_superadmin()) {
             <?php
                 $category = $group['category'];
                 $assets = $group['assets'];
-                $totalAssetCount = count($assets);
-                $paginatedAssets = $paginationEnabled ? array_slice($assets, 0, $paginationBatchSize) : $assets;
-                $paginationHasMore = $paginationEnabled && $totalAssetCount > count($paginatedAssets);
                 $prefCategoryId = asset_table_preference_category_id((int)$category['id'], $currentOfficeViewScope);
                 $visibleColumnKeys = resolve_asset_table_visible_column_keys($prefCategoryId, $availableTableColumns, $columnPreferenceMap);
                 $timeFilterForCategory = $timeFilterActive && (int)$category['id'] === $timeFilterCategoryId;
@@ -898,7 +893,7 @@ if (is_superadmin()) {
                 <div class="card-head">
                     <h2><?= e($category['name']); ?></h2>
                     <div class="card-head-actions">
-                        <div class="muted"><?= $totalAssetCount; ?> row(s)</div>
+                        <div class="muted"><?= count($assets); ?> row(s)</div>
                         <a href="index.php?<?= e(http_build_query($refreshParams)); ?>" class="btn-small button-link">Refresh</a>
                         <button type="button" class="btn-small" data-modal="columns-modal-<?= (int)$category['id']; ?>">Columns</button>
                         <button type="button" class="btn-small<?= $timeFilterForCategory ? ' btn-secondary' : ''; ?>" data-modal="time-filter-modal-<?= (int)$category['id']; ?>">Time Filter</button>
@@ -963,40 +958,106 @@ if (is_superadmin()) {
                                 <?php if ($showActionColumn): ?><th>Action</th><?php endif; ?>
                             </tr>
                         </thead>
-                        <tbody
-                            data-asset-table-body
-                            data-category-id="<?= (int)$category['id']; ?>"
-                            data-loaded-count="<?= count($paginatedAssets); ?>"
-                            data-total-count="<?= $totalAssetCount; ?>"
-                        >
-                            <?php
-                                $assets = $paginatedAssets;
-                                $rowNumberOffset = 0;
-                                $renderEmptyState = true;
-                                require __DIR__ . '/board_table_rows_fragment.php';
-                                $assets = $group['assets'];
-                            ?>
+                        <tbody>
+                            <?php if (!$assets): ?>
+                                <?php
+                                    $columnCount = 1
+                                        + ((!is_superadmin() && $canModifyAssets && !$isUnderMeView) ? 1 : 0)
+                                        + (($showAssetNumber && !empty($visibleColumnKeys['asset_number'])) ? 1 : 0)
+                                        + (((is_superadmin() || $isUnderMeView) && !empty($visibleColumnKeys['office_name'])) ? 1 : 0)
+                                        + (($subcategoryEnabled && !empty($visibleColumnKeys['subcategory_name'])) ? 1 : 0)
+                                        + (!empty($visibleColumnKeys['data_provider']) ? 1 : 0)
+                                        + $visibleFieldCount
+                                        + ($showActionColumn ? 1 : 0);
+                                ?>
+                                <tr><td colspan="<?= e((string)$columnCount); ?>" class="muted">No assets found.</td></tr>
+                            <?php endif; ?>
+                            <?php foreach ($assets as $index => $asset): ?>
+                                <tr>
+                                    <?php if (!is_superadmin() && $canModifyAssets && !$isUnderMeView): ?>
+                                        <td><input type="checkbox" name="asset_ids[]" value="<?= e((string)$asset['id']); ?>" form="asset-delete-form"></td>
+                                    <?php endif; ?>
+                                    <td><?= e((string)($index + 1)); ?></td>
+                                    <?php if ($showAssetNumber && !empty($visibleColumnKeys['asset_number'])): ?><td><?= e($asset['asset_number']); ?></td><?php endif; ?>
+                                    <?php if ((is_superadmin() || $isUnderMeView) && !empty($visibleColumnKeys['office_name'])): ?><td><?= e($asset['office_type_label'] . ' - ' . $asset['office_name']); ?></td><?php endif; ?>
+                                    <?php if ($subcategoryEnabled && !empty($visibleColumnKeys['subcategory_name'])): ?><td><?= e((string)($asset['subcategory_name'] ?? '')); ?></td><?php endif; ?>
+                                    <?php if (!empty($visibleColumnKeys['data_provider'])): ?>
+                                        <td><?= e(strtok((string)($asset['created_by_email'] ?? ''), '@') ?: ''); ?></td>
+                                    <?php endif; ?>
+                                    <?php foreach ($fields as $field): ?>
+                                        <?php if ((int)$field['is_displayed'] === 1 && (int)$field['active_status'] === 1 && !empty($visibleColumnKeys[$field['field_key']])): ?>
+                                            <td>
+                                                <?php if ($field['data_type'] === 'file'): ?>
+                                                    <?php $assetFiles = $asset['files'][$field['field_key']] ?? []; ?>
+                                                    <?php
+                                                        $fileRule = get_asset_field_file_rule((int)$field['id']);
+                                                        $accept = implode(',', array_map(static fn(string $ext): string => '.' . $ext, asset_parse_extensions_string((string)$fileRule['allowed_extensions'])));
+                                                        $formId = 'asset-inline-file-' . (int)$asset['id'] . '-' . preg_replace('/[^a-zA-Z0-9_-]+/', '-', (string)$field['field_key']);
+                                                        $fileCount = count($assetFiles);
+                                                        $maxFiles = max(1, (int)($fileRule['max_files'] ?? 1));
+                                                        $isMultipleFile = (int)$fileRule['is_multiple'] === 1;
+                                                        $canShowInlineAdd = !$isMultipleFile || $fileCount < $maxFiles;
+                                                        $inlineAddLabel = $isMultipleFile
+                                                            ? ($assetFiles ? 'Add More (max ' . $maxFiles . ')' : 'Add File')
+                                                            : 'Add or Replace';
+                                                    ?>
+                                                    <?php if ($assetFiles): ?>
+                                                        <div class="file-link-list">
+                                                            <?php foreach ($assetFiles as $fileRow): ?>
+                                                                <?php $meta = $fileIconMeta((string)$fileRow['original_name']); ?>
+                                                                <a href="index.php?page=asset_file&id=<?= e((string)$fileRow['id']); ?>" class="file-chip file-chip-icon-only <?= e($meta['class']); ?>" target="_blank" rel="noopener" title="<?= e((string)$fileRow['original_name']); ?>">
+                                                                    <span class="file-chip-icon"><?= e($meta['icon']); ?></span>
+                                                                </a>
+                                                            <?php endforeach; ?>
+                                                        </div>
+                                                    <?php elseif (!$canModifyAssets || is_superadmin() || $isUnderMeView): ?>
+                                                        <span class="muted">No file</span>
+                                                    <?php endif; ?>
+                                                    <?php if ($canModifyAssets && !is_superadmin() && !$isUnderMeView && $canShowInlineAdd): ?>
+                                                        <form method="post" action="index.php" enctype="multipart/form-data" class="inline-file-upload-form" id="<?= $formId; ?>">
+                                                            <?= csrf_input(); ?>
+                                                            <input type="hidden" name="action" value="asset_upload_field_files">
+                                                            <input type="hidden" name="asset_id" value="<?= e((string)$asset['id']); ?>">
+                                                            <input type="hidden" name="field_key" value="<?= e($field['field_key']); ?>">
+                                                            <input
+                                                                type="file"
+                                                                name="field_files[<?= e($field['field_key']); ?>][]"
+                                                                class="inline-file-input"
+                                                                id="<?= $formId; ?>-input"
+                                                                <?= (int)$fileRule['is_multiple'] === 1 ? 'multiple' : ''; ?>
+                                                                accept="<?= e($accept); ?>"
+                                                                data-inline-file-input
+                                                                data-label="<?= e((string)($uiFieldLabels[$field['field_key']] ?? $field['label'])); ?>"
+                                                                data-allowed-extensions="<?= e((string)$fileRule['allowed_extensions']); ?>"
+                                                                data-max-files="<?= e((string)$fileRule['max_files']); ?>"
+                                                                data-max-file-size="<?= e((string)$fileRule['max_file_size_bytes']); ?>"
+                                                                data-max-total-size="<?= e((string)$fileRule['max_total_size_bytes']); ?>"
+                                                                data-is-multiple="<?= e((string)$fileRule['is_multiple']); ?>">
+                                                            <label for="<?= $formId; ?>-input" class="btn-small inline-file-add-button"><?= e($inlineAddLabel); ?></label>
+                                                        </form>
+                                                    <?php endif; ?>
+                                                <?php else: ?>
+                                                    <?= e((string)($asset['values'][$field['field_key']] ?? '')); ?>
+                                                <?php endif; ?>
+                                            </td>
+                                            <?php if ((string)($field['data_type'] ?? '') === 'bimh' && !empty($visibleColumnKeys[$field['field_key'] . '__est_name'])): ?>
+                                                <td><?php $renderBimhEstNameTableCell((string)($asset['values'][$field['field_key'] . '__est_name'] ?? '')); ?></td>
+                                            <?php endif; ?>
+                                        <?php endif; ?>
+                                    <?php endforeach; ?>
+                                    <?php if ($showActionColumn): ?>
+                                        <td>
+                                            <div class="action-icon-row">
+                                                <a href="index.php?<?= e(http_build_query(['page' => 'board', 'segment_id' => $activeSegmentId, 'office_view_scope' => $currentOfficeViewScope, 'asset_history' => (int)$asset['id']])); ?>" class="icon-only-button table-action-icon" title="See update history" aria-label="See update history">&#x1F553;</a>
+                                                <a href="index.php?<?= e(http_build_query(['page' => 'board', 'segment_id' => $activeSegmentId, 'office_view_scope' => $currentOfficeViewScope, 'edit_asset' => (int)$asset['id']])); ?>" class="icon-only-button table-action-icon" title="Edit asset" aria-label="Edit asset">&#x270E;</a>
+                                            </div>
+                                        </td>
+                                    <?php endif; ?>
+                                </tr>
+                            <?php endforeach; ?>
                         </tbody>
                     </table>
                 </div>
-                <?php if ($paginationHasMore): ?>
-                    <?php
-                        $loadMoreParams = ['page' => 'asset_table_rows', 'segment_id' => $activeSegmentId, 'category_id' => (int)$category['id']];
-                        if (!is_superadmin()) {
-                            $loadMoreParams['office_view_scope'] = $currentOfficeViewScope;
-                        }
-                    ?>
-                    <div class="table-load-more-footer" data-table-pagination-footer>
-                        <div class="table-load-more-fade"></div>
-                        <button
-                            type="button"
-                            class="btn-small table-load-more-button"
-                            data-load-more-table
-                            data-load-url="<?= e('index.php?' . http_build_query($loadMoreParams)); ?>"
-                            data-batch-size="<?= $paginationBatchSize; ?>"
-                        >Load More</button>
-                    </div>
-                <?php endif; ?>
             </section>
             <div class="modal-backdrop" id="columns-modal-<?= (int)$category['id']; ?>" aria-hidden="true">
                 <div class="modal-card column-visibility-modal" role="dialog" aria-modal="true" aria-labelledby="columns-modal-title-<?= (int)$category['id']; ?>">
