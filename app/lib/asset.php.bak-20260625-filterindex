@@ -220,27 +220,6 @@ function ensure_asset_schema(): void
     );
 
     db()->exec(
-        "CREATE TABLE IF NOT EXISTS asset_filter_items (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            segment_id INT NOT NULL,
-            field_id INT NOT NULL,
-            field_key VARCHAR(100) NOT NULL,
-            data_type VARCHAR(20) NOT NULL,
-            item_kind VARCHAR(20) NOT NULL,
-            item_value VARCHAR(255) NOT NULL,
-            item_label TEXT NOT NULL,
-            item_sort_value VARCHAR(255) DEFAULT NULL,
-            usage_count INT NOT NULL DEFAULT 0,
-            active_status TINYINT NOT NULL DEFAULT 1,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            updated_at DATETIME DEFAULT NULL,
-            UNIQUE KEY uniq_asset_filter_item (segment_id, field_id, item_kind, item_value),
-            KEY idx_asset_filter_items_segment_field (segment_id, field_id, active_status),
-            KEY idx_asset_filter_items_segment_key (segment_id, field_key, active_status)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
-    );
-
-    db()->exec(
         "CREATE TABLE IF NOT EXISTS asset_download_jobs (
             id INT AUTO_INCREMENT PRIMARY KEY,
             job_token VARCHAR(80) NOT NULL,
@@ -465,8 +444,6 @@ function ensure_asset_schema(): void
     asset_ensure_text_column('asset_field_options', 'option_value', 'TEXT NOT NULL');
     asset_ensure_text_column('asset_field_options', 'option_label', 'TEXT NOT NULL');
     asset_ensure_segment_indexes();
-    asset_ensure_index('asset_filter_items', 'idx_asset_filter_items_segment_field', ['segment_id', 'field_id', 'active_status']);
-    asset_ensure_index('asset_filter_items', 'idx_asset_filter_items_segment_key', ['segment_id', 'field_key', 'active_status']);
     asset_ensure_index('bimh_data', 'idx_bimh_civil_division_key', ['pwd_civil_division_key']);
     asset_ensure_index('bimh_data', 'idx_bimh_mechanical_division_key', ['pwd_mechanical_division_key']);
     asset_ensure_index('bimh_data', 'idx_bimh_address_key', ['address_key']);
@@ -484,7 +461,7 @@ function ensure_asset_schema(): void
 
 function asset_schema_version(): string
 {
-    return '2026-06-25-2';
+    return '2026-06-25-1';
 }
 
 function asset_schema_cache_file(): string
@@ -2830,437 +2807,6 @@ function asset_normalize_filter_scope(int|string|null $value): int
     return $scope;
 }
 
-function asset_filter_index_blank_token(): string
-{
-    return '__blank__';
-}
-
-function asset_filter_index_no_file_token(): string
-{
-    return '__no_file__';
-}
-
-function asset_filter_index_supported_data_types(): array
-{
-    return ['text', 'number', 'file', 'bimh'];
-}
-
-function asset_filter_index_field_is_trackable(array $field): bool
-{
-    $dataType = strtolower(trim((string)($field['data_type'] ?? '')));
-    if (!in_array($dataType, asset_filter_index_supported_data_types(), true)) {
-        return false;
-    }
-    if ((int)($field['active_status'] ?? 0) !== 1) {
-        return false;
-    }
-    $scope = asset_normalize_filter_scope($field['filter_scope'] ?? (($field['is_filter_enabled'] ?? 0) ? asset_filter_scope_all() : asset_filter_scope_none()));
-    return $scope !== asset_filter_scope_none();
-}
-
-function asset_filter_index_sort_value(string $value): string
-{
-    $value = trim(preg_replace('/\s+/u', ' ', $value) ?? $value);
-    if ($value === '') {
-        return '';
-    }
-    return function_exists('mb_strtolower') ? mb_strtolower($value, 'UTF-8') : strtolower($value);
-}
-
-function asset_filter_index_build_items_for_field_asset(array $asset, array $field): array
-{
-    if (!asset_filter_index_field_is_trackable($field)) {
-        return [];
-    }
-    $segmentId = asset_normalize_segment_id((int)($asset['segment_id'] ?? 0));
-    $fieldId = (int)($field['id'] ?? 0);
-    $fieldKey = (string)($field['field_key'] ?? '');
-    $dataType = strtolower(trim((string)($field['data_type'] ?? '')));
-    if ($segmentId <= 0 || $fieldId <= 0 || $fieldKey === '') {
-        return [];
-    }
-
-    $items = [];
-    $register = static function (string $itemKind, string $itemValue, string $itemLabel) use (&$items, $segmentId, $fieldId, $fieldKey, $dataType): void {
-        $key = $itemKind . '|' . $itemValue;
-        $items[$key] = [
-            'segment_id' => $segmentId,
-            'field_id' => $fieldId,
-            'field_key' => $fieldKey,
-            'data_type' => $dataType,
-            'item_kind' => $itemKind,
-            'item_value' => $itemValue,
-            'item_label' => $itemLabel,
-            'item_sort_value' => asset_filter_index_sort_value($itemLabel),
-        ];
-    };
-
-    if ($dataType === 'file') {
-        $extensions = asset_file_extensions_for_asset($asset, $fieldKey);
-        if ($extensions === []) {
-            $register('no_file', asset_filter_index_no_file_token(), 'No file');
-            return array_values($items);
-        }
-        foreach ($extensions as $extension) {
-            $register('extension', strtolower($extension), strtolower($extension));
-        }
-        return array_values($items);
-    }
-
-    $value = trim((string)($asset['values'][$fieldKey] ?? ''));
-    if ($value === '') {
-        $register('blank', asset_filter_index_blank_token(), 'Blank');
-        return array_values($items);
-    }
-    $register('value', $value, $value);
-    return array_values($items);
-}
-
-function asset_filter_index_fetch_items_for_field(int $fieldId, ?int $segmentId = null): array
-{
-    $normalizedSegmentId = asset_normalize_segment_id($segmentId);
-    $stmt = db()->prepare(
-        'SELECT * FROM asset_filter_items
-         WHERE segment_id = ? AND field_id = ? AND active_status = 1 AND usage_count > 0
-         ORDER BY item_kind ASC, item_sort_value ASC, item_label ASC'
-    );
-    $stmt->execute([$normalizedSegmentId, $fieldId]);
-    return $stmt->fetchAll();
-}
-
-function asset_filter_index_catalog_for_fields(int $segmentId, array $fields): array
-{
-    $segmentId = asset_normalize_segment_id($segmentId);
-    if ($segmentId <= 0) {
-        return [];
-    }
-    $trackableFields = [];
-    foreach ($fields as $field) {
-        if (
-            (int)($field['active_status'] ?? 0) === 1
-            && !asset_is_conditional_secondary($field)
-            && asset_filter_index_field_is_trackable($field)
-        ) {
-            $trackableFields[(int)$field['id']] = $field;
-        }
-    }
-    if (!$trackableFields) {
-        return [];
-    }
-    $placeholders = implode(',', array_fill(0, count($trackableFields), '?'));
-    $params = [$segmentId];
-    foreach (array_keys($trackableFields) as $fieldId) {
-        $params[] = $fieldId;
-    }
-    $stmt = db()->prepare(
-        "SELECT field_id, item_kind, item_value, item_label
-         FROM asset_filter_items
-         WHERE segment_id = ?
-           AND active_status = 1
-           AND usage_count > 0
-           AND field_id IN ($placeholders)
-         ORDER BY field_id ASC, item_sort_value ASC, item_label ASC"
-    );
-    $stmt->execute($params);
-    $catalog = [];
-    foreach ($stmt->fetchAll() as $row) {
-        $fieldId = (int)($row['field_id'] ?? 0);
-        $field = $trackableFields[$fieldId] ?? null;
-        if (!$field) {
-            continue;
-        }
-        $fieldKey = (string)($field['field_key'] ?? '');
-        if ($fieldKey === '') {
-            continue;
-        }
-        $catalog[$fieldKey] ??= [
-            'field_key' => $fieldKey,
-            'label' => (string)($field['label'] ?? $fieldKey),
-            'data_type' => (string)($field['data_type'] ?? 'text'),
-            'field_id' => $fieldId,
-            'secondary_of_field_id' => (int)($field['secondary_of_field_id'] ?? 0),
-            'child_key' => null,
-            'child_label' => null,
-            'options' => [],
-            'secondary_options_map' => [],
-            'has_blank' => false,
-        ];
-        $itemKind = (string)($row['item_kind'] ?? 'value');
-        $itemValue = (string)($row['item_value'] ?? '');
-        $itemLabel = (string)($row['item_label'] ?? $itemValue);
-        if ($itemKind === 'blank' || $itemValue === asset_filter_index_blank_token()) {
-            $catalog[$fieldKey]['has_blank'] = true;
-            continue;
-        }
-        if ($itemKind === 'no_file' || $itemValue === asset_filter_index_no_file_token()) {
-            $catalog[$fieldKey]['options']['__no_file__'] = 'No file';
-            continue;
-        }
-        $catalog[$fieldKey]['options'][$itemValue] = $itemLabel;
-    }
-    foreach ($catalog as &$fieldCatalog) {
-        if (!empty($fieldCatalog['options'])) {
-            natcasesort($fieldCatalog['options']);
-        }
-    }
-    unset($fieldCatalog);
-    return $catalog;
-}
-
-function asset_filter_index_clear_for_field(int $fieldId, ?int $segmentId = null): void
-{
-    $normalizedSegmentId = asset_normalize_segment_id($segmentId);
-    db()->prepare('DELETE FROM asset_filter_items WHERE segment_id = ? AND field_id = ?')->execute([$normalizedSegmentId, $fieldId]);
-}
-
-function asset_filter_index_clear_for_fields(int $segmentId, array $fieldIds): void
-{
-    $fieldIds = array_values(array_filter(array_map('intval', $fieldIds), static fn(int $value): bool => $value > 0));
-    if ($fieldIds === []) {
-        return;
-    }
-    $placeholders = implode(',', array_fill(0, count($fieldIds), '?'));
-    $params = array_merge([$segmentId], $fieldIds);
-    $stmt = db()->prepare("DELETE FROM asset_filter_items WHERE segment_id = ? AND field_id IN ({$placeholders})");
-    $stmt->execute($params);
-}
-
-function asset_filter_index_store_aggregates(array $aggregates): int
-{
-    if ($aggregates === []) {
-        return 0;
-    }
-    $stmt = db()->prepare(
-        'INSERT INTO asset_filter_items
-            (segment_id, field_id, field_key, data_type, item_kind, item_value, item_label, item_sort_value, usage_count, active_status, created_at, updated_at)
-         VALUES
-            (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NOW(), NOW())
-         ON DUPLICATE KEY UPDATE
-            field_key = VALUES(field_key),
-            data_type = VALUES(data_type),
-            item_label = VALUES(item_label),
-            item_sort_value = VALUES(item_sort_value),
-            usage_count = VALUES(usage_count),
-            active_status = 1,
-            updated_at = NOW()'
-    );
-    $stored = 0;
-    foreach ($aggregates as $item) {
-        if ((int)($item['usage_count'] ?? 0) <= 0) {
-            continue;
-        }
-        $stmt->execute([
-            (int)$item['segment_id'],
-            (int)$item['field_id'],
-            (string)$item['field_key'],
-            (string)$item['data_type'],
-            (string)$item['item_kind'],
-            (string)$item['item_value'],
-            (string)$item['item_label'],
-            (string)$item['item_sort_value'],
-            (int)$item['usage_count'],
-        ]);
-        $stored++;
-    }
-    return $stored;
-}
-
-function asset_filter_index_rebuild_fields(int $segmentId, array $fieldIds = []): array
-{
-    $segmentId = asset_normalize_segment_id($segmentId);
-    $fieldMap = asset_field_map_for_segment(true, $segmentId);
-    $targetFields = [];
-    $requestedFieldIds = array_values(array_filter(array_map('intval', $fieldIds), static fn(int $value): bool => $value > 0));
-    foreach ($fieldMap as $field) {
-        $fieldId = (int)($field['id'] ?? 0);
-        if ($requestedFieldIds !== [] && !in_array($fieldId, $requestedFieldIds, true)) {
-            continue;
-        }
-        if (asset_filter_index_field_is_trackable($field)) {
-            $targetFields[$fieldId] = $field;
-        } elseif ($requestedFieldIds !== [] && in_array($fieldId, $requestedFieldIds, true)) {
-            $targetFields[$fieldId] = $field;
-        }
-    }
-
-    $clearIds = $requestedFieldIds !== [] ? $requestedFieldIds : array_map(static fn(array $field): int => (int)$field['id'], $targetFields);
-    if ($clearIds !== []) {
-        asset_filter_index_clear_for_fields($segmentId, $clearIds);
-    }
-
-    $trackedFields = array_filter($targetFields, static fn(array $field): bool => asset_filter_index_field_is_trackable($field));
-    if ($trackedFields === []) {
-        return ['fields_rebuilt' => 0, 'items_stored' => 0];
-    }
-
-    $assets = get_assets(
-        ['segment_id' => $segmentId],
-        current_user(),
-        false,
-        [
-            'include_files' => true,
-            'include_timestamps' => false,
-            'include_office_labels' => false,
-            'skip_sort' => true,
-        ]
-    );
-
-    $aggregates = [];
-    foreach ($assets as $asset) {
-        foreach ($trackedFields as $field) {
-            foreach (asset_filter_index_build_items_for_field_asset($asset, $field) as $item) {
-                $key = implode('|', [
-                    (string)$item['segment_id'],
-                    (string)$item['field_id'],
-                    (string)$item['item_kind'],
-                    (string)$item['item_value'],
-                ]);
-                if (!isset($aggregates[$key])) {
-                    $aggregates[$key] = $item + ['usage_count' => 0];
-                }
-                $aggregates[$key]['usage_count']++;
-            }
-        }
-    }
-
-    $stored = asset_filter_index_store_aggregates($aggregates);
-    return ['fields_rebuilt' => count($trackedFields), 'items_stored' => $stored];
-}
-
-function asset_filter_index_rebuild_field(int $fieldId, ?int $segmentId = null): array
-{
-    $field = get_asset_field($fieldId, $segmentId);
-    if (!$field) {
-        if ($segmentId !== null) {
-            asset_filter_index_clear_for_field($fieldId, $segmentId);
-        }
-        return ['fields_rebuilt' => 0, 'items_stored' => 0];
-    }
-    return asset_filter_index_rebuild_fields(asset_normalize_segment_id((int)($field['segment_id'] ?? $segmentId ?? 0)), [$fieldId]);
-}
-
-function asset_filter_index_rebuild_all(): array
-{
-    $fieldsRebuilt = 0;
-    $itemsStored = 0;
-    foreach (get_asset_segments(true) as $segment) {
-        $summary = asset_filter_index_rebuild_fields((int)($segment['id'] ?? 0));
-        $fieldsRebuilt += (int)($summary['fields_rebuilt'] ?? 0);
-        $itemsStored += (int)($summary['items_stored'] ?? 0);
-    }
-    return ['fields_rebuilt' => $fieldsRebuilt, 'items_stored' => $itemsStored];
-}
-
-function asset_filter_index_refresh_field(int $fieldId, ?int $segmentId = null): array
-{
-    $field = get_asset_field($fieldId, $segmentId);
-    if (!$field) {
-        if ($segmentId !== null) {
-            asset_filter_index_clear_for_field($fieldId, $segmentId);
-        }
-        return ['fields_rebuilt' => 0, 'items_stored' => 0];
-    }
-    asset_filter_index_clear_for_field($fieldId, (int)($field['segment_id'] ?? $segmentId ?? 0));
-    if (!asset_filter_index_field_is_trackable($field)) {
-        return ['fields_rebuilt' => 0, 'items_stored' => 0];
-    }
-    return asset_filter_index_rebuild_field($fieldId, (int)($field['segment_id'] ?? $segmentId ?? 0));
-}
-
-function asset_filter_index_apply_item_delta(array $item, int $delta): void
-{
-    if ($delta === 0) {
-        return;
-    }
-    $stmt = db()->prepare(
-        'SELECT id, usage_count
-         FROM asset_filter_items
-         WHERE segment_id = ? AND field_id = ? AND item_kind = ? AND item_value = ?
-         LIMIT 1'
-    );
-    $stmt->execute([
-        (int)$item['segment_id'],
-        (int)$item['field_id'],
-        (string)$item['item_kind'],
-        (string)$item['item_value'],
-    ]);
-    $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
-    if (!$row) {
-        if ($delta < 0) {
-            return;
-        }
-        db()->prepare(
-            'INSERT INTO asset_filter_items
-                (segment_id, field_id, field_key, data_type, item_kind, item_value, item_label, item_sort_value, usage_count, active_status, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NOW(), NOW())'
-        )->execute([
-            (int)$item['segment_id'],
-            (int)$item['field_id'],
-            (string)$item['field_key'],
-            (string)$item['data_type'],
-            (string)$item['item_kind'],
-            (string)$item['item_value'],
-            (string)$item['item_label'],
-            (string)$item['item_sort_value'],
-            max(0, $delta),
-        ]);
-        return;
-    }
-    $usageCount = max(0, (int)($row['usage_count'] ?? 0) + $delta);
-    db()->prepare(
-        'UPDATE asset_filter_items
-         SET field_key = ?, data_type = ?, item_label = ?, item_sort_value = ?, usage_count = ?, active_status = ?, updated_at = NOW()
-         WHERE id = ?'
-    )->execute([
-        (string)$item['field_key'],
-        (string)$item['data_type'],
-        (string)$item['item_label'],
-        (string)$item['item_sort_value'],
-        $usageCount,
-        $usageCount > 0 ? 1 : 0,
-        (int)$row['id'],
-    ]);
-}
-
-function asset_filter_index_snapshot_from_asset(array $asset): array
-{
-    if ((int)($asset['active_status'] ?? 0) !== 1 || !empty($asset['deleted_at'])) {
-        return [];
-    }
-    $segmentId = asset_normalize_segment_id((int)($asset['segment_id'] ?? 0));
-    $fieldMap = asset_field_map_for_segment(true, $segmentId);
-    $snapshot = [];
-    foreach ($fieldMap as $field) {
-        if (!asset_filter_index_field_is_trackable($field)) {
-            continue;
-        }
-        foreach (asset_filter_index_build_items_for_field_asset($asset, $field) as $item) {
-            $key = implode('|', [
-                (string)$item['segment_id'],
-                (string)$item['field_id'],
-                (string)$item['item_kind'],
-                (string)$item['item_value'],
-            ]);
-            $snapshot[$key] = $item;
-        }
-    }
-    return array_values($snapshot);
-}
-
-function asset_filter_index_sync_asset_change(?array $beforeAsset, ?array $afterAsset): void
-{
-    if ($beforeAsset) {
-        foreach (asset_filter_index_snapshot_from_asset($beforeAsset) as $item) {
-            asset_filter_index_apply_item_delta($item, -1);
-        }
-    }
-    if ($afterAsset) {
-        foreach (asset_filter_index_snapshot_from_asset($afterAsset) as $item) {
-            asset_filter_index_apply_item_delta($item, 1);
-        }
-    }
-}
-
 function asset_download_default_filter_options(): array
 {
     return [
@@ -4649,8 +4195,6 @@ function create_asset_field(array $payload): void
 {
     $segmentId = asset_normalize_segment_id((int)($payload['segment_id'] ?? 0));
     $fieldSortOrder = (int)($payload['sort_order'] ?? 0);
-    $fieldId = 0;
-    $childId = 0;
     if ($fieldSortOrder <= 0) {
         $fieldSortOrder = next_sort_order_for_filters('asset_fields', ['segment_id' => $segmentId]);
     }
@@ -4751,12 +4295,6 @@ function create_asset_field(array $payload): void
             db()->rollBack();
         }
         throw $e;
-    }
-    if ($fieldId > 0) {
-        asset_filter_index_refresh_field($fieldId, $segmentId);
-    }
-    if ($childId > 0) {
-        asset_filter_index_refresh_field($childId, $segmentId);
     }
 }
 
@@ -4867,10 +4405,6 @@ function update_asset_field(int $id, array $payload): void
         }
         throw $e;
     }
-    asset_filter_index_refresh_field($id, $segmentId);
-    if ($childField) {
-        asset_filter_index_refresh_field((int)$childField['id'], $segmentId);
-    }
 }
 
 function replace_asset_field_options(int $fieldId, array $options): void
@@ -4897,10 +4431,6 @@ function set_asset_field_status(int $id, int $status, ?int $segmentId = null): v
     $child = get_asset_conditional_child_field($id, true, $segmentId);
     if ($child) {
         $stmt->execute([$status === 1 ? 1 : 0, (int)$child['id'], $normalizedSegmentId]);
-    }
-    asset_filter_index_refresh_field($id, $normalizedSegmentId);
-    if ($child) {
-        asset_filter_index_refresh_field((int)$child['id'], $normalizedSegmentId);
     }
 }
 
@@ -4932,7 +4462,6 @@ function delete_asset_field(int $id, ?int $segmentId = null): bool
             return false;
         }
     }
-    asset_filter_index_clear_for_fields(asset_normalize_segment_id((int)($field['segment_id'] ?? $segmentId ?? 0)), $linkedFieldIds);
     foreach ($linkedFieldIds as $fieldId) {
         db()->prepare('DELETE FROM asset_field_options WHERE field_id = ?')->execute([$fieldId]);
         delete_asset_field_file_rule($fieldId);
@@ -5611,10 +5140,6 @@ function create_asset(array $validated, array $user): int
     try {
         $assetId = persist_asset_record($validated, $user, $fileCleanup);
         db()->commit();
-        $createdAsset = get_asset($assetId, true);
-        if ($createdAsset) {
-            asset_filter_index_sync_asset_change(null, $createdAsset);
-        }
         finalize_asset_file_changes($fileCleanup, true);
         add_log((int)$user['id'], 'assets', $assetId, 'Asset created.');
         add_asset_activity_log(
@@ -5668,7 +5193,6 @@ function update_asset(int $assetId, array $validated, array $user): void
     $fieldMap = asset_field_map_for_segment(true, $segmentId);
     $logDetails = build_asset_update_log_details($asset, $validated, $fieldMap);
     $fileCleanup = ['new_paths' => [], 'delete_paths' => []];
-    $beforeAsset = $asset;
     db()->beginTransaction();
     try {
         $stmt = db()->prepare('UPDATE assets SET category_id = ?, subcategory_id = ?, updated_by = ?, updated_at = NOW() WHERE id = ?');
@@ -5681,8 +5205,6 @@ function update_asset(int $assetId, array $validated, array $user): void
         save_asset_values($assetId, $validated['field_values']);
         sync_asset_file_values($assetId, $validated['file_operations'] ?? [], $fileCleanup);
         db()->commit();
-        $afterAsset = get_asset($assetId, true);
-        asset_filter_index_sync_asset_change($beforeAsset, $afterAsset);
         finalize_asset_file_changes($fileCleanup, true);
         add_log((int)$user['id'], 'assets', $assetId, 'Asset updated.');
         add_asset_activity_log(
@@ -5724,14 +5246,11 @@ function upload_asset_files_for_field(int $assetId, string $fieldKey, array $use
     }
 
     $cleanup = ['new_paths' => [], 'delete_paths' => []];
-    $beforeAsset = $asset;
     db()->beginTransaction();
     try {
         sync_asset_file_values($assetId, [$fieldKey => $operation], $cleanup);
         db()->prepare('UPDATE assets SET updated_by = ?, updated_at = NOW() WHERE id = ?')->execute([(int)$user['id'], $assetId]);
         db()->commit();
-        $afterAsset = get_asset($assetId, true);
-        asset_filter_index_sync_asset_change($beforeAsset, $afterAsset);
         finalize_asset_file_changes($cleanup, true);
         add_log((int)$user['id'], 'assets', $assetId, 'Asset file uploaded.');
         $uploadedNames = array_values(array_filter(array_map(
@@ -5872,7 +5391,6 @@ function soft_delete_assets(array $assetIds, array $user): int
             continue;
         }
         db()->prepare('UPDATE assets SET active_status = 0, deleted_at = NOW(), updated_by = ?, updated_at = NOW() WHERE id = ?')->execute([(int)$user['id'], $assetId]);
-        asset_filter_index_sync_asset_change($asset, null);
         add_log((int)$user['id'], 'assets', $assetId, 'Asset soft deleted.');
         $deleted++;
     }
@@ -6129,7 +5647,7 @@ function asset_filter_visible_fields(array $fields, array $assets, ?int $segment
     return $visible;
 }
 
-function build_asset_filter_catalog(array $assets, array $fields, ?int $segmentId = null, bool $respectBoardFilterVisibility = true, bool $preferIndexedTrackable = false): array
+function build_asset_filter_catalog(array $assets, array $fields, ?int $segmentId = null, bool $respectBoardFilterVisibility = true): array
 {
     $segmentId = asset_normalize_segment_id($segmentId);
     $catalog = [
@@ -6167,14 +5685,6 @@ function build_asset_filter_catalog(array $assets, array $fields, ?int $segmentI
                 ? get_asset_conditional_child_field((int)$field['id'], true, $segmentId)
                 : null,
         ];
-    }
-    if ($preferIndexedTrackable && is_superadmin()) {
-        foreach (asset_filter_index_catalog_for_fields($segmentId, $fields) as $fieldKey => $fieldCatalog) {
-            if (!isset($fieldMetaMap[$fieldKey])) {
-                continue;
-            }
-            $catalog['fields'][$fieldKey] = $fieldCatalog;
-        }
     }
     foreach ($assets as $asset) {
         $officeType = (int)($asset['office_type'] ?? 0);
@@ -6218,13 +5728,6 @@ function build_asset_filter_catalog(array $assets, array $fields, ?int $segmentI
                 'secondary_options_map' => [],
                 'has_blank' => false,
             ];
-            if (
-                $preferIndexedTrackable
-                && is_superadmin()
-                && asset_filter_index_field_is_trackable($field)
-            ) {
-                continue;
-            }
             if ($fieldType === 'file') {
                 $extensions = asset_file_extensions_for_asset($asset, $fieldKey);
                 if (!$extensions) {

@@ -1,25 +1,5 @@
 <?php
-$assetEmbedBoard = defined('ASSET_EMBED_BOARD') && ASSET_EMBED_BOARD === true;
-$assetComparisonTableOnly = defined('ASSET_COMPARISON_TABLE_ONLY') && ASSET_COMPARISON_TABLE_ONLY === true;
-$assetBoardFiltersOnly = defined('ASSET_BOARD_FILTERS_ONLY') && ASSET_BOARD_FILTERS_ONLY === true;
-if (!$assetEmbedBoard && !$assetBoardFiltersOnly) {
-    require __DIR__ . '/header.php';
-} elseif ($assetEmbedBoard) {
-    $embedInfo = get_info_row();
-    $embedThemeKey = asset_normalize_theme_key((string)($embedInfo['ui_theme_key'] ?? ''));
-    ?>
-    <!doctype html>
-    <html lang="en">
-    <head>
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <title><?= e((string)($embedInfo['site_name'] ?? 'PWD Asset Management System')); ?></title>
-        <link rel="stylesheet" href="<?= e(asset_url('public/assets/style.css')); ?>">
-    </head>
-    <body class="theme-<?= e($embedThemeKey); ?> comparison-embed-body">
-    <main class="container board-embed-shell<?= $assetComparisonTableOnly ? ' board-embed-table-only' : ''; ?>">
-    <?php
-}
+require __DIR__ . '/header.php';
 
 $user = current_user();
 $info = get_info_row();
@@ -125,11 +105,9 @@ $timeFilterEndTimestamp = $timeFilterTillNow ? null : $parseBoardDateTime($timeF
 $timeFilterActive = $timeFilterCategoryId > 0
     && $timeFilterFieldKey !== ''
     && ($timeFilterFromBeginning || $timeFilterTillNow || $timeFilterStartTimestamp !== null || $timeFilterEndTimestamp !== null);
-asset_board_perf_mark('board.filters_prepared', [
-    'segment_id' => $activeSegmentId,
-    'time_filter_active' => $timeFilterActive ? 1 : 0,
-]);
-$baseScopeAssets = [];
+$baseScopeAssets = $scopeAccessAvailable
+    ? get_assets(['office_view_scope' => $currentOfficeViewScope, 'segment_id' => $activeSegmentId], $user)
+    : [];
 $declaration = null;
 $officeSummary = null;
 if (!is_superadmin()) {
@@ -185,17 +163,15 @@ $bimhPickerData = asset_bimh_picker_rows($user);
 $bimhPickerScope = asset_bimh_picker_scope($user);
 $availableTableColumns = asset_table_available_columns($fields, $uiFieldLabels, $currentOfficeViewScope, $activeSegmentId);
 $columnPreferenceMap = get_asset_table_column_preferences((int)$user['id'], $activeSegmentId);
-$filterCatalog = ['categories' => [], 'subcategories' => [], 'zones' => [], 'circles' => [], 'divisions' => [], 'subdivisions' => [], 'fields' => []];
-$visibleFilterFields = [];
-$activeFilterCatalog = $filterCatalog;
-$showCategoryFilter = false;
-$showSubcategoryFilter = false;
+$filterCatalog = build_asset_filter_catalog($baseScopeAssets, $fields, $activeSegmentId);
+$visibleFilterFields = asset_filter_visible_fields($fields, $baseScopeAssets, $activeSegmentId);
+$showCategoryFilter = $categorySelectionEnabled && count($filterCatalog['categories']) > 1;
+$showSubcategoryFilter = $subcategoryEnabled && count($filterCatalog['subcategories']) > 0;
 $showZoneFilter = is_superadmin();
 $showCircleFilter = is_superadmin() || ($isUnderMeView && (int)($user['office_type'] ?? 0) === 2);
 $showDivisionFilter = is_superadmin() || ($isUnderMeView && in_array((int)($user['office_type'] ?? 0), [2, 3], true));
 $showSubdivisionFilter = is_superadmin() || ($isUnderMeView && in_array((int)($user['office_type'] ?? 0), [2, 3, 4], true));
 $fieldFilterSelections = [];
-$hasDynamicFieldFilters = false;
 foreach ($fields as $field) {
     if ((int)($field['active_status'] ?? 0) !== 1) {
         continue;
@@ -207,98 +183,9 @@ foreach ($fields as $field) {
     if ((string)$field['data_type'] === 'date') {
         $filters[$filterKey . '_from'] = request_str($filterKey . '_from', '');
         $filters[$filterKey . '_to'] = request_str($filterKey . '_to', '');
-        if ($filters[$filterKey . '_from'] !== '' || $filters[$filterKey . '_to'] !== '') {
-            $hasDynamicFieldFilters = true;
-        }
-    }
-    if ($fieldFilterSelections[$fieldKey] !== '') {
-        $hasDynamicFieldFilters = true;
     }
 }
-$hasBoardSelections = $selectedZone > 0
-    || $selectedCircle > 0
-    || $selectedDivision > 0
-    || $selectedSubdivision > 0
-    || (int)($filters['category_id'] ?? 0) > 0
-    || (int)($filters['subcategory_id'] ?? 0) > 0
-    || $hasDynamicFieldFilters;
-$plainBoardState = !$timeFilterActive && $sortColumn === '' && !$hasBoardSelections;
-$precomputedVisibleFilterFields = $showFilterCard ? asset_filter_visible_fields($fields, [], $activeSegmentId) : [];
-$filterCatalogNeedsFiles = false;
-if ($precomputedVisibleFilterFields) {
-    foreach ($fields as $field) {
-        $fieldKey = (string)($field['field_key'] ?? '');
-        if (empty($precomputedVisibleFilterFields[$fieldKey])) {
-            continue;
-        }
-        if ((string)($field['data_type'] ?? '') === 'file') {
-            $filterCatalogNeedsFiles = true;
-            break;
-        }
-    }
-}
-if ($scopeAccessAvailable && ($assetBoardFiltersOnly || $showFilterCard || $plainBoardState)) {
-    $baseScopeAssets = get_assets(
-        ['office_view_scope' => $currentOfficeViewScope, 'segment_id' => $activeSegmentId],
-        $user,
-        false,
-        [
-            'include_files' => $assetBoardFiltersOnly ? $filterCatalogNeedsFiles : true,
-            'include_timestamps' => false,
-            'include_office_labels' => true,
-            'skip_sort' => true,
-        ]
-    );
-    asset_board_perf_mark('board.base_scope_loaded', ['assets' => count($baseScopeAssets)]);
-}
-if ($showFilterCard) {
-    $filterCatalog = build_asset_filter_catalog($baseScopeAssets, $fields, $activeSegmentId, true, $plainBoardState && is_superadmin());
-    asset_board_perf_mark('board.filter_catalog_built', [
-        'categories' => count($filterCatalog['categories'] ?? []),
-        'fields' => count($filterCatalog['fields'] ?? []),
-    ]);
-    $visibleFilterFields = $precomputedVisibleFilterFields;
-    $showCategoryFilter = $categorySelectionEnabled && count($filterCatalog['categories']) > 1;
-    $showSubcategoryFilter = $subcategoryEnabled && count($filterCatalog['subcategories']) > 0;
-}
-$filteredBoardAssets = [];
-if ($scopeAccessAvailable) {
-    if ($plainBoardState && $baseScopeAssets !== []) {
-        $filteredBoardAssets = $baseScopeAssets;
-    } elseif ($plainBoardState && !$assetBoardFiltersOnly) {
-        $filteredBoardAssets = get_assets(
-            $filters,
-            $user,
-            false,
-            [
-                'include_files' => true,
-                'include_timestamps' => false,
-                'include_office_labels' => true,
-                'skip_sort' => true,
-            ]
-        );
-    } else {
-        $filteredBoardAssets = get_assets(
-            $filters,
-            $user,
-            false,
-            [
-                'include_files' => true,
-                'include_timestamps' => $timeFilterActive,
-                'include_office_labels' => true,
-            ]
-        );
-    }
-}
-asset_board_perf_mark('board.filtered_assets_loaded', ['assets' => count($filteredBoardAssets)]);
-$groupedAssets = $scopeAccessAvailable
-    ? asset_group_assets_by_category(
-        $filteredBoardAssets,
-        $plainBoardState ? ['segment_id' => $activeSegmentId] : $filters,
-        $activeSegmentId
-    )
-    : [];
-asset_board_perf_mark('board.assets_grouped', ['groups' => count($groupedAssets)]);
+$groupedAssets = $scopeAccessAvailable ? get_assets_grouped_by_category($filters, $user) : [];
 if ($timeFilterActive) {
     foreach ($groupedAssets as &$group) {
         $categoryId = (int)($group['category']['id'] ?? 0);
@@ -320,21 +207,9 @@ foreach ($groupedAssets as $group) {
         $displayedAssets[] = $assetRow;
     }
 }
-if ($showFilterCard) {
-    if ($plainBoardState) {
-        $activeFilterCatalog = $filterCatalog;
-    } else {
-        $activeFilterCatalog = build_asset_filter_catalog($displayedAssets, $fields, $activeSegmentId);
-        asset_board_perf_mark('board.active_filter_catalog_built', ['assets' => count($displayedAssets)]);
-    }
-}
+$activeFilterCatalog = build_asset_filter_catalog($displayedAssets, $fields, $activeSegmentId);
 $paginationEnabled = asset_board_pagination_enabled($filters, $fields, $activeSegmentId, $timeFilterActive);
 $paginationBatchSize = asset_board_pagination_batch_size();
-if ($assetComparisonTableOnly) {
-    $showFilterCard = false;
-    $showActionColumn = false;
-    $paginationEnabled = false;
-}
 $categoryNameById = [];
 foreach ($categories as $category) {
     $categoryNameById[(int)$category['id']] = (string)$category['name'];
@@ -591,7 +466,6 @@ if (is_superadmin()) {
     }
 }
 ?>
-<?php if (!$assetComparisonTableOnly && !$assetBoardFiltersOnly): ?>
 <section class="card hero-card">
     <div class="hero-row">
         <div class="hero-copy">
@@ -624,22 +498,13 @@ if (is_superadmin()) {
         <p class="hint">Declared at: <?= e((string)$declaration['declared_at']); ?></p>
     <?php endif; ?>
 </section>
-<?php endif; ?>
 
-<?php if (!$assetComparisonTableOnly && !$assetBoardFiltersOnly && $showSegmentSelector): ?>
+<?php if ($showSegmentSelector): ?>
 <section class="card segment-switch-card">
     <div class="toolbar-row scope-switch-row">
         <?php foreach ($segments as $segment): ?>
             <?php
-                $segmentParams = $_GET;
-                unset(
-                    $segmentParams['page'],
-                    $segmentParams['segment_id'],
-                    $segmentParams['edit_asset'],
-                    $segmentParams['asset_history']
-                );
-                $segmentParams['page'] = 'board';
-                $segmentParams['segment_id'] = (int)$segment['id'];
+                $segmentParams = ['page' => 'board', 'segment_id' => (int)$segment['id']];
                 if (!is_superadmin()) {
                     $segmentParams['office_view_scope'] = $currentOfficeViewScope;
                 }
@@ -652,7 +517,7 @@ if (is_superadmin()) {
 </section>
 <?php endif; ?>
 
-<?php if (!$assetComparisonTableOnly && !$assetBoardFiltersOnly && $showScopeSwitchCard): ?>
+<?php if ($showScopeSwitchCard): ?>
 <section class="card">
     <div class="toolbar-row scope-switch-row">
         <a href="index.php?<?= e(http_build_query(['page' => 'board', 'office_view_scope' => 'my_office', 'segment_id' => $activeSegmentId])); ?>" class="button-link<?= !$isUnderMeView ? ' is-active' : ''; ?>">My Office</a>
@@ -661,14 +526,14 @@ if (is_superadmin()) {
 </section>
 <?php endif; ?>
 
-<?php if (!$assetComparisonTableOnly && !$assetBoardFiltersOnly && !is_superadmin() && !$scopeAccessAvailable): ?>
+<?php if (!is_superadmin() && !$scopeAccessAvailable): ?>
 <section class="card">
     <p class="hint">This segment is currently hidden for your office type by superadmin settings.</p>
 </section>
 <?php endif; ?>
 
 <?php if (false && is_superadmin()): ?>
-<?php if (!$assetComparisonTableOnly && $showFilterCard): ?>
+<?php if ($showFilterCard): ?>
 <section class="card">
     <h2>Master Filters</h2>
     <form method="get" action="index.php" id="asset-filters" class="grid board-filters-grid">
@@ -948,7 +813,7 @@ if (is_superadmin()) {
 </section>
 <?php endif; ?>
 
-<?php if (!$assetBoardFiltersOnly && !$assetComparisonTableOnly && !is_superadmin() && $showBoardContent): ?>
+<?php if (!is_superadmin() && $showBoardContent): ?>
 <section class="card">
     <div class="toolbar-row">
         <?php if ($canModifyAssets && !$isUnderMeView): ?>
@@ -964,7 +829,7 @@ if (is_superadmin()) {
         <p class="hint">Download Manager must have at least one Level 1 field before downloads can run.</p>
     <?php endif; ?>
 </section>
-<?php elseif (!$assetBoardFiltersOnly): ?>
+<?php else: ?>
 <section class="card">
     <div class="toolbar-row">
         <a href="asset_template.php?<?= e(http_build_query(['segment_id' => $activeSegmentId])); ?>" class="button-link">Excel Template</a>
@@ -976,7 +841,7 @@ if (is_superadmin()) {
 </section>
 <?php endif; ?>
 
-<?php if (!$assetComparisonTableOnly && !$assetBoardFiltersOnly && !is_superadmin() && $showBoardContent && $canModifyAssets && !$isUnderMeView): ?>
+<?php if (!is_superadmin() && $showBoardContent && $canModifyAssets && !$isUnderMeView): ?>
 <form method="post" action="index.php" class="asset-delete-form" id="asset-delete-form">
     <?= csrf_input(); ?>
     <input type="hidden" name="action" value="asset_bulk_delete">
@@ -984,7 +849,7 @@ if (is_superadmin()) {
     <input type="hidden" name="office_view_scope" value="<?= e($currentOfficeViewScope); ?>">
 </form>
 <?php endif; ?>
-<?php if (!$assetBoardFiltersOnly && $showBoardContent): ?>
+<?php if ($showBoardContent): ?>
     <section class="board-grid asset-category-grid">
         <?php foreach ($groupedAssets as $group): ?>
             <?php
@@ -1032,14 +897,12 @@ if (is_superadmin()) {
             <section class="card operational-budget-card">
                 <div class="card-head">
                     <h2><?= e($category['name']); ?></h2>
-                    <?php if (!$assetComparisonTableOnly): ?>
-                        <div class="card-head-actions">
-                            <div class="muted"><?= $totalAssetCount; ?> row(s)</div>
-                            <a href="index.php?<?= e(http_build_query($refreshParams)); ?>" class="btn-small button-link">Refresh</a>
-                            <button type="button" class="btn-small" data-modal="columns-modal-<?= (int)$category['id']; ?>">Columns</button>
-                            <button type="button" class="btn-small<?= $timeFilterForCategory ? ' btn-secondary' : ''; ?>" data-modal="time-filter-modal-<?= (int)$category['id']; ?>">Time Filter</button>
-                        </div>
-                    <?php endif; ?>
+                    <div class="card-head-actions">
+                        <div class="muted"><?= $totalAssetCount; ?> row(s)</div>
+                        <a href="index.php?<?= e(http_build_query($refreshParams)); ?>" class="btn-small button-link">Refresh</a>
+                        <button type="button" class="btn-small" data-modal="columns-modal-<?= (int)$category['id']; ?>">Columns</button>
+                        <button type="button" class="btn-small<?= $timeFilterForCategory ? ' btn-secondary' : ''; ?>" data-modal="time-filter-modal-<?= (int)$category['id']; ?>">Time Filter</button>
+                    </div>
                 </div>
                 <div class="table-wrap">
                     <table>
@@ -1116,7 +979,7 @@ if (is_superadmin()) {
                         </tbody>
                     </table>
                 </div>
-                <?php if (!$assetComparisonTableOnly && $paginationHasMore): ?>
+                <?php if ($paginationHasMore): ?>
                     <?php
                         $loadMoreParams = ['page' => 'asset_table_rows', 'segment_id' => $activeSegmentId, 'category_id' => (int)$category['id']];
                         if (!is_superadmin()) {
@@ -1135,7 +998,6 @@ if (is_superadmin()) {
                     </div>
                 <?php endif; ?>
             </section>
-            <?php if (!$assetComparisonTableOnly): ?>
             <div class="modal-backdrop" id="columns-modal-<?= (int)$category['id']; ?>" aria-hidden="true">
                 <div class="modal-card column-visibility-modal" role="dialog" aria-modal="true" aria-labelledby="columns-modal-title-<?= (int)$category['id']; ?>">
                     <h3 id="columns-modal-title-<?= (int)$category['id']; ?>">Column Visibility: <?= e($category['name']); ?></h3>
@@ -1218,7 +1080,6 @@ if (is_superadmin()) {
                     </form>
                 </div>
             </div>
-            <?php endif; ?>
         <?php endforeach; ?>
     </section>
 <?php endif; ?>
@@ -1364,7 +1225,7 @@ if (is_superadmin()) {
                                 }
                             ?>
                             <?php foreach ($fieldOptions as $option): ?>
-                                <option value="<?= e($option['option_value']); ?>" <?= asset_option_values_match($value, (string)$option['option_value']) ? 'selected' : ''; ?>><?= e($option['option_label']); ?></option>
+                                <option value="<?= e($option['option_value']); ?>" <?= $value === (string)$option['option_value'] ? 'selected' : ''; ?>><?= e($option['option_label']); ?></option>
                             <?php endforeach; ?>
                         </select>
                     <?php elseif ($field['data_type'] === 'yes_no'): ?>
@@ -1528,7 +1389,7 @@ if (is_superadmin()) {
                                                         }
                                                     ?>
                                                     <?php foreach ($options as $option): ?>
-                                                        <option value="<?= e((string)$option['option_value']); ?>" <?= asset_option_values_match($fieldValue, (string)$option['option_value']) ? 'selected' : ''; ?>><?= e((string)$option['option_label']); ?></option>
+                                                        <option value="<?= e((string)$option['option_value']); ?>" <?= strcasecmp($fieldValue, (string)$option['option_value']) === 0 ? 'selected' : ''; ?>><?= e((string)$option['option_label']); ?></option>
                                                     <?php endforeach; ?>
                                                 </select>
                                             <?php elseif ($field['data_type'] === 'text'): ?>
@@ -2305,7 +2166,6 @@ if (is_superadmin()) {
 </div>
 <?php endif; ?>
 
-<?php if (!$assetComparisonTableOnly && !$assetBoardFiltersOnly): ?>
 <script>
 window.initializeDownloadModalUi = function () {
     var form = document.getElementById('download-data-form');
@@ -3033,20 +2893,5 @@ document.addEventListener('DOMContentLoaded', function () {
     window.initializeBoardTimeFilters();
 });
 </script>
-<?php endif; ?>
 
-<?= asset_board_perf_render(); ?>
-
-<?php if (!$assetEmbedBoard && !$assetBoardFiltersOnly): ?>
-    <?php require __DIR__ . '/footer.php'; ?>
-<?php elseif ($assetBoardFiltersOnly): ?>
-<?php elseif (!$assetComparisonTableOnly): ?>
-    </main>
-    <script src="<?= e(asset_url('public/assets/app.js')); ?>"></script>
-    </body>
-    </html>
-<?php else: ?>
-    </main>
-    </body>
-    </html>
-<?php endif; ?>
+<?php require __DIR__ . '/footer.php'; ?>

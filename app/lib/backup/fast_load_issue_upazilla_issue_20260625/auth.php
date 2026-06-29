@@ -1,19 +1,6 @@
 <?php
-function asset_set_request_user_override(?array $user): void
-{
-    $GLOBALS['asset_request_user_override'] = $user;
-}
-
-function asset_clear_request_user_override(): void
-{
-    unset($GLOBALS['asset_request_user_override']);
-}
-
 function current_user(): ?array
 {
-    if (array_key_exists('asset_request_user_override', $GLOBALS)) {
-        return is_array($GLOBALS['asset_request_user_override']) ? $GLOBALS['asset_request_user_override'] : null;
-    }
     return $_SESSION['user'] ?? null;
 }
 

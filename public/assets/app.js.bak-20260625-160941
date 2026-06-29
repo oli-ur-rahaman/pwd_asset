@@ -841,23 +841,6 @@ document.addEventListener('DOMContentLoaded', () => {
         assetCategorySelect.addEventListener('change', () => filterSubcategories(assetCategorySelect, assetSubcategorySelect));
     }
 
-    const normalizeConditionalOptionValue = (value) => String(value || '')
-        .trim()
-        .toLowerCase()
-        .replace(/_/g, ' ')
-        .replace(/\s+/g, ' ');
-
-    const resolveConditionalMapKey = (map, value) => {
-        const normalized = normalizeConditionalOptionValue(value);
-        const keys = Object.keys(map || {});
-        return keys.find((key) => normalizeConditionalOptionValue(key) === normalized) || '';
-    };
-
-    const resolveConditionalOptionValue = (options, value) => {
-        const normalized = normalizeConditionalOptionValue(value);
-        return (options || []).find((option) => normalizeConditionalOptionValue(option) === normalized) || '';
-    };
-
     const syncConditionalSelects = (container) => {
         container.querySelectorAll('[data-conditional-primary="1"]').forEach((primarySelect) => {
             const childKey = primarySelect.getAttribute('data-conditional-child') || '';
@@ -875,8 +858,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 map = {};
             }
             const previousValue = childSelect.value || '';
-            const parentKey = resolveConditionalMapKey(map, primarySelect.value);
-            const allowed = parentKey && Array.isArray(map[parentKey]) ? map[parentKey] : [];
+            const allowed = Array.isArray(map[primarySelect.value]) ? map[primarySelect.value] : [];
             childSelect.innerHTML = '<option value="">Select</option>';
             allowed.forEach((optionValue) => {
                 const option = document.createElement('option');
@@ -884,7 +866,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 option.textContent = optionValue;
                 childSelect.appendChild(option);
             });
-            childSelect.value = resolveConditionalOptionValue(allowed, previousValue);
+            childSelect.value = allowed.includes(previousValue) ? previousValue : '';
         });
     };
 
@@ -2056,8 +2038,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     map = {};
                 }
                 const previousValue = childSelect.value || '';
-                const parentKey = resolveConditionalMapKey(map, primarySelect.value);
-                const allowed = parentKey && Array.isArray(map[parentKey]) ? map[parentKey] : [];
+                const allowed = Array.isArray(map[primarySelect.value]) ? map[primarySelect.value] : [];
                 childSelect.innerHTML = '<option value="">Select</option>';
                 allowed.forEach((optionValue) => {
                     const option = document.createElement('option');
@@ -2065,7 +2046,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     option.textContent = optionValue;
                     childSelect.appendChild(option);
                 });
-                childSelect.value = resolveConditionalOptionValue(allowed, previousValue);
+                childSelect.value = allowed.includes(previousValue) ? previousValue : '';
             });
         };
 

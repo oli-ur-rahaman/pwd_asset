@@ -441,48 +441,6 @@ if ($action === 'delete_asset_field') {
     $adminRedirect();
 }
 
-if ($action === 'rebuild_asset_filter_index_field') {
-    if (!can_manage_superadmin_scope()) {
-        http_response_code(403);
-        exit('Not allowed.');
-    }
-    try {
-        $result = asset_filter_index_rebuild_field(input_int('field_id'), input_int('segment_id'));
-        flash('success', 'Filter index rebuilt for field. Items stored: ' . (int)($result['stored_items'] ?? 0) . '.');
-    } catch (Throwable $e) {
-        flash('error', $e->getMessage());
-    }
-    $adminRedirect();
-}
-
-if ($action === 'rebuild_asset_filter_index_segment') {
-    if (!can_manage_superadmin_scope()) {
-        http_response_code(403);
-        exit('Not allowed.');
-    }
-    try {
-        $result = asset_filter_index_rebuild_fields(input_int('segment_id'));
-        flash('success', 'Filter index rebuilt for segment. Fields: ' . (int)($result['fields_rebuilt'] ?? 0) . ', items stored: ' . (int)($result['stored_items'] ?? 0) . '.');
-    } catch (Throwable $e) {
-        flash('error', $e->getMessage());
-    }
-    $adminRedirect();
-}
-
-if ($action === 'rebuild_asset_filter_index_all') {
-    if (!can_manage_superadmin_scope()) {
-        http_response_code(403);
-        exit('Not allowed.');
-    }
-    try {
-        $result = asset_filter_index_rebuild_all();
-        flash('success', 'Filter index rebuilt for all segments. Fields: ' . (int)($result['fields_rebuilt'] ?? 0) . ', items stored: ' . (int)($result['stored_items'] ?? 0) . '.');
-    } catch (Throwable $e) {
-        flash('error', $e->getMessage());
-    }
-    $adminRedirect();
-}
-
 if ($action === 'upload_asset_template') {
     if (!can_manage_superadmin_scope()) {
         http_response_code(403);
@@ -1396,12 +1354,7 @@ if ($page === 'asset_table_rows') {
 
     $offset = max(0, (int)request_str('offset', '0'));
     $batchSize = asset_board_pagination_batch_size();
-    $allAssets = get_assets($filters, $user, false, [
-        'include_files' => true,
-        'include_timestamps' => false,
-        'include_office_labels' => true,
-        'skip_sort' => true,
-    ]);
+    $allAssets = get_assets($filters, $user);
     $categoryAssets = array_values(array_filter($allAssets, static fn(array $asset): bool => (int)($asset['category_id'] ?? 0) === $categoryId));
     $assets = array_slice($categoryAssets, $offset, $batchSize);
 
@@ -1448,56 +1401,6 @@ if ($page === 'asset_table_rows') {
 
 if ($page === 'board') {
     require __DIR__ . '/app/views/board.php';
-    exit;
-}
-
-if ($page === 'board_embed') {
-    if (!can_manage_superadmin_scope()) {
-        http_response_code(403);
-        exit('Not allowed.');
-    }
-    define('ASSET_EMBED_BOARD', true);
-    if ((int)request_str('comparison_table_only', '0') === 1) {
-        define('ASSET_COMPARISON_TABLE_ONLY', true);
-    }
-    require __DIR__ . '/app/views/board.php';
-    exit;
-}
-
-if ($page === 'board_filters_fragment') {
-    define('ASSET_BOARD_FILTERS_ONLY', true);
-    require __DIR__ . '/app/views/board.php';
-    exit;
-}
-
-if ($page === 'board_preview') {
-    if (!can_manage_superadmin_scope()) {
-        http_response_code(403);
-        exit('Not allowed.');
-    }
-    $previewOfficeType = (int)request_str('preview_office_type', '0');
-    $previewOfficeId = (int)request_str('preview_office_id', '0');
-    $previewUser = asset_build_comparison_preview_user($previewOfficeType, $previewOfficeId);
-    if (!$previewUser) {
-        http_response_code(404);
-        exit('Preview office not found.');
-    }
-    asset_set_request_user_override($previewUser);
-    define('ASSET_EMBED_BOARD', true);
-    if ((int)request_str('comparison_table_only', '0') === 1) {
-        define('ASSET_COMPARISON_TABLE_ONLY', true);
-    }
-    require __DIR__ . '/app/views/board.php';
-    asset_clear_request_user_override();
-    exit;
-}
-
-if ($page === 'comparison') {
-    if (!can_manage_superadmin_scope()) {
-        http_response_code(403);
-        exit('Not allowed.');
-    }
-    require __DIR__ . '/app/views/comparison.php';
     exit;
 }
 

@@ -1420,78 +1420,8 @@ tbody tr:hover td:first-child {
   color: #111827;
   border-color: #d2d8e0;
 }
-.board-embed-shell {
-  width: 100%;
-  max-width: none;
-  padding: 16px;
-}
-.comparison-embed-body {
-  margin: 0;
-  background: #f3f7fb;
-}
-.board-embed-table-only {
-  padding: 10px;
-}
-.board-embed-table-only .board-grid.asset-category-grid {
-  gap: 12px;
-}
-.board-embed-table-only .operational-budget-card {
-  margin: 0;
-}
-.comparison-filter-grid {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  align-items: end;
-}
-.comparison-filter-actions {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-.comparison-preview-summary {
-  margin-top: 14px;
-}
-.comparison-split-layout {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 18px;
-  align-items: start;
-}
-.comparison-pane {
-  padding: 0;
-  overflow: hidden;
-}
-.comparison-pane-head {
-  padding: 18px 20px 0;
-}
-.comparison-frame {
-  width: 100%;
-  min-height: 78vh;
-  border: 0;
-  display: block;
-  background: #f8fbff;
-}
-.comparison-empty-state {
-  min-height: 78vh;
-  display: grid;
-  place-items: center;
-  padding: 24px;
-  color: #5b748f;
-  text-align: center;
-}
 @media (max-width: 900px) {
   .audit-detail-toolbar {
     align-items: flex-start;
-  }
-  .comparison-filter-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .comparison-split-layout {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-@media (max-width: 560px) {
-  .comparison-filter-grid {
-    grid-template-columns: minmax(0, 1fr);
   }
 }

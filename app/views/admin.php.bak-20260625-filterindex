@@ -21,11 +21,6 @@ $filterCardEnabledForUsers = asset_filter_card_enabled_for_users($activeSegmentI
 $bulkImportEnabled = asset_bulk_import_enabled($activeSegmentId);
 $filterScopeOptions = asset_filter_scope_options();
 $numberRuleExamples = asset_number_format_rule_examples();
-$trackableFilterFields = array_values(array_filter($fields, static function (array $field): bool {
-    return (int)($field['active_status'] ?? 0) === 1
-        && !asset_is_conditional_secondary($field)
-        && asset_filter_index_field_is_trackable($field);
-}));
 ?>
 <?php if (!$canManageSuperadmin): ?>
     <style>
@@ -236,25 +231,6 @@ $trackableFilterFields = array_values(array_filter($fields, static function (arr
         <label><input type="checkbox" name="show_data_provider_superadmin" value="1" <?= $dataProviderVisibleToSuperadmin ? 'checked' : ''; ?>> Show Data Provider column</label>
         <button type="submit">Save</button>
     </form>
-</section>
-
-<section class="card">
-    <h2>Filter Index Repair</h2>
-    <p class="hint">This rebuilds the precomputed filter-item index for `text`, `number`, `file`, and `bimh` fields so board filters can load faster without repeatedly scanning live data.</p>
-    <div class="toolbar-row">
-        <form method="post" action="index.php" class="inline-form">
-            <?= csrf_input(); ?>
-            <input type="hidden" name="action" value="rebuild_asset_filter_index_segment">
-            <input type="hidden" name="segment_id" value="<?= e((string)$activeSegmentId); ?>">
-            <button type="submit">Rebuild Active Segment</button>
-        </form>
-        <form method="post" action="index.php" class="inline-form">
-            <?= csrf_input(); ?>
-            <input type="hidden" name="action" value="rebuild_asset_filter_index_all">
-            <button type="submit">Rebuild All Segments</button>
-        </form>
-    </div>
-    <p class="muted">Trackable fields in this segment: <?= e((string)count($trackableFilterFields)); ?></p>
 </section>
 
 <section class="card">
@@ -695,15 +671,6 @@ $trackableFilterFields = array_values(array_filter($fields, static function (arr
                                     <input type="hidden" name="field_id" value="<?= e((string)$field['id']); ?>">
                                     <button type="submit" class="btn-small btn-danger">Delete</button>
                                 </form>
-                                <?php if (asset_filter_index_field_is_trackable($field)): ?>
-                                    <form method="post" action="index.php" class="inline-form">
-                                        <?= csrf_input(); ?>
-                                        <input type="hidden" name="action" value="rebuild_asset_filter_index_field">
-                                        <input type="hidden" name="segment_id" value="<?= e((string)$activeSegmentId); ?>">
-                                        <input type="hidden" name="field_id" value="<?= e((string)$field['id']); ?>">
-                                        <button type="submit" class="btn-small">Rebuild Filter Index</button>
-                                    </form>
-                                <?php endif; ?>
                             </div>
                             <div class="hint">Use one line per dropdown option. File rules apply only when type is set to file. Conditional fields save two linked dropdown columns together.</div>
                         </td>

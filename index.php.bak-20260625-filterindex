@@ -441,48 +441,6 @@ if ($action === 'delete_asset_field') {
     $adminRedirect();
 }
 
-if ($action === 'rebuild_asset_filter_index_field') {
-    if (!can_manage_superadmin_scope()) {
-        http_response_code(403);
-        exit('Not allowed.');
-    }
-    try {
-        $result = asset_filter_index_rebuild_field(input_int('field_id'), input_int('segment_id'));
-        flash('success', 'Filter index rebuilt for field. Items stored: ' . (int)($result['stored_items'] ?? 0) . '.');
-    } catch (Throwable $e) {
-        flash('error', $e->getMessage());
-    }
-    $adminRedirect();
-}
-
-if ($action === 'rebuild_asset_filter_index_segment') {
-    if (!can_manage_superadmin_scope()) {
-        http_response_code(403);
-        exit('Not allowed.');
-    }
-    try {
-        $result = asset_filter_index_rebuild_fields(input_int('segment_id'));
-        flash('success', 'Filter index rebuilt for segment. Fields: ' . (int)($result['fields_rebuilt'] ?? 0) . ', items stored: ' . (int)($result['stored_items'] ?? 0) . '.');
-    } catch (Throwable $e) {
-        flash('error', $e->getMessage());
-    }
-    $adminRedirect();
-}
-
-if ($action === 'rebuild_asset_filter_index_all') {
-    if (!can_manage_superadmin_scope()) {
-        http_response_code(403);
-        exit('Not allowed.');
-    }
-    try {
-        $result = asset_filter_index_rebuild_all();
-        flash('success', 'Filter index rebuilt for all segments. Fields: ' . (int)($result['fields_rebuilt'] ?? 0) . ', items stored: ' . (int)($result['stored_items'] ?? 0) . '.');
-    } catch (Throwable $e) {
-        flash('error', $e->getMessage());
-    }
-    $adminRedirect();
-}
-
 if ($action === 'upload_asset_template') {
     if (!can_manage_superadmin_scope()) {
         http_response_code(403);
