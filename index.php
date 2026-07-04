@@ -47,6 +47,40 @@ if ($page === 'download_asset_common_admin_template') {
     output_asset_common_admin_template_download(input_int('profile_id'));
 }
 
+if ($page === 'download_project_backup') {
+    if (!can_manage_superadmin_scope()) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
+    stream_project_backup_archive(request_str('file'));
+}
+
+if ($page === 'download_project_backup_sql') {
+    if (!can_manage_superadmin_scope()) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
+    stream_project_backup_sql(request_str('file'));
+}
+
+if ($page === 'project_backup_job_status') {
+    if (!can_manage_superadmin_scope()) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
+    header('Content-Type: application/json; charset=utf-8');
+    try {
+        echo json_encode(
+            asset_project_backup_job_status_payload(request_str('job'), current_user()),
+            JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
+        );
+    } catch (Throwable $e) {
+        http_response_code(404);
+        echo json_encode(['status' => 'failed', 'message' => $e->getMessage()], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
+    exit;
+}
+
 if ($page === 'download_job_status') {
     header('Content-Type: application/json; charset=utf-8');
     try {
@@ -1160,6 +1194,40 @@ if ($action === 'update_profile') {
     }
     $_SESSION['user']['officer_name'] = $name;
     flash('success', 'Profile updated.');
+    redirect('index.php?page=profile');
+}
+
+if ($action === 'create_project_backup') {
+    if (!can_manage_superadmin_scope()) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
+    try {
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode(
+            asset_project_backup_create_job(current_user()),
+            JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
+        );
+        exit;
+    } catch (Throwable $e) {
+        http_response_code(500);
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode(['status' => 'failed', 'message' => $e->getMessage()], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        exit;
+    }
+}
+
+if ($action === 'delete_project_backup') {
+    if (!can_manage_superadmin_scope()) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
+    try {
+        delete_project_backup_archive(input_str('file'));
+        flash('success', 'Project backup deleted permanently.');
+    } catch (Throwable $e) {
+        flash('error', $e->getMessage());
+    }
     redirect('index.php?page=profile');
 }
 

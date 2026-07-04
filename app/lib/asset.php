@@ -12599,6 +12599,573 @@ function asset_template_storage_dir(): string
     return dirname(__DIR__, 2) . '/storage/templates';
 }
 
+function asset_project_root_dir(): string
+{
+    return dirname(__DIR__, 2);
+}
+
+function asset_project_backup_storage_dir(): string
+{
+    return asset_project_root_dir() . '/storage/project_backups';
+}
+
+function asset_project_backup_sql_dir(): string
+{
+    $dir = asset_project_backup_storage_dir() . '/sql';
+    if (!is_dir($dir) && !mkdir($dir, 0777, true) && !is_dir($dir)) {
+        throw new RuntimeException('Unable to create project backup SQL storage directory.');
+    }
+    return $dir;
+}
+
+function asset_project_backup_jobs_dir(): string
+{
+    $dir = asset_project_backup_storage_dir() . '/jobs';
+    if (!is_dir($dir) && !mkdir($dir, 0777, true) && !is_dir($dir)) {
+        throw new RuntimeException('Unable to create project backup job directory.');
+    }
+    return $dir;
+}
+
+function asset_ensure_project_backup_storage_dir(): string
+{
+    $dir = asset_project_backup_storage_dir();
+    if (!is_dir($dir) && !mkdir($dir, 0777, true) && !is_dir($dir)) {
+        throw new RuntimeException('Unable to create project backup storage directory.');
+    }
+    return $dir;
+}
+
+function asset_format_file_size(int $bytes): string
+{
+    if ($bytes < 1024) {
+        return $bytes . ' B';
+    }
+    $units = ['KB', 'MB', 'GB', 'TB'];
+    $value = $bytes / 1024;
+    $index = 0;
+    while ($value >= 1024 && $index < count($units) - 1) {
+        $value /= 1024;
+        $index++;
+    }
+    return number_format($value, $value >= 100 ? 0 : 2) . ' ' . $units[$index];
+}
+
+function asset_project_backup_safe_name(string $name, array $allowedExtensions = ['zip']): string
+{
+    $name = basename(trim($name));
+    $extPattern = implode('|', array_map(static fn(string $ext): string => preg_quote(ltrim($ext, '.'), '/'), $allowedExtensions));
+    if ($name === '' || !preg_match('/^[A-Za-z0-9._-]+\.(' . $extPattern . ')$/i', $name)) {
+        throw new RuntimeException('Invalid backup file name.');
+    }
+    return $name;
+}
+
+function asset_project_backup_relative_path(string $absolutePath, string $root): string
+{
+    $root = str_replace('\\', '/', rtrim($root, '/\\'));
+    $absolutePath = str_replace('\\', '/', $absolutePath);
+    if (str_starts_with($absolutePath, $root . '/')) {
+        return substr($absolutePath, strlen($root) + 1);
+    }
+    return ltrim($absolutePath, '/');
+}
+
+function asset_project_backup_should_exclude(string $absolutePath): bool
+{
+    $normalized = str_replace('\\', '/', $absolutePath);
+    $backupDir = str_replace('\\', '/', asset_project_backup_storage_dir());
+    if ($normalized === $backupDir || str_starts_with($normalized, $backupDir . '/')) {
+        return true;
+    }
+    if (preg_match('~/\.git(?:/|$)~', $normalized)) {
+        return true;
+    }
+    return false;
+}
+
+function create_project_backup_archive(): array
+{
+    if (!class_exists('ZipArchive')) {
+        throw new RuntimeException('ZipArchive is not available on this server.');
+    }
+    $backupDir = asset_ensure_project_backup_storage_dir();
+    $root = asset_project_root_dir();
+    $timestamp = date('Ymd_His');
+    $filename = 'project_backup_' . $timestamp . '.zip';
+    $targetPath = $backupDir . '/' . $filename;
+
+    $zip = new \ZipArchive();
+    if ($zip->open($targetPath, \ZipArchive::CREATE | \ZipArchive::OVERWRITE) !== true) {
+        throw new RuntimeException('Unable to create the backup archive.');
+    }
+
+    $iterator = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($root, FilesystemIterator::SKIP_DOTS),
+        RecursiveIteratorIterator::SELF_FIRST
+    );
+
+    $fileCount = 0;
+    foreach ($iterator as $item) {
+        $path = $item->getPathname();
+        if (asset_project_backup_should_exclude($path)) {
+            continue;
+        }
+        $relativePath = asset_project_backup_relative_path($path, $root);
+        if ($relativePath === '') {
+            continue;
+        }
+        if ($item->isDir()) {
+            $zip->addEmptyDir($relativePath);
+            continue;
+        }
+        if ($item->isFile()) {
+            if (!$zip->addFile($path, $relativePath)) {
+                $zip->close();
+                @unlink($targetPath);
+                throw new RuntimeException('Unable to add file to backup archive: ' . $relativePath);
+            }
+            $fileCount++;
+        }
+    }
+
+    $zip->close();
+    clearstatcache(true, $targetPath);
+
+    return [
+        'filename' => $filename,
+        'path' => $targetPath,
+        'size_bytes' => (int)filesize($targetPath),
+        'size_label' => asset_format_file_size((int)filesize($targetPath)),
+        'created_at' => date('Y-m-d H:i:s', (int)filemtime($targetPath)),
+        'file_count' => $fileCount,
+    ];
+}
+
+function asset_project_backup_job_runner_script(): string
+{
+    return dirname(__DIR__, 2) . '/bin/run_project_backup_job.php';
+}
+
+function asset_project_backup_worker_php_binary(): string
+{
+    return asset_download_worker_php_binary();
+}
+
+function asset_project_backup_is_windows(): bool
+{
+    return asset_download_is_windows();
+}
+
+function asset_project_backup_job_status_path(string $jobToken): string
+{
+    return asset_project_backup_jobs_dir() . '/' . $jobToken . '.json';
+}
+
+function asset_project_backup_job_write_status(string $jobToken, array $payload): void
+{
+    $payload['job_token'] = $jobToken;
+    file_put_contents(
+        asset_project_backup_job_status_path($jobToken),
+        json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT),
+        LOCK_EX
+    );
+}
+
+function asset_project_backup_job_read_status(string $jobToken): ?array
+{
+    $path = asset_project_backup_job_status_path($jobToken);
+    if (!is_file($path)) {
+        return null;
+    }
+    $json = file_get_contents($path);
+    if (!is_string($json) || trim($json) === '') {
+        return null;
+    }
+    $data = json_decode($json, true);
+    return is_array($data) ? $data : null;
+}
+
+function asset_project_backup_collect_files(): array
+{
+    $root = asset_project_root_dir();
+    $files = [];
+    $iterator = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($root, FilesystemIterator::SKIP_DOTS),
+        RecursiveIteratorIterator::SELF_FIRST
+    );
+    foreach ($iterator as $item) {
+        $path = $item->getPathname();
+        if (asset_project_backup_should_exclude($path)) {
+            continue;
+        }
+        if ($item->isFile()) {
+            $files[] = [
+                'path' => $path,
+                'relative' => asset_project_backup_relative_path($path, $root),
+                'size' => (int)$item->getSize(),
+            ];
+        }
+    }
+    return $files;
+}
+
+function asset_project_backup_output_path(string $jobToken): string
+{
+    return asset_project_backup_storage_dir() . '/project_backup_' . date('Ymd_His') . '_' . substr($jobToken, 0, 8) . '.zip';
+}
+
+function asset_project_backup_sql_output_path(string $jobToken): string
+{
+    return asset_project_backup_sql_dir() . '/project_backup_' . date('Ymd_His') . '_' . substr($jobToken, 0, 8) . '.sql';
+}
+
+function asset_project_backup_database_name(): string
+{
+    global $config;
+    return (string)($config['db']['name'] ?? '');
+}
+
+function asset_project_backup_sql_value(mixed $value): string
+{
+    if ($value === null) {
+        return 'NULL';
+    }
+    if (is_bool($value)) {
+        return $value ? '1' : '0';
+    }
+    if (is_int($value) || is_float($value)) {
+        return (string)$value;
+    }
+    return db()->quote((string)$value);
+}
+
+function asset_project_backup_write_sql_dump(string $path, string $jobToken = ''): array
+{
+    $dbName = asset_project_backup_database_name();
+    if ($dbName === '') {
+        throw new RuntimeException('Database name is not configured.');
+    }
+    $tables = db()->query('SHOW FULL TABLES WHERE Table_type = "BASE TABLE"')->fetchAll(PDO::FETCH_NUM);
+    $totalTables = count($tables);
+    $handle = fopen($path, 'wb');
+    if ($handle === false) {
+        throw new RuntimeException('Unable to create SQL dump file.');
+    }
+
+    fwrite($handle, "-- Project backup SQL dump\n");
+    fwrite($handle, "-- Database: `" . str_replace('`', '``', $dbName) . "`\n");
+    fwrite($handle, "-- Generated at: " . date('Y-m-d H:i:s') . "\n\n");
+    fwrite($handle, "SET NAMES utf8mb4;\n");
+    fwrite($handle, "SET FOREIGN_KEY_CHECKS=0;\n\n");
+
+    $tableIndex = 0;
+    foreach ($tables as $tableRow) {
+        $tableName = (string)($tableRow[0] ?? '');
+        if ($tableName === '') {
+            continue;
+        }
+        $tableIndex++;
+        if ($jobToken !== '') {
+            asset_project_backup_job_write_status($jobToken, [
+                'status' => 'processing',
+                'message' => 'Building SQL dump: ' . $tableName,
+                'progress_percent' => max(1, min(35, (int)floor(($tableIndex / max(1, $totalTables)) * 35))),
+                'processed_files' => 0,
+                'total_files' => 0,
+                'processed_tables' => $tableIndex,
+                'total_tables' => $totalTables,
+            ]);
+        }
+
+        $createStmt = db()->query('SHOW CREATE TABLE `' . str_replace('`', '``', $tableName) . '`')->fetch(PDO::FETCH_ASSOC);
+        $createSql = (string)($createStmt['Create Table'] ?? '');
+        fwrite($handle, "DROP TABLE IF EXISTS `" . str_replace('`', '``', $tableName) . "`;\n");
+        fwrite($handle, $createSql . ";\n\n");
+
+        $rows = db()->query('SELECT * FROM `' . str_replace('`', '``', $tableName) . '`', PDO::FETCH_ASSOC);
+        $buffer = [];
+        $columnNames = null;
+        foreach ($rows as $row) {
+            if ($columnNames === null) {
+                $columnNames = array_map(
+                    static fn(string $name): string => '`' . str_replace('`', '``', $name) . '`',
+                    array_keys($row)
+                );
+            }
+            $values = array_map(static fn($value): string => asset_project_backup_sql_value($value), array_values($row));
+            $buffer[] = '(' . implode(', ', $values) . ')';
+            if (count($buffer) >= 100) {
+                fwrite($handle, 'INSERT INTO `' . str_replace('`', '``', $tableName) . '` (' . implode(', ', $columnNames ?? []) . ') VALUES ' . implode(",\n", $buffer) . ";\n");
+                $buffer = [];
+            }
+        }
+        if ($buffer !== [] && $columnNames !== null) {
+            fwrite($handle, 'INSERT INTO `' . str_replace('`', '``', $tableName) . '` (' . implode(', ', $columnNames) . ') VALUES ' . implode(",\n", $buffer) . ";\n");
+        }
+        fwrite($handle, "\n");
+    }
+
+    fwrite($handle, "SET FOREIGN_KEY_CHECKS=1;\n");
+    fclose($handle);
+    clearstatcache(true, $path);
+
+    return [
+        'path' => $path,
+        'filename' => basename($path),
+        'size_bytes' => (int)filesize($path),
+        'size_label' => asset_format_file_size((int)filesize($path)),
+        'table_count' => $totalTables,
+    ];
+}
+
+function asset_project_backup_create_job(array $user): array
+{
+    if (!can_manage_superadmin_scope($user)) {
+        throw new RuntimeException('Not allowed.');
+    }
+    $jobToken = bin2hex(random_bytes(20));
+    asset_project_backup_job_write_status($jobToken, [
+        'status' => 'pending',
+        'message' => 'Preparing backup queue...',
+        'progress_percent' => 0,
+        'processed_files' => 0,
+        'total_files' => 0,
+        'download_url' => null,
+        'filename' => null,
+    ]);
+    if (!asset_project_backup_is_windows()) {
+        asset_project_backup_spawn_worker($jobToken);
+    }
+    return [
+        'job_token' => $jobToken,
+        'status' => 'pending',
+        'status_url' => 'index.php?page=project_backup_job_status&job=' . rawurlencode($jobToken),
+    ];
+}
+
+function asset_project_backup_spawn_worker(string $jobToken): void
+{
+    $phpBinary = asset_project_backup_worker_php_binary();
+    $script = asset_project_backup_job_runner_script();
+    if (!is_file($script)) {
+        throw new RuntimeException('Project backup worker script is missing.');
+    }
+    if (asset_project_backup_is_windows()) {
+        $script = str_replace('/', '\\', $script);
+        $command = 'cmd /c start "" /B "' . $phpBinary . '" "' . $script . '" "' . $jobToken . '"';
+        @pclose(@popen($command, 'r'));
+        return;
+    }
+    $command = 'nohup ' . escapeshellarg($phpBinary) . ' ' . escapeshellarg($script) . ' ' . escapeshellarg($jobToken) . ' >/dev/null 2>&1 &';
+    @exec($command);
+}
+
+function asset_project_backup_process_job(string $jobToken): void
+{
+    ignore_user_abort(true);
+    @set_time_limit(0);
+    if (!class_exists('ZipArchive')) {
+        asset_project_backup_job_write_status($jobToken, [
+            'status' => 'failed',
+            'message' => 'ZipArchive is not available on this server.',
+            'progress_percent' => 0,
+            'processed_files' => 0,
+            'total_files' => 0,
+        ]);
+        return;
+    }
+    $current = asset_project_backup_job_read_status($jobToken);
+    if (($current['status'] ?? '') === 'completed') {
+        return;
+    }
+    asset_project_backup_job_write_status($jobToken, [
+        'status' => 'processing',
+        'message' => 'Counting project files...',
+        'progress_percent' => 0,
+        'processed_files' => 0,
+        'total_files' => 0,
+    ]);
+
+    try {
+        $files = asset_project_backup_collect_files();
+        $totalFiles = count($files);
+        $targetPath = asset_project_backup_output_path($jobToken);
+        $sqlPath = asset_project_backup_sql_output_path($jobToken);
+        if (is_file($targetPath)) {
+            @unlink($targetPath);
+        }
+        if (is_file($sqlPath)) {
+            @unlink($sqlPath);
+        }
+
+        $sqlMeta = asset_project_backup_write_sql_dump($sqlPath, $jobToken);
+
+        $zip = new \ZipArchive();
+        if ($zip->open($targetPath, \ZipArchive::CREATE | \ZipArchive::OVERWRITE) !== true) {
+            throw new RuntimeException('Unable to create the backup archive.');
+        }
+
+        $processed = 0;
+        foreach ($files as $file) {
+            if (!$zip->addFile((string)$file['path'], (string)$file['relative'])) {
+                $zip->close();
+                @unlink($targetPath);
+                throw new RuntimeException('Unable to add file to backup archive: ' . (string)$file['relative']);
+            }
+            $processed++;
+            if ($processed === 1 || $processed === $totalFiles || $processed % 25 === 0) {
+                $percent = $totalFiles > 0 ? (int)floor(35 + (($processed / $totalFiles) * 65)) : 100;
+                asset_project_backup_job_write_status($jobToken, [
+                    'status' => 'processing',
+                    'message' => 'Creating ZIP backup...',
+                    'progress_percent' => $percent,
+                    'processed_files' => $processed,
+                    'total_files' => $totalFiles,
+                    'processed_tables' => (int)($sqlMeta['table_count'] ?? 0),
+                    'total_tables' => (int)($sqlMeta['table_count'] ?? 0),
+                ]);
+            }
+        }
+
+        $zip->addFile($sqlPath, 'database/' . basename($sqlPath));
+
+        $zip->close();
+        clearstatcache(true, $targetPath);
+        $filename = basename($targetPath);
+        asset_project_backup_job_write_status($jobToken, [
+            'status' => 'completed',
+            'message' => 'Project backup is ready.',
+            'progress_percent' => 100,
+            'processed_files' => $totalFiles,
+            'total_files' => $totalFiles,
+            'filename' => $filename,
+            'size_label' => asset_format_file_size((int)filesize($targetPath)),
+            'sql_filename' => (string)($sqlMeta['filename'] ?? basename($sqlPath)),
+            'sql_size_label' => (string)($sqlMeta['size_label'] ?? asset_format_file_size((int)filesize($sqlPath))),
+            'download_url' => 'index.php?page=download_project_backup&file=' . rawurlencode($filename),
+            'sql_download_url' => 'index.php?page=download_project_backup_sql&file=' . rawurlencode((string)($sqlMeta['filename'] ?? basename($sqlPath))),
+        ]);
+    } catch (Throwable $e) {
+        asset_project_backup_job_write_status($jobToken, [
+            'status' => 'failed',
+            'message' => mb_substr($e->getMessage(), 0, 65000),
+            'progress_percent' => 0,
+            'processed_files' => 0,
+            'total_files' => 0,
+        ]);
+    }
+}
+
+function asset_project_backup_job_status_payload(string $jobToken, array $user): array
+{
+    if (!can_manage_superadmin_scope($user)) {
+        throw new RuntimeException('Not allowed.');
+    }
+    $payload = asset_project_backup_job_read_status($jobToken);
+    if (!$payload) {
+        throw new RuntimeException('Backup job not found.');
+    }
+    if (asset_project_backup_is_windows() && !in_array((string)($payload['status'] ?? ''), ['completed', 'failed'], true)) {
+        asset_project_backup_process_job($jobToken);
+        $payload = asset_project_backup_job_read_status($jobToken) ?? $payload;
+    }
+    return $payload;
+}
+
+function list_project_backup_archives(): array
+{
+    $dir = asset_ensure_project_backup_storage_dir();
+    $rows = [];
+    foreach (glob($dir . '/*.zip') ?: [] as $path) {
+        if (!is_file($path)) {
+            continue;
+        }
+        $filename = basename($path);
+        $rows[] = [
+            'filename' => $filename,
+            'size_bytes' => (int)filesize($path),
+            'size_label' => asset_format_file_size((int)filesize($path)),
+            'created_at' => date('Y-m-d H:i:s', (int)filemtime($path)),
+            'download_url' => 'index.php?page=download_project_backup&file=' . rawurlencode($filename),
+            'sql_filename' => '',
+            'sql_size_label' => '',
+            'sql_download_url' => '',
+        ];
+    }
+    $sqlDir = asset_project_backup_sql_dir();
+    $sqlMap = [];
+    foreach (glob($sqlDir . '/*.sql') ?: [] as $sqlPath) {
+        if (!is_file($sqlPath)) {
+            continue;
+        }
+        $sqlMap[basename($sqlPath, '.sql')] = [
+            'filename' => basename($sqlPath),
+            'size_label' => asset_format_file_size((int)filesize($sqlPath)),
+            'download_url' => 'index.php?page=download_project_backup_sql&file=' . rawurlencode(basename($sqlPath)),
+        ];
+    }
+    foreach ($rows as &$row) {
+        $base = basename((string)$row['filename'], '.zip');
+        if (isset($sqlMap[$base])) {
+            $row['sql_filename'] = $sqlMap[$base]['filename'];
+            $row['sql_size_label'] = $sqlMap[$base]['size_label'];
+            $row['sql_download_url'] = $sqlMap[$base]['download_url'];
+        }
+    }
+    unset($row);
+    usort($rows, static fn(array $a, array $b): int => strcmp((string)$b['created_at'], (string)$a['created_at']));
+    return $rows;
+}
+
+function stream_project_backup_archive(string $filename): void
+{
+    $filename = asset_project_backup_safe_name($filename, ['zip']);
+    $path = asset_project_backup_storage_dir() . '/' . $filename;
+    if (!is_file($path)) {
+        http_response_code(404);
+        exit('Backup file not found.');
+    }
+    header('Content-Type: application/zip');
+    header('Content-Disposition: attachment; filename="' . basename($filename) . '"');
+    header('Content-Length: ' . (string)filesize($path));
+    header('Cache-Control: private, max-age=0, must-revalidate');
+    readfile($path);
+    exit;
+}
+
+function stream_project_backup_sql(string $filename): void
+{
+    $filename = asset_project_backup_safe_name(str_ends_with($filename, '.sql') ? $filename : ($filename . '.sql'), ['sql']);
+    $path = asset_project_backup_sql_dir() . '/' . $filename;
+    if (!is_file($path)) {
+        http_response_code(404);
+        exit('SQL backup file not found.');
+    }
+    header('Content-Type: application/sql');
+    header('Content-Disposition: attachment; filename="' . basename($filename) . '"');
+    header('Content-Length: ' . (string)filesize($path));
+    header('Cache-Control: private, max-age=0, must-revalidate');
+    readfile($path);
+    exit;
+}
+
+function delete_project_backup_archive(string $filename): void
+{
+    $filename = asset_project_backup_safe_name($filename, ['zip']);
+    $path = asset_project_backup_storage_dir() . '/' . $filename;
+    if (!is_file($path)) {
+        throw new RuntimeException('Backup file not found.');
+    }
+    if (!@unlink($path)) {
+        throw new RuntimeException('Unable to delete the backup file.');
+    }
+    $sqlPath = asset_project_backup_sql_dir() . '/' . basename($filename, '.zip') . '.sql';
+    if (is_file($sqlPath)) {
+        @unlink($sqlPath);
+    }
+}
+
 function asset_template_storage_path(?int $segmentId = null): string
 {
     return asset_template_storage_dir() . '/asset_import_template_segment_' . asset_normalize_segment_id($segmentId) . '.xlsx';

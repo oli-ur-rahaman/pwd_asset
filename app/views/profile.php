@@ -5,6 +5,7 @@ $accessOptions = office_user_access_options();
 $officeContext = current_office_context($user);
 $officeUsers = $officeContext ? array_values(array_filter(get_office_users((int)$officeContext['office_type'], (int)$officeContext['office_id']), static fn(array $officeUser): bool => (int)($officeUser['is_primary_office_user'] ?? 0) !== 1)) : [];
 $superadminUsers = is_superadmin() ? get_superadmin_additional_users() : [];
+$projectBackups = can_manage_superadmin_scope() ? list_project_backup_archives() : [];
 ?>
 <section class="card">
     <h2>Profile</h2>
@@ -64,6 +65,189 @@ $superadminUsers = is_superadmin() ? get_superadmin_additional_users() : [];
             </form>
         <?php endif; ?>
     </section>
+
+    <?php if (can_manage_superadmin_scope()): ?>
+        <section class="card">
+            <h2>Project Backup</h2>
+            <p class="hint">Create a ZIP backup of the whole project and store it on the server. Backup files are saved inside server storage and can be downloaded or permanently deleted from here.</p>
+            <form method="post" action="index.php" class="inline-form" id="project-backup-form" onsubmit="if(window.assetOpenProjectBackupProgress){window.assetOpenProjectBackupProgress();}">
+                <?= csrf_input(); ?>
+                <input type="hidden" name="action" value="create_project_backup">
+                <button type="submit" class="btn-small" id="project-backup-start">Create Backup ZIP</button>
+            </form>
+            <div class="modal-backdrop" id="project-backup-progress-modal" aria-hidden="true">
+                <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="project-backup-progress-title">
+                    <div class="flash-modal-head">
+                        <h3 id="project-backup-progress-title">Preparing backup...</h3>
+                    </div>
+                    <div class="hint" id="project-backup-progress-text">Please wait while the ZIP and SQL backup are being created.</div>
+                    <div class="hero-row" style="align-items:center;gap:16px;margin-top:12px;">
+                        <div style="flex:1 1 auto;"></div>
+                        <div id="project-backup-progress-percent" style="min-width:56px;text-align:right;font-weight:700;">0%</div>
+                    </div>
+                    <div style="margin-top:10px;background:#dfe7f2;border-radius:999px;overflow:hidden;height:12px;">
+                        <div id="project-backup-progress-bar" style="width:0%;height:12px;background:linear-gradient(90deg,#0f5ea8,#1c8f6a);transition:width .25s ease;"></div>
+                    </div>
+                    <div class="hint" id="project-backup-progress-count" style="margin-top:8px;">0 / 0 files</div>
+                    <div class="modal-actions" style="justify-content:flex-end;margin-top:16px;">
+                        <button type="button" class="modal-close" id="project-backup-progress-close">Hide</button>
+                    </div>
+                </div>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                    <tr>
+                        <th>File Name</th>
+                        <th>Created At</th>
+                        <th>ZIP Size</th>
+                        <th>SQL Size</th>
+                        <th>Action</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    <?php if ($projectBackups === []): ?>
+                        <tr>
+                            <td colspan="5" class="muted">No project backups are stored yet.</td>
+                        </tr>
+                    <?php else: ?>
+                        <?php foreach ($projectBackups as $backup): ?>
+                            <tr>
+                                <td><?= e((string)$backup['filename']); ?></td>
+                                <td><?= e((string)$backup['created_at']); ?></td>
+                                <td><?= e((string)$backup['size_label']); ?></td>
+                                <td><?= e((string)($backup['sql_size_label'] !== '' ? $backup['sql_size_label'] : '-')); ?></td>
+                                <td>
+                                    <div class="action-row">
+                                        <a class="btn-small" href="<?= e((string)$backup['download_url']); ?>">Download ZIP+SQL</a>
+                                        <?php if ((string)($backup['sql_download_url'] ?? '') !== ''): ?>
+                                            <a class="btn-small" href="<?= e((string)$backup['sql_download_url']); ?>">Download SQL</a>
+                                        <?php endif; ?>
+                                        <form method="post" action="index.php" class="inline-form" onsubmit="return confirm('This backup will be permanently deleted. Continue?');">
+                                            <?= csrf_input(); ?>
+                                            <input type="hidden" name="action" value="delete_project_backup">
+                                            <input type="hidden" name="file" value="<?= e((string)$backup['filename']); ?>">
+                                            <button type="submit" class="btn-small btn-danger">Delete</button>
+                                        </form>
+                                    </div>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+        <script>
+            (function () {
+                var form = document.getElementById('project-backup-form');
+                if (!form) {
+                    return;
+                }
+                var startButton = document.getElementById('project-backup-start');
+                var modal = document.getElementById('project-backup-progress-modal');
+                var title = document.getElementById('project-backup-progress-title');
+                var text = document.getElementById('project-backup-progress-text');
+                var percent = document.getElementById('project-backup-progress-percent');
+                var bar = document.getElementById('project-backup-progress-bar');
+                var count = document.getElementById('project-backup-progress-count');
+                var closeButton = document.getElementById('project-backup-progress-close');
+                var pollTimer = null;
+
+                window.assetOpenProjectBackupProgress = function () {
+                    if (!modal) {
+                        return;
+                    }
+                    modal.classList.add('open');
+                    modal.setAttribute('aria-hidden', 'false');
+                };
+
+                var hideProgress = function () {
+                    if (!modal) {
+                        return;
+                    }
+                    modal.classList.remove('open');
+                    modal.setAttribute('aria-hidden', 'true');
+                };
+
+                if (closeButton) {
+                    closeButton.addEventListener('click', function () {
+                        hideProgress();
+                    });
+                }
+
+                var updateProgress = function (payload) {
+                    var pct = Math.max(0, Math.min(100, parseInt(payload.progress_percent || 0, 10) || 0));
+                    var processed = parseInt(payload.processed_files || 0, 10) || 0;
+                    var total = parseInt(payload.total_files || 0, 10) || 0;
+                    window.assetOpenProjectBackupProgress();
+                    percent.textContent = pct + '%';
+                    bar.style.width = pct + '%';
+                    title.textContent = payload.status === 'completed' ? 'Backup ready' : (payload.status === 'failed' ? 'Backup failed' : 'Creating backup...');
+                    text.textContent = payload.message || 'Preparing backup...';
+                    count.textContent = processed + ' / ' + total + ' files';
+                };
+
+                var pollStatus = function (statusUrl) {
+                    pollTimer = window.setTimeout(function () {
+                        fetch(statusUrl, { credentials: 'same-origin' })
+                            .then(function (response) { return response.json(); })
+                            .then(function (payload) {
+                                updateProgress(payload);
+                                if (payload.status === 'completed') {
+                                    if (startButton) {
+                                        startButton.disabled = false;
+                                    }
+                                    window.setTimeout(function () { window.location.reload(); }, 1500);
+                                    return;
+                                }
+                                if (payload.status === 'failed') {
+                                    if (startButton) {
+                                        startButton.disabled = false;
+                                    }
+                                    return;
+                                }
+                                pollStatus(statusUrl);
+                            })
+                            .catch(function () {
+                                if (startButton) {
+                                    startButton.disabled = false;
+                                }
+                                updateProgress({ status: 'failed', message: 'Unable to read backup progress.', progress_percent: 0, processed_files: 0, total_files: 0 });
+                            });
+                    }, 800);
+                };
+
+                form.addEventListener('submit', function (event) {
+                    event.preventDefault();
+                    window.assetOpenProjectBackupProgress();
+                    if (startButton) {
+                        startButton.disabled = true;
+                    }
+                    updateProgress({ status: 'pending', message: 'Preparing backup queue...', progress_percent: 0, processed_files: 0, total_files: 0 });
+                    var formData = new FormData(form);
+                    fetch('index.php', {
+                        method: 'POST',
+                        body: formData,
+                        credentials: 'same-origin'
+                    })
+                        .then(function (response) { return response.json(); })
+                        .then(function (payload) {
+                            if (!payload.status_url) {
+                                throw new Error(payload.message || 'Unable to start backup job.');
+                            }
+                            pollStatus(payload.status_url);
+                        })
+                        .catch(function (error) {
+                            if (startButton) {
+                                startButton.disabled = false;
+                            }
+                            updateProgress({ status: 'failed', message: error.message || 'Unable to start backup job.', progress_percent: 0, processed_files: 0, total_files: 0 });
+                        });
+                });
+            })();
+        </script>
+    <?php endif; ?>
 
     <section class="card" id="profile-superadmin-users">
         <div class="hero-row office-manage-users-head">

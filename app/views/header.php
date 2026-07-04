@@ -93,6 +93,23 @@
         </div>
     </div>
 <?php endif; ?>
+<script>
+    (function () {
+        document.addEventListener('click', function (event) {
+            var button = event.target.closest('[data-close="welcome-modal"]');
+            if (!button) {
+                return;
+            }
+            var modal = document.getElementById('welcome-modal');
+            if (!modal) {
+                return;
+            }
+            event.preventDefault();
+            modal.classList.remove('open');
+            modal.setAttribute('aria-hidden', 'true');
+        });
+    })();
+</script>
 <?php if ($needs_name): ?>
     <div class="modal-backdrop open" id="name-modal" aria-hidden="false">
         <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="name-title">
