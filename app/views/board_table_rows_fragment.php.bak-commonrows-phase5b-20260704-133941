@@ -38,8 +38,7 @@ if ($renderEmptyState && !$assets):
 <?php endif; ?>
 <?php foreach ($assets as $index => $asset): ?>
     <?php $rowGenerated = asset_common_asset_is_generated($asset); ?>
-    <?php $rowManualCommon = asset_common_asset_is_manual_common($asset); ?>
-    <tr<?= $rowGenerated ? ' data-common-generated-row="1" title="Generated common row"' : ($rowManualCommon ? ' data-common-manual-row="1" title="Manual row inside common category"' : ''); ?>>
+    <tr<?= $rowGenerated ? ' data-common-generated-row="1" title="Generated common row"' : ''; ?>>
         <?php if (!is_superadmin() && $canModifyAssets && !$isUnderMeView): ?>
             <td>
                 <?php if (!$rowGenerated): ?>

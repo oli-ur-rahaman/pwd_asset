@@ -802,13 +802,95 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     };
 
+    const parseCommonSupportedTypes = (container) => {
+        const raw = container?.getAttribute('data-common-supported-types') || '[]';
+        try {
+            const parsed = JSON.parse(raw);
+            return Array.isArray(parsed) ? parsed.map((value) => String(value)) : [];
+        } catch (error) {
+            return [];
+        }
+    };
+
+    const filterCommonParentOptions = (select, segmentValue) => {
+        if (!select) {
+            return;
+        }
+        let hasVisibleSelection = false;
+        Array.from(select.options).forEach((option) => {
+            if (option.value === '') {
+                option.hidden = false;
+                return;
+            }
+            const optionSegment = option.getAttribute('data-parent-segment') || '';
+            const visible = segmentValue === '' || optionSegment === segmentValue;
+            option.hidden = !visible;
+            if (visible && option.selected) {
+                hasVisibleSelection = true;
+            }
+        });
+        if (!hasVisibleSelection) {
+            select.value = '';
+        }
+    };
+
+    const syncCommonRowSections = (container) => {
+        const typeSelect = container?.querySelector('[data-field-type-select]');
+        const toggle = container?.querySelector('[data-common-row-toggle]');
+        const section = container?.querySelector('[data-common-row-section]');
+        if (!typeSelect || !toggle || !section) {
+            return;
+        }
+        const supportedTypes = parseCommonSupportedTypes(container);
+        const fieldType = String(typeSelect.value || '');
+        const supportsCommonRows = supportedTypes.includes(fieldType);
+        if (!supportsCommonRows) {
+            toggle.checked = false;
+        }
+        toggle.disabled = !supportsCommonRows;
+        const showSection = supportsCommonRows && toggle.checked;
+        section.classList.toggle('hidden', !showSection);
+        section.querySelectorAll('input, select, textarea').forEach((input) => {
+            input.disabled = !showSection;
+        });
+
+        const definitionMode = container.querySelector('[data-common-definition-mode]')?.value || '';
+        const showParentControls = showSection && definitionMode !== 'superadmin_defined';
+        section.querySelectorAll('[data-common-parent-control]').forEach((node) => {
+            node.classList.toggle('hidden', !showParentControls);
+        });
+        const parentSegmentSelect = container.querySelector('[data-common-parent-segment]');
+        const parentCategorySelect = container.querySelector('[data-common-parent-category]');
+        const parentFieldSelect = container.querySelector('[data-common-parent-field]');
+        const parentSegmentValue = showParentControls && parentSegmentSelect ? String(parentSegmentSelect.value || '') : '';
+        filterCommonParentOptions(parentCategorySelect, parentSegmentValue);
+        filterCommonParentOptions(parentFieldSelect, parentSegmentValue);
+        [parentSegmentSelect, parentCategorySelect, parentFieldSelect].forEach((input) => {
+            if (!input) {
+                return;
+            }
+            input.disabled = !showParentControls;
+        });
+    };
+
     document.querySelectorAll('[data-asset-field-form], tr').forEach((container) => {
         if (!container.querySelector('[data-field-type-select]')) {
             return;
         }
         syncFieldTypeSections(container);
+        syncCommonRowSections(container);
         container.querySelector('[data-field-type-select]').addEventListener('change', () => {
             syncFieldTypeSections(container);
+            syncCommonRowSections(container);
+        });
+        container.querySelector('[data-common-row-toggle]')?.addEventListener('change', () => {
+            syncCommonRowSections(container);
+        });
+        container.querySelector('[data-common-definition-mode]')?.addEventListener('change', () => {
+            syncCommonRowSections(container);
+        });
+        container.querySelector('[data-common-parent-segment]')?.addEventListener('change', () => {
+            syncCommonRowSections(container);
         });
     });
 

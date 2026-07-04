@@ -136,15 +136,13 @@ function ensure_asset_schema(): void
             id INT AUTO_INCREMENT PRIMARY KEY,
             profile_id INT NOT NULL,
             stable_row_key VARCHAR(100) NOT NULL,
-            scope_office_type INT NOT NULL DEFAULT 0,
-            scope_office_id INT NOT NULL DEFAULT 0,
             sort_order INT NOT NULL DEFAULT 0,
             active_status TINYINT NOT NULL DEFAULT 1,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT NULL,
             UNIQUE KEY uniq_asset_common_admin_rows_profile_key (profile_id, stable_row_key),
             KEY idx_asset_common_admin_rows_profile (profile_id),
-            KEY idx_asset_common_admin_rows_profile_sort (profile_id, scope_office_type, scope_office_id, sort_order, id)
+            KEY idx_asset_common_admin_rows_profile_sort (profile_id, sort_order, id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
     );
 
@@ -531,8 +529,6 @@ function ensure_asset_schema(): void
     asset_ensure_column('assets', 'common_source_type', "VARCHAR(30) NOT NULL DEFAULT 'normal'");
     asset_ensure_column('assets', 'common_source_asset_id', 'INT DEFAULT NULL');
     asset_ensure_column('assets', 'is_user_added_row', 'TINYINT NOT NULL DEFAULT 1');
-    asset_ensure_column('asset_common_admin_rows', 'scope_office_type', 'INT NOT NULL DEFAULT 0');
-    asset_ensure_column('asset_common_admin_rows', 'scope_office_id', 'INT NOT NULL DEFAULT 0');
     asset_ensure_column('office_asset_declarations', 'segment_id', 'INT DEFAULT NULL');
     asset_ensure_column('asset_import_batches', 'segment_id', 'INT DEFAULT NULL');
     asset_ensure_column('asset_activity_logs', 'segment_id', 'INT DEFAULT NULL');
@@ -550,7 +546,7 @@ function ensure_asset_schema(): void
     asset_ensure_index('asset_common_profile_fields', 'idx_asset_common_profile_fields_profile', ['profile_id']);
     asset_ensure_index('asset_common_profile_fields', 'idx_asset_common_profile_fields_parent', ['parent_field_id']);
     asset_ensure_index('asset_common_admin_rows', 'idx_asset_common_admin_rows_profile', ['profile_id']);
-    asset_ensure_index('asset_common_admin_rows', 'idx_asset_common_admin_rows_profile_sort', ['profile_id', 'scope_office_type', 'scope_office_id', 'sort_order', 'id']);
+    asset_ensure_index('asset_common_admin_rows', 'idx_asset_common_admin_rows_profile_sort', ['profile_id', 'sort_order', 'id']);
     asset_ensure_index('asset_common_admin_row_values', 'idx_asset_common_admin_row_values_row', ['row_id']);
     asset_ensure_index('asset_common_admin_row_values', 'idx_asset_common_admin_row_values_field', ['child_field_id']);
     asset_ensure_index('assets', 'idx_assets_common_profile', ['common_profile_id']);
@@ -1194,220 +1190,7 @@ function get_asset_common_profile_field_binding_by_child_field(int $childFieldId
     return $row ?: null;
 }
 
-function get_asset_common_profile_field_bindings_for_segment(int $segmentId): array
-{
-    $stmt = db()->prepare(
-        'SELECT pf.*, p.segment_id, p.category_id, p.definition_mode, p.row_policy, p.parent_segment_id, p.parent_category_id,
-                child.field_key AS child_field_key, child.label AS child_field_label,
-                parent.field_key AS parent_field_key, parent.label AS parent_field_label
-         FROM asset_common_profile_fields pf
-         JOIN asset_common_profiles p ON p.id = pf.profile_id
-         JOIN asset_fields child ON child.id = pf.child_field_id
-         LEFT JOIN asset_fields parent ON parent.id = pf.parent_field_id
-         WHERE p.segment_id = ?
-         ORDER BY pf.sort_order ASC, pf.id ASC'
-    );
-    $stmt->execute([$segmentId]);
-    $map = [];
-    foreach ($stmt->fetchAll() as $row) {
-        $map[(int)$row['child_field_id']] = $row;
-    }
-    return $map;
-}
-
-function asset_common_profiles_by_category_map(int $segmentId, bool $includeInactive = true): array
-{
-    $map = [];
-    foreach (get_asset_categories(true, $segmentId) as $category) {
-        $profile = get_asset_common_profile_by_category((int)$category['id'], $segmentId, $includeInactive);
-        if ($profile) {
-            $map[(int)$category['id']] = $profile;
-        }
-    }
-    return $map;
-}
-
-function asset_common_profile_allows_manual_rows(?array $profile): bool
-{
-    if (!$profile) {
-        return true;
-    }
-    return (string)($profile['row_policy'] ?? '') === asset_common_row_policy_addable();
-}
-
-function asset_common_category_allows_manual_rows(int $segmentId, int $categoryId): bool
-{
-    if ($segmentId <= 0 || $categoryId <= 0) {
-        return true;
-    }
-    return asset_common_profile_allows_manual_rows(
-        get_asset_common_profile_by_category($categoryId, $segmentId, true)
-    );
-}
-
-function asset_common_profile_id_for_category(int $segmentId, int $categoryId): ?int
-{
-    if ($segmentId <= 0 || $categoryId <= 0) {
-        return null;
-    }
-    $profile = get_asset_common_profile_by_category($categoryId, $segmentId, true);
-    $profileId = (int)($profile['id'] ?? 0);
-    return $profileId > 0 ? $profileId : null;
-}
-
-function asset_common_profile_child_field_keys(int $profileId): array
-{
-    if ($profileId <= 0) {
-        return [];
-    }
-    $keys = [];
-    foreach (get_asset_common_profile_fields($profileId) as $binding) {
-        $fieldKey = trim((string)($binding['child_field_key'] ?? ''));
-        if ($fieldKey !== '') {
-            $keys[$fieldKey] = true;
-        }
-    }
-    return array_keys($keys);
-}
-
-function asset_common_asset_is_generated(array $asset): bool
-{
-    return (int)($asset['common_profile_id'] ?? 0) > 0
-        && (int)($asset['is_user_added_row'] ?? 1) === 0;
-}
-
-function asset_common_asset_is_manual_common(array $asset): bool
-{
-    return (int)($asset['common_profile_id'] ?? 0) > 0
-        && (int)($asset['is_user_added_row'] ?? 1) === 1;
-}
-
-function asset_common_locked_field_keys_for_asset(array $asset): array
-{
-    if (!asset_common_asset_is_generated($asset)) {
-        return [];
-    }
-    return asset_common_profile_child_field_keys((int)($asset['common_profile_id'] ?? 0));
-}
-
-function asset_common_current_normalized_value(array $field, array $asset): array
-{
-    $type = (string)($field['data_type'] ?? 'text');
-    $fieldKey = (string)($field['field_key'] ?? '');
-    $displayValue = $asset['values'][$fieldKey] ?? null;
-    $normalized = [
-        'value_text' => null,
-        'value_number' => null,
-        'value_date' => null,
-        'value_bool' => null,
-        'value_option' => null,
-        'display' => '',
-    ];
-
-    if ($displayValue === null || $displayValue === '') {
-        return $normalized;
-    }
-
-    return match ($type) {
-        'number' => [
-            'value_text' => null,
-            'value_number' => asset_normalize_number_string((string)$displayValue),
-            'value_date' => null,
-            'value_bool' => null,
-            'value_option' => null,
-            'display' => asset_normalize_number_string((string)$displayValue) ?? '',
-        ],
-        'date' => [
-            'value_text' => null,
-            'value_number' => null,
-            'value_date' => (string)$displayValue,
-            'value_bool' => null,
-            'value_option' => null,
-            'display' => (string)$displayValue,
-        ],
-        'yes_no' => [
-            'value_text' => null,
-            'value_number' => null,
-            'value_date' => null,
-            'value_bool' => asset_normalize_yes_no((string)$displayValue),
-            'value_option' => null,
-            'display' => (string)$displayValue,
-        ],
-        'dropdown', 'conditional' => [
-            'value_text' => null,
-            'value_number' => null,
-            'value_date' => null,
-            'value_bool' => null,
-            'value_option' => (string)$displayValue,
-            'display' => (string)$displayValue,
-        ],
-        default => [
-            'value_text' => (string)$displayValue,
-            'value_number' => null,
-            'value_date' => null,
-            'value_bool' => null,
-            'value_option' => null,
-            'display' => (string)$displayValue,
-        ],
-    };
-}
-
-function asset_common_parent_field_candidates_by_segment(bool $includeInactive = false): array
-{
-    $segments = get_asset_segments(true);
-    $supportedTypes = array_fill_keys(asset_common_supported_field_data_types(), true);
-    $catalog = [];
-    foreach ($segments as $segment) {
-        $segmentId = (int)($segment['id'] ?? 0);
-        $catalog[$segmentId] = array_values(array_filter(
-            get_asset_fields($includeInactive, $segmentId),
-            static function (array $field) use ($supportedTypes): bool {
-                $type = (string)($field['data_type'] ?? '');
-                return !asset_is_conditional_secondary($field)
-                    && isset($supportedTypes[$type]);
-            }
-        ));
-    }
-    return $catalog;
-}
-
-function asset_common_remove_generated_assets_for_profile(int $profileId, ?int $actingUserId = null): void
-{
-    if ($profileId <= 0) {
-        return;
-    }
-    $actorUserId = $actingUserId !== null && $actingUserId > 0 ? $actingUserId : ((int)(current_user()['id'] ?? 0) ?: 1);
-    $stmt = db()->prepare(
-        'SELECT id
-         FROM assets
-         WHERE common_profile_id = ?
-           AND deleted_at IS NULL
-           AND active_status = 1'
-    );
-    $stmt->execute([$profileId]);
-    foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) as $assetId) {
-        $assetId = (int)$assetId;
-        if ($assetId <= 0) {
-            continue;
-        }
-        $beforeAsset = get_asset($assetId, true);
-        if (!$beforeAsset || !empty($beforeAsset['deleted_at'])) {
-            continue;
-        }
-        db()->prepare('UPDATE assets SET active_status = 0, deleted_at = NOW(), updated_by = ?, updated_at = NOW() WHERE id = ?')->execute([$actorUserId, $assetId]);
-        asset_filter_index_sync_asset_change($beforeAsset, null);
-        add_asset_activity_log_with_segment(
-            (int)($beforeAsset['segment_id'] ?? asset_default_segment_id()),
-            $assetId,
-            $actorUserId,
-            'common_row_removed',
-            'Common row removed after profile change.',
-            asset_common_activity_details($beforeAsset)
-        );
-    }
-}
-
-function asset_delete_common_profile_if_empty(int $profileId, ?int $actingUserId = null): void
+function asset_delete_common_profile_if_empty(int $profileId): void
 {
     $countStmt = db()->prepare('SELECT COUNT(*) FROM asset_common_profile_fields WHERE profile_id = ?');
     $countStmt->execute([$profileId]);
@@ -1421,27 +1204,25 @@ function asset_delete_common_profile_if_empty(int $profileId, ?int $actingUserId
         $placeholders = implode(',', array_fill(0, count($rowIds), '?'));
         db()->prepare("DELETE FROM asset_common_admin_row_values WHERE row_id IN ({$placeholders})")->execute($rowIds);
     }
-    asset_common_remove_generated_assets_for_profile($profileId, $actingUserId);
     db()->prepare('DELETE FROM asset_common_admin_rows WHERE profile_id = ?')->execute([$profileId]);
     db()->prepare('DELETE FROM asset_common_profiles WHERE id = ?')->execute([$profileId]);
 }
 
-function asset_upsert_common_profile_binding(int $childFieldId, array $payload): array
+function asset_upsert_common_profile_binding(int $childFieldId, array $payload): void
 {
     if (empty($payload['common_row_config_present'])) {
-        return ['old_profile_id' => 0, 'new_profile_id' => 0];
+        return;
     }
 
     $existingBinding = get_asset_common_profile_field_binding_by_child_field($childFieldId);
-    $oldProfileId = (int)($existingBinding['profile_id'] ?? 0);
     $enabled = !empty($payload['is_common_row_field']);
     if (!$enabled) {
         if ($existingBinding) {
             db()->prepare('DELETE FROM asset_common_profile_fields WHERE child_field_id = ?')->execute([$childFieldId]);
-            asset_delete_common_profile_if_empty((int)$existingBinding['profile_id'], (int)($payload['acting_user_id'] ?? 0));
+            asset_delete_common_profile_if_empty((int)$existingBinding['profile_id']);
         }
         db()->prepare('UPDATE asset_fields SET is_common_row_field = 0, updated_at = NOW() WHERE id = ?')->execute([$childFieldId]);
-        return ['old_profile_id' => $oldProfileId, 'new_profile_id' => 0];
+        return;
     }
 
     $profileCategoryId = (int)($payload['common_profile_category_id'] ?? 0);
@@ -1490,7 +1271,7 @@ function asset_upsert_common_profile_binding(int $childFieldId, array $payload):
 
     if ($existingBinding && (int)$existingBinding['profile_id'] !== $profileId) {
         db()->prepare('DELETE FROM asset_common_profile_fields WHERE child_field_id = ?')->execute([$childFieldId]);
-        asset_delete_common_profile_if_empty((int)$existingBinding['profile_id'], (int)($payload['acting_user_id'] ?? 0));
+        asset_delete_common_profile_if_empty((int)$existingBinding['profile_id']);
     }
 
     $sortOrder = (int)($payload['sort_order'] ?? 0);
@@ -1514,937 +1295,6 @@ function asset_upsert_common_profile_binding(int $childFieldId, array $payload):
     }
 
     db()->prepare('UPDATE asset_fields SET is_common_row_field = 1, updated_at = NOW() WHERE id = ?')->execute([$childFieldId]);
-    return ['old_profile_id' => $oldProfileId, 'new_profile_id' => $profileId];
-}
-
-function asset_sync_common_profiles_after_binding_change(array $bindingChange, ?int $actingUserId = null): void
-{
-    $oldProfileId = (int)($bindingChange['old_profile_id'] ?? 0);
-    $newProfileId = (int)($bindingChange['new_profile_id'] ?? 0);
-    if ($oldProfileId > 0 && $oldProfileId !== $newProfileId && get_asset_common_profile($oldProfileId, true)) {
-        asset_sync_common_rows_for_profile_across_offices($oldProfileId, $actingUserId);
-    }
-    if ($newProfileId > 0) {
-        asset_sync_common_rows_for_profile_across_offices($newProfileId, $actingUserId);
-    }
-}
-
-function get_asset_common_profiles_for_segment(int $segmentId, bool $includeInactive = false): array
-{
-    $sql = 'SELECT * FROM asset_common_profiles WHERE segment_id = ?';
-    $params = [$segmentId];
-    if (!$includeInactive) {
-        $sql .= ' AND active_status = 1';
-    }
-    $sql .= ' ORDER BY id ASC';
-    $stmt = db()->prepare($sql);
-    $stmt->execute($params);
-    return $stmt->fetchAll();
-}
-
-function get_asset_common_profiles_by_parent(int $parentSegmentId, int $parentCategoryId, bool $includeInactive = false): array
-{
-    $sql = 'SELECT * FROM asset_common_profiles WHERE parent_segment_id = ? AND parent_category_id = ?';
-    $params = [$parentSegmentId, $parentCategoryId];
-    if (!$includeInactive) {
-        $sql .= ' AND active_status = 1';
-    }
-    $sql .= ' ORDER BY id ASC';
-    $stmt = db()->prepare($sql);
-    $stmt->execute($params);
-    return $stmt->fetchAll();
-}
-
-function asset_common_scope_token(int $officeType, int $officeId): string
-{
-    return $officeType . ':' . $officeId;
-}
-
-function asset_common_parse_scope_token(string $token): array
-{
-    $token = trim($token);
-    if ($token === '' || strtolower($token) === 'global' || $token === '0:0') {
-        return ['office_type' => 0, 'office_id' => 0];
-    }
-    $parts = explode(':', $token, 2);
-    $officeType = (int)($parts[0] ?? 0);
-    $officeId = (int)($parts[1] ?? 0);
-    if ($officeType <= 0 || $officeId <= 0) {
-        return ['office_type' => 0, 'office_id' => 0];
-    }
-    return ['office_type' => $officeType, 'office_id' => $officeId];
-}
-
-function asset_common_scope_label(int $officeType, int $officeId): string
-{
-    if ($officeType <= 0 || $officeId <= 0) {
-        return 'All Offices (Global)';
-    }
-    return office_kind_to_type(office_type_to_kind($officeType)) > 0
-        ? ucfirst(str_replace('_', '-', office_type_to_kind($officeType))) . ' - ' . office_name_from_type_id($officeType, $officeId)
-        : office_name_from_type_id($officeType, $officeId);
-}
-
-function asset_common_scope_options(): array
-{
-    $options = [
-        asset_common_scope_token(0, 0) => 'All Offices (Global)',
-    ];
-    $overview = get_offices_overview();
-    foreach ($overview['zones'] ?? [] as $row) {
-        $options[asset_common_scope_token(2, (int)$row['id'])] = 'Zone - ' . (string)$row['office_name'];
-    }
-    foreach ($overview['circles'] ?? [] as $row) {
-        $options[asset_common_scope_token(3, (int)$row['id'])] = 'Circle - ' . (string)$row['office_name'];
-    }
-    foreach ($overview['divisions'] ?? [] as $row) {
-        $options[asset_common_scope_token(4, (int)$row['id'])] = 'Division - ' . (string)$row['office_name'];
-    }
-    foreach ($overview['subdivisions'] ?? [] as $row) {
-        $options[asset_common_scope_token(5, (int)$row['id'])] = 'Sub-division - ' . (string)$row['office_name'];
-    }
-    return $options;
-}
-
-function asset_common_sync_actor_user_id(?int $preferredUserId = null, ?array $contextAsset = null): int
-{
-    $preferredUserId = (int)$preferredUserId;
-    if ($preferredUserId > 0) {
-        return $preferredUserId;
-    }
-    if ($contextAsset) {
-        $updatedBy = (int)($contextAsset['updated_by'] ?? 0);
-        if ($updatedBy > 0) {
-            return $updatedBy;
-        }
-        $createdBy = (int)($contextAsset['created_by'] ?? 0);
-        if ($createdBy > 0) {
-            return $createdBy;
-        }
-    }
-    $currentUser = current_user();
-    if ($currentUser && (int)($currentUser['id'] ?? 0) > 0) {
-        return (int)$currentUser['id'];
-    }
-    $stmt = db()->query('SELECT id FROM users WHERE active_status = 1 ORDER BY office_role DESC, id ASC LIMIT 1');
-    return (int)($stmt->fetchColumn() ?: 1);
-}
-
-function asset_common_generated_row_key_for_source_asset(int $sourceAssetId): string
-{
-    return 'source_asset_' . $sourceAssetId;
-}
-
-function asset_common_activity_details(array $asset): array
-{
-    $details = [];
-    $sourceType = (string)($asset['common_source_type'] ?? '');
-    if ($sourceType !== '') {
-        $details[] = ['field' => 'Source Type', 'value' => $sourceType];
-    }
-    if ((int)($asset['common_source_asset_id'] ?? 0) > 0) {
-        $details[] = ['field' => 'Source Asset ID', 'value' => (string)(int)$asset['common_source_asset_id']];
-    }
-    if ((string)($asset['common_row_key'] ?? '') !== '') {
-        $details[] = ['field' => 'Common Row Key', 'value' => (string)$asset['common_row_key']];
-    }
-    return $details;
-}
-
-function asset_common_activity_signature(?array $asset): string
-{
-    if (!$asset) {
-        return '';
-    }
-    $signature = [
-        'category_id' => (int)($asset['category_id'] ?? 0),
-        'subcategory_id' => (int)($asset['subcategory_id'] ?? 0),
-        'common_row_key' => (string)($asset['common_row_key'] ?? ''),
-        'common_source_type' => (string)($asset['common_source_type'] ?? ''),
-        'common_source_asset_id' => (int)($asset['common_source_asset_id'] ?? 0),
-        'values' => (array)($asset['values'] ?? []),
-    ];
-    return json_encode($signature, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?: '';
-}
-
-function asset_common_fetch_source_assets(int $segmentId, int $categoryId, int $officeType, int $officeId): array
-{
-    if ($segmentId <= 0 || $categoryId <= 0 || $officeType <= 0 || $officeId <= 0) {
-        return [];
-    }
-    $stmt = db()->prepare(
-        'SELECT a.*, c.name AS category_name, s.name AS subcategory_name, creator.email_id AS created_by_email, editor.email_id AS updated_by_email
-         FROM assets a
-         LEFT JOIN asset_categories c ON c.id = a.category_id AND c.segment_id = a.segment_id
-         LEFT JOIN asset_subcategories s ON s.id = a.subcategory_id AND s.segment_id = a.segment_id
-         JOIN users creator ON creator.id = a.created_by
-         LEFT JOIN users editor ON editor.id = a.updated_by
-         WHERE a.segment_id = ?
-           AND a.category_id = ?
-           AND a.office_type = ?
-           AND a.office_id = ?
-           AND a.deleted_at IS NULL
-           AND a.active_status = 1
-         ORDER BY a.id ASC'
-    );
-    $stmt->execute([$segmentId, $categoryId, $officeType, $officeId]);
-    $rows = $stmt->fetchAll();
-    $assetIds = array_map(static fn(array $row): int => (int)$row['id'], $rows);
-    $valuesByAsset = get_asset_values_for_assets($assetIds);
-    foreach ($rows as &$row) {
-        $row['values'] = $valuesByAsset[(int)$row['id']] ?? [];
-        $row['files'] = [];
-    }
-    unset($row);
-    return $rows;
-}
-
-function asset_common_fetch_admin_rows(int $profileId, ?int $officeType = null, ?int $officeId = null): array
-{
-    $hasScopedRows = false;
-    if (($officeType ?? 0) > 0 && ($officeId ?? 0) > 0) {
-        $scopeStmt = db()->prepare(
-            'SELECT COUNT(*)
-             FROM asset_common_admin_rows
-             WHERE profile_id = ?
-               AND active_status = 1
-               AND scope_office_type = ?
-               AND scope_office_id = ?'
-        );
-        $scopeStmt->execute([$profileId, $officeType, $officeId]);
-        $hasScopedRows = (int)$scopeStmt->fetchColumn() > 0;
-    }
-    if ($hasScopedRows) {
-        $stmt = db()->prepare(
-            'SELECT r.id, r.profile_id, r.stable_row_key, r.scope_office_type, r.scope_office_id, r.sort_order, r.active_status,
-                    v.child_field_id, v.value_text
-             FROM asset_common_admin_rows r
-             LEFT JOIN asset_common_admin_row_values v ON v.row_id = r.id
-             WHERE r.profile_id = ?
-               AND r.active_status = 1
-               AND r.scope_office_type = ?
-               AND r.scope_office_id = ?
-             ORDER BY r.sort_order ASC, r.id ASC, v.id ASC'
-        );
-        $stmt->execute([$profileId, $officeType, $officeId]);
-    } else {
-        $stmt = db()->prepare(
-            'SELECT r.id, r.profile_id, r.stable_row_key, r.scope_office_type, r.scope_office_id, r.sort_order, r.active_status,
-                    v.child_field_id, v.value_text
-             FROM asset_common_admin_rows r
-             LEFT JOIN asset_common_admin_row_values v ON v.row_id = r.id
-             WHERE r.profile_id = ?
-               AND r.active_status = 1
-               AND r.scope_office_type = 0
-               AND r.scope_office_id = 0
-             ORDER BY r.sort_order ASC, r.id ASC, v.id ASC'
-        );
-        $stmt->execute([$profileId]);
-    }
-    $rows = [];
-    foreach ($stmt->fetchAll() as $row) {
-        $rowId = (int)$row['id'];
-        if (!isset($rows[$rowId])) {
-            $rows[$rowId] = [
-                'id' => $rowId,
-                'stable_row_key' => (string)($row['stable_row_key'] ?? ''),
-                'scope_office_type' => (int)($row['scope_office_type'] ?? 0),
-                'scope_office_id' => (int)($row['scope_office_id'] ?? 0),
-                'scope_token' => asset_common_scope_token((int)($row['scope_office_type'] ?? 0), (int)($row['scope_office_id'] ?? 0)),
-                'scope_label' => asset_common_scope_label((int)($row['scope_office_type'] ?? 0), (int)($row['scope_office_id'] ?? 0)),
-                'sort_order' => (int)($row['sort_order'] ?? 0),
-                'values' => [],
-            ];
-        }
-        $childFieldId = (int)($row['child_field_id'] ?? 0);
-        if ($childFieldId > 0) {
-            $rows[$rowId]['values'][$childFieldId] = (string)($row['value_text'] ?? '');
-        }
-    }
-    return array_values($rows);
-}
-
-function get_asset_common_admin_rows_detailed(int $profileId): array
-{
-    return asset_common_fetch_admin_rows($profileId);
-}
-
-function asset_common_admin_row_key(): string
-{
-    return 'admin_row_' . bin2hex(random_bytes(8));
-}
-
-function asset_common_admin_row_payload_values(array $profileFields, array $input): array
-{
-    $childFieldMap = asset_common_child_field_map((int)($profileFields[0]['segment_id'] ?? 0));
-    $fieldMapByKey = [];
-    foreach ($childFieldMap as $field) {
-        $fieldMapByKey[(string)$field['field_key']] = $field;
-    }
-    $normalizedValues = [];
-    foreach ($profileFields as $profileField) {
-        $childFieldId = (int)($profileField['child_field_id'] ?? 0);
-        if ($childFieldId <= 0 || !isset($childFieldMap[$childFieldId])) {
-            continue;
-        }
-        $childField = $childFieldMap[$childFieldId];
-        $rawValue = $input[$childFieldId] ?? null;
-        $normalized = asset_common_normalize_child_field_value($childField, $rawValue, $fieldMapByKey);
-        $normalizedValues[$childFieldId] = (string)($normalized['display'] ?? '');
-    }
-    return $normalizedValues;
-}
-
-function save_asset_common_admin_row(int $profileId, array $input, ?int $rowId = null): void
-{
-    $profile = get_asset_common_profile($profileId, true);
-    if (!$profile) {
-        throw new RuntimeException('Common-row profile not found.');
-    }
-    if ((string)($profile['definition_mode'] ?? '') !== asset_common_definition_mode_superadmin_defined()) {
-        throw new RuntimeException('This profile is not superadmin-defined.');
-    }
-    $profileFields = get_asset_common_profile_fields($profileId);
-    if ($profileFields === []) {
-        throw new RuntimeException('No bound fields are configured for this profile.');
-    }
-    $scope = asset_common_parse_scope_token((string)($input['scope_token'] ?? '0:0'));
-    $sortOrder = max(1, (int)($input['sort_order'] ?? next_sort_order_for_filters('asset_common_admin_rows', ['profile_id' => $profileId])));
-    $segmentFieldMapById = [];
-    $segmentFieldMapByKey = [];
-    foreach (get_asset_fields(true, (int)$profile['segment_id']) as $fieldRow) {
-        $segmentFieldMapById[(int)$fieldRow['id']] = $fieldRow;
-        $segmentFieldMapByKey[(string)$fieldRow['field_key']] = $fieldRow;
-    }
-    $values = [];
-    foreach ($profileFields as $profileField) {
-        $childFieldId = (int)($profileField['child_field_id'] ?? 0);
-        if ($childFieldId <= 0 || !isset($segmentFieldMapById[$childFieldId])) {
-            continue;
-        }
-        $fieldMeta = $segmentFieldMapById[$childFieldId];
-        $errors = [];
-        $normalized = normalize_asset_field_value($fieldMeta, $input['values'][$childFieldId] ?? null, $segmentFieldMapByKey, $errors);
-        if ($errors !== []) {
-            throw new RuntimeException(implode(' ', array_values($errors)));
-        }
-        $values[$childFieldId] = (string)($normalized['display'] ?? '');
-    }
-
-    db()->beginTransaction();
-    try {
-        if ($rowId !== null && $rowId > 0) {
-            $stmt = db()->prepare('SELECT id FROM asset_common_admin_rows WHERE id = ? AND profile_id = ? LIMIT 1');
-            $stmt->execute([$rowId, $profileId]);
-            if (!(int)$stmt->fetchColumn()) {
-                throw new RuntimeException('Admin row not found.');
-            }
-            db()->prepare('UPDATE asset_common_admin_rows SET scope_office_type = ?, scope_office_id = ?, sort_order = ?, active_status = 1, updated_at = NOW() WHERE id = ?')->execute([$scope['office_type'], $scope['office_id'], $sortOrder, $rowId]);
-        } else {
-            db()->prepare('INSERT INTO asset_common_admin_rows (profile_id, stable_row_key, scope_office_type, scope_office_id, sort_order, active_status, created_at) VALUES (?, ?, ?, ?, ?, 1, NOW())')->execute([
-                $profileId,
-                asset_common_admin_row_key(),
-                $scope['office_type'],
-                $scope['office_id'],
-                $sortOrder,
-            ]);
-            $rowId = (int)db()->lastInsertId();
-        }
-        foreach ($values as $childFieldId => $valueText) {
-            $existsStmt = db()->prepare('SELECT id FROM asset_common_admin_row_values WHERE row_id = ? AND child_field_id = ? LIMIT 1');
-            $existsStmt->execute([$rowId, $childFieldId]);
-            $existingId = (int)($existsStmt->fetchColumn() ?: 0);
-            if ($existingId > 0) {
-                db()->prepare('UPDATE asset_common_admin_row_values SET value_text = ?, updated_at = NOW() WHERE id = ?')->execute([$valueText, $existingId]);
-            } else {
-                db()->prepare('INSERT INTO asset_common_admin_row_values (row_id, child_field_id, value_text, created_at) VALUES (?, ?, ?, NOW())')->execute([$rowId, $childFieldId, $valueText]);
-            }
-        }
-        db()->commit();
-        asset_sync_common_rows_for_profile_across_offices($profileId);
-    } catch (Throwable $e) {
-        if (db()->inTransaction()) {
-            db()->rollBack();
-        }
-        throw $e;
-    }
-}
-
-function delete_asset_common_admin_row(int $profileId, int $rowId): void
-{
-    $stmt = db()->prepare('SELECT id FROM asset_common_admin_rows WHERE id = ? AND profile_id = ? LIMIT 1');
-    $stmt->execute([$rowId, $profileId]);
-    if (!(int)$stmt->fetchColumn()) {
-        throw new RuntimeException('Admin row not found.');
-    }
-    db()->beginTransaction();
-    try {
-        db()->prepare('DELETE FROM asset_common_admin_row_values WHERE row_id = ?')->execute([$rowId]);
-        db()->prepare('DELETE FROM asset_common_admin_rows WHERE id = ?')->execute([$rowId]);
-        db()->commit();
-        asset_sync_common_rows_for_profile_across_offices($profileId);
-    } catch (Throwable $e) {
-        if (db()->inTransaction()) {
-            db()->rollBack();
-        }
-        throw $e;
-    }
-}
-
-function asset_common_admin_template_headers(int $profileId): array
-{
-    $headers = ['Scope', 'Sort Order'];
-    foreach (get_asset_common_profile_fields($profileId) as $profileField) {
-        $headers[] = (string)($profileField['child_field_label'] ?? 'Field');
-    }
-    return $headers;
-}
-
-function build_asset_common_admin_template_workbook(int $profileId): \PhpOffice\PhpSpreadsheet\Spreadsheet
-{
-    ensure_library('PhpOffice\\PhpSpreadsheet\\Spreadsheet', 'PhpSpreadsheet is not installed.');
-    $profile = get_asset_common_profile($profileId, true);
-    if (!$profile) {
-        throw new RuntimeException('Common-row profile not found.');
-    }
-    $profileFields = get_asset_common_profile_fields($profileId);
-    $existingRows = get_asset_common_admin_rows_detailed($profileId);
-    $scopeOptions = asset_common_scope_options();
-
-    $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
-    export_apply_spreadsheet_font($spreadsheet);
-    $sheet = $spreadsheet->getActiveSheet();
-    $sheet->setTitle('common_rows');
-    $dropdownSheet = new \PhpOffice\PhpSpreadsheet\Worksheet\Worksheet($spreadsheet, 'scope_options');
-    $spreadsheet->addSheet($dropdownSheet);
-    $dropdownSheet->setSheetState(\PhpOffice\PhpSpreadsheet\Worksheet\Worksheet::SHEETSTATE_HIDDEN);
-    $spreadsheet->setActiveSheetIndex(0);
-
-    $headers = asset_common_admin_template_headers($profileId);
-    foreach ($headers as $index => $label) {
-        $columnIndex = $index + 1;
-        $cell = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($columnIndex) . '1';
-        $sheet->setCellValue($cell, $label);
-        $sheet->getColumnDimensionByColumn($columnIndex)->setWidth($index === 0 ? 36 : 22);
-    }
-    $sheet->getStyle('A1:' . \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex(count($headers)) . '1')->applyFromArray([
-        'font' => ['bold' => true],
-        'fill' => [
-            'fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
-            'startColor' => ['rgb' => 'EAF2FF'],
-        ],
-    ]);
-
-    $dropdownSheet->setCellValue('A1', 'Scope');
-    $scopeRow = 2;
-    foreach ($scopeOptions as $label) {
-        $dropdownSheet->setCellValue('A' . $scopeRow, $label);
-        $scopeRow++;
-    }
-    $scopeRange = '$A$2:$A$' . max(2, $scopeRow - 1);
-    $spreadsheet->addNamedRange(new \PhpOffice\PhpSpreadsheet\NamedRange('COMMON_SCOPE_OPTIONS', $dropdownSheet, $scopeRange));
-
-    $rowNumber = 2;
-    foreach ($existingRows as $row) {
-        $sheet->setCellValue('A' . $rowNumber, (string)($row['scope_label'] ?? asset_common_scope_label(0, 0)));
-        $sheet->setCellValue('B' . $rowNumber, (int)($row['sort_order'] ?? 0));
-        foreach ($profileFields as $offset => $profileField) {
-            $childFieldId = (int)($profileField['child_field_id'] ?? 0);
-            $column = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($offset + 3);
-            $sheet->setCellValueExplicit($column . $rowNumber, (string)($row['values'][$childFieldId] ?? ''), \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
-        }
-        $rowNumber++;
-    }
-    if ($rowNumber === 2) {
-        $sheet->setCellValue('A2', 'All Offices (Global)');
-        $sheet->setCellValue('B2', 10);
-    }
-
-    $validationEnd = max($rowNumber + 25, 100);
-    for ($row = 2; $row <= $validationEnd; $row++) {
-        $validation = $sheet->getCell('A' . $row)->getDataValidation();
-        $validation->setType(\PhpOffice\PhpSpreadsheet\Cell\DataValidation::TYPE_LIST);
-        $validation->setFormula1('=COMMON_SCOPE_OPTIONS');
-        $validation->setAllowBlank(false);
-        $validation->setShowDropDown(true);
-        $validation->setShowErrorMessage(true);
-        $validation->setErrorTitle('Invalid Scope');
-        $validation->setError('Choose a valid scope from dropdown.');
-    }
-
-    return $spreadsheet;
-}
-
-function output_asset_common_admin_template_download(int $profileId): void
-{
-    $workbook = build_asset_common_admin_template_workbook($profileId);
-    $profile = get_asset_common_profile($profileId, true);
-    $filename = 'common_rows_profile_' . $profileId . '_segment_' . asset_template_safe_sheet_name((string)($profile['segment_id'] ?? 'segment')) . '.xlsx';
-    header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    header('Content-Disposition: attachment; filename="' . $filename . '"');
-    header('Cache-Control: max-age=0');
-    $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($workbook);
-    $writer->setPreCalculateFormulas(false);
-    $writer->save('php://output');
-    exit;
-}
-
-function import_asset_common_admin_rows_from_template(int $profileId, array $file): array
-{
-    if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK || empty($file['tmp_name'])) {
-        throw new RuntimeException('Please choose a valid Excel file.');
-    }
-    ensure_library('PhpOffice\\PhpSpreadsheet\\IOFactory', 'PhpSpreadsheet is not installed.');
-    $profile = get_asset_common_profile($profileId, true);
-    if (!$profile) {
-        throw new RuntimeException('Common-row profile not found.');
-    }
-    $profileFields = get_asset_common_profile_fields($profileId);
-    if ($profileFields === []) {
-        throw new RuntimeException('No bound fields are configured for this profile.');
-    }
-    $scopeOptions = array_flip(asset_common_scope_options());
-    $fieldMetaById = [];
-    $fieldMapByKey = [];
-    foreach (get_asset_fields(true, (int)$profile['segment_id']) as $fieldRow) {
-        $fieldMetaById[(int)$fieldRow['id']] = $fieldRow;
-        $fieldMapByKey[(string)$fieldRow['field_key']] = $fieldRow;
-    }
-    $spreadsheet = \PhpOffice\PhpSpreadsheet\IOFactory::load((string)$file['tmp_name']);
-    $sheet = $spreadsheet->getSheetByName('common_rows') ?: $spreadsheet->getActiveSheet();
-    $rows = $sheet->toArray(null, false, false, false);
-    if (!$rows || count($rows) < 2) {
-        throw new RuntimeException('Template has no data rows.');
-    }
-
-    $parsedRows = [];
-    foreach ($rows as $index => $row) {
-        if ($index === 0) {
-            continue;
-        }
-        $scopeLabel = trim((string)($row[0] ?? ''));
-        $sortOrder = (int)($row[1] ?? 0);
-        $hasPayload = $scopeLabel !== '' || $sortOrder > 0;
-        foreach ($profileFields as $offset => $profileField) {
-            if (trim((string)($row[$offset + 2] ?? '')) !== '') {
-                $hasPayload = true;
-                break;
-            }
-        }
-        if (!$hasPayload) {
-            continue;
-        }
-        if (!isset($scopeOptions[$scopeLabel])) {
-            throw new RuntimeException('Invalid scope label found in template row ' . ($index + 1) . '.');
-        }
-        $scope = asset_common_parse_scope_token((string)$scopeOptions[$scopeLabel]);
-        $values = [];
-        foreach ($profileFields as $offset => $profileField) {
-            $childFieldId = (int)($profileField['child_field_id'] ?? 0);
-            if ($childFieldId <= 0 || !isset($fieldMetaById[$childFieldId])) {
-                continue;
-            }
-            $fieldMeta = $fieldMetaById[$childFieldId];
-            $errors = [];
-            $normalized = normalize_asset_field_value($fieldMeta, $row[$offset + 2] ?? null, $fieldMapByKey, $errors);
-            if ($errors) {
-                throw new RuntimeException('Row ' . ($index + 1) . ': ' . implode(' ', array_values($errors)));
-            }
-            $values[$childFieldId] = (string)($normalized['display'] ?? '');
-        }
-        $parsedRows[] = [
-            'scope_office_type' => (int)$scope['office_type'],
-            'scope_office_id' => (int)$scope['office_id'],
-            'sort_order' => max(1, $sortOrder > 0 ? $sortOrder : (($index + 1) * 10)),
-            'values' => $values,
-        ];
-    }
-
-    db()->beginTransaction();
-    try {
-        $existingRowIds = db()->prepare('SELECT id FROM asset_common_admin_rows WHERE profile_id = ?');
-        $existingRowIds->execute([$profileId]);
-        $rowIds = array_map('intval', $existingRowIds->fetchAll(PDO::FETCH_COLUMN) ?: []);
-        if ($rowIds) {
-            $placeholders = implode(',', array_fill(0, count($rowIds), '?'));
-            db()->prepare("DELETE FROM asset_common_admin_row_values WHERE row_id IN ({$placeholders})")->execute($rowIds);
-        }
-        db()->prepare('DELETE FROM asset_common_admin_rows WHERE profile_id = ?')->execute([$profileId]);
-        foreach ($parsedRows as $parsedRow) {
-            db()->prepare('INSERT INTO asset_common_admin_rows (profile_id, stable_row_key, scope_office_type, scope_office_id, sort_order, active_status, created_at) VALUES (?, ?, ?, ?, ?, 1, NOW())')->execute([
-                $profileId,
-                asset_common_admin_row_key(),
-                $parsedRow['scope_office_type'],
-                $parsedRow['scope_office_id'],
-                $parsedRow['sort_order'],
-            ]);
-            $rowId = (int)db()->lastInsertId();
-            foreach ($parsedRow['values'] as $childFieldId => $valueText) {
-                db()->prepare('INSERT INTO asset_common_admin_row_values (row_id, child_field_id, value_text, created_at) VALUES (?, ?, ?, NOW())')->execute([$rowId, $childFieldId, $valueText]);
-            }
-        }
-        db()->commit();
-    } catch (Throwable $e) {
-        if (db()->inTransaction()) {
-            db()->rollBack();
-        }
-        throw $e;
-    }
-
-    asset_sync_common_rows_for_profile_across_offices($profileId, (int)(current_user()['id'] ?? 0));
-    return ['imported' => count($parsedRows)];
-}
-
-function asset_common_existing_generated_assets(int $profileId, int $officeType, int $officeId): array
-{
-    $stmt = db()->prepare(
-        'SELECT id, common_row_key, deleted_at
-         FROM assets
-         WHERE common_profile_id = ?
-           AND office_type = ?
-           AND office_id = ?
-           AND is_user_added_row = 0'
-    );
-    $stmt->execute([$profileId, $officeType, $officeId]);
-    $map = [];
-    foreach ($stmt->fetchAll() as $row) {
-        $map[(string)$row['common_row_key']] = $row;
-    }
-    return $map;
-}
-
-function asset_common_child_field_map(int $segmentId): array
-{
-    $fieldMap = [];
-    foreach (get_asset_fields(true, $segmentId) as $field) {
-        $fieldMap[(int)$field['id']] = $field;
-    }
-    return $fieldMap;
-}
-
-function asset_common_normalize_child_field_value(array $childField, mixed $rawValue, array $fieldMap): array
-{
-    $errors = [];
-    return normalize_asset_field_value($childField, $rawValue, $fieldMap, $errors);
-}
-
-function asset_common_build_user_defined_rows(array $profile, array $bindings, array $childFieldMap, int $officeType, int $officeId): array
-{
-    $parentSegmentId = (int)($profile['parent_segment_id'] ?? 0);
-    $parentCategoryId = (int)($profile['parent_category_id'] ?? 0);
-    if ($parentSegmentId <= 0 || $parentCategoryId <= 0) {
-        return [];
-    }
-    $sourceAssets = asset_common_fetch_source_assets($parentSegmentId, $parentCategoryId, $officeType, $officeId);
-    if ($sourceAssets === []) {
-        return [];
-    }
-    $fieldMapByKey = [];
-    foreach ($childFieldMap as $field) {
-        $fieldMapByKey[(string)$field['field_key']] = $field;
-    }
-    $desiredRows = [];
-    foreach ($sourceAssets as $sourceAsset) {
-        $fieldValues = [];
-        foreach ($bindings as $binding) {
-            $childFieldId = (int)($binding['child_field_id'] ?? 0);
-            $parentFieldKey = trim((string)($binding['parent_field_key'] ?? ''));
-            if ($childFieldId <= 0 || $parentFieldKey === '' || !isset($childFieldMap[$childFieldId])) {
-                continue;
-            }
-            $childField = $childFieldMap[$childFieldId];
-            $normalized = asset_common_normalize_child_field_value(
-                $childField,
-                $sourceAsset['values'][$parentFieldKey] ?? null,
-                $fieldMapByKey
-            );
-            $fieldValues[(string)$childField['field_key']] = $normalized;
-        }
-        $desiredRows[] = [
-            'row_key' => asset_common_generated_row_key_for_source_asset((int)$sourceAsset['id']),
-            'source_type' => asset_common_source_type_user_defined(),
-            'source_asset_id' => (int)$sourceAsset['id'],
-            'field_values' => $fieldValues,
-            'context_asset' => $sourceAsset,
-        ];
-    }
-    return $desiredRows;
-}
-
-function asset_common_build_superadmin_defined_rows(array $profile, array $bindings, array $childFieldMap, int $officeType, int $officeId): array
-{
-    $adminRows = asset_common_fetch_admin_rows((int)$profile['id'], $officeType, $officeId);
-    if ($adminRows === []) {
-        return [];
-    }
-    $fieldMapByKey = [];
-    foreach ($childFieldMap as $field) {
-        $fieldMapByKey[(string)$field['field_key']] = $field;
-    }
-    $desiredRows = [];
-    foreach ($adminRows as $adminRow) {
-        $fieldValues = [];
-        foreach ($bindings as $binding) {
-            $childFieldId = (int)($binding['child_field_id'] ?? 0);
-            if ($childFieldId <= 0 || !isset($childFieldMap[$childFieldId])) {
-                continue;
-            }
-            $childField = $childFieldMap[$childFieldId];
-            $normalized = asset_common_normalize_child_field_value(
-                $childField,
-                $adminRow['values'][$childFieldId] ?? null,
-                $fieldMapByKey
-            );
-            $fieldValues[(string)$childField['field_key']] = $normalized;
-        }
-        $desiredRows[] = [
-            'row_key' => (string)$adminRow['stable_row_key'],
-            'source_type' => asset_common_source_type_superadmin_defined(),
-            'source_asset_id' => null,
-            'field_values' => $fieldValues,
-            'context_asset' => null,
-        ];
-    }
-    return $desiredRows;
-}
-
-function asset_common_insert_generated_asset(array $profile, int $officeType, int $officeId, string $rowKey, string $sourceType, ?int $sourceAssetId, int $actorUserId): int
-{
-    $stmt = db()->prepare(
-        'INSERT INTO assets (
-            segment_id, asset_number, category_id, subcategory_id, common_profile_id, common_row_key,
-            common_source_type, common_source_asset_id, is_user_added_row, office_type, office_id,
-            active_status, created_by, created_at
-        ) VALUES (?, ?, ?, NULL, ?, ?, ?, ?, 0, ?, ?, 1, ?, NOW())'
-    );
-    $stmt->execute([
-        (int)$profile['segment_id'],
-        'PENDING',
-        (int)$profile['category_id'],
-        (int)$profile['id'],
-        $rowKey,
-        $sourceType,
-        $sourceAssetId,
-        $officeType,
-        $officeId,
-        $actorUserId,
-    ]);
-    $assetId = (int)db()->lastInsertId();
-    $assetNumber = sprintf('AST-%s-%06d', date('Y'), $assetId);
-    db()->prepare('UPDATE assets SET asset_number = ? WHERE id = ?')->execute([$assetNumber, $assetId]);
-    return $assetId;
-}
-
-function asset_common_upsert_generated_asset(array $profile, int $officeType, int $officeId, array $desiredRow, int $actorUserId): void
-{
-    $existingRows = asset_common_existing_generated_assets((int)$profile['id'], $officeType, $officeId);
-    $existingRow = $existingRows[(string)$desiredRow['row_key']] ?? null;
-    $beforeAsset = $existingRow ? get_asset((int)$existingRow['id'], true) : null;
-    $beforeSignature = asset_common_activity_signature($beforeAsset);
-    if ($existingRow) {
-        $assetId = (int)$existingRow['id'];
-        db()->prepare(
-            'UPDATE assets
-             SET segment_id = ?, category_id = ?, subcategory_id = NULL, common_profile_id = ?, common_row_key = ?,
-                 common_source_type = ?, common_source_asset_id = ?, is_user_added_row = 0, office_type = ?, office_id = ?,
-                 active_status = 1, deleted_at = NULL, updated_by = ?, updated_at = NOW()
-             WHERE id = ?'
-        )->execute([
-            (int)$profile['segment_id'],
-            (int)$profile['category_id'],
-            (int)$profile['id'],
-            (string)$desiredRow['row_key'],
-            (string)$desiredRow['source_type'],
-            $desiredRow['source_asset_id'] !== null ? (int)$desiredRow['source_asset_id'] : null,
-            $officeType,
-            $officeId,
-            $actorUserId,
-            $assetId,
-        ]);
-    } else {
-        $assetId = asset_common_insert_generated_asset(
-            $profile,
-            $officeType,
-            $officeId,
-            (string)$desiredRow['row_key'],
-            (string)$desiredRow['source_type'],
-            $desiredRow['source_asset_id'] !== null ? (int)$desiredRow['source_asset_id'] : null,
-            $actorUserId
-        );
-    }
-    save_asset_values($assetId, (array)($desiredRow['field_values'] ?? []));
-    $afterAsset = get_asset($assetId, true);
-    asset_filter_index_sync_asset_change($beforeAsset, $afterAsset);
-    $afterSignature = asset_common_activity_signature($afterAsset);
-    if (!$beforeAsset && $afterAsset) {
-        add_asset_activity_log_with_segment(
-            (int)($afterAsset['segment_id'] ?? asset_default_segment_id()),
-            $assetId,
-            $actorUserId,
-            'common_row_generated',
-            'Common row generated.',
-            asset_common_activity_details($afterAsset)
-        );
-    } elseif ($beforeAsset && $afterAsset && $beforeSignature !== $afterSignature) {
-        add_asset_activity_log_with_segment(
-            (int)($afterAsset['segment_id'] ?? asset_default_segment_id()),
-            $assetId,
-            $actorUserId,
-            'common_row_synced',
-            'Common row synchronized.',
-            asset_common_activity_details($afterAsset)
-        );
-    }
-}
-
-function asset_common_cleanup_generated_assets(array $profile, int $officeType, int $officeId, array $desiredRowKeys, int $actorUserId): void
-{
-    $existingRows = asset_common_existing_generated_assets((int)$profile['id'], $officeType, $officeId);
-    $desiredLookup = array_fill_keys($desiredRowKeys, true);
-    foreach ($existingRows as $rowKey => $existingRow) {
-        if (isset($desiredLookup[$rowKey])) {
-            continue;
-        }
-        $assetId = (int)($existingRow['id'] ?? 0);
-        if ($assetId <= 0) {
-            continue;
-        }
-        $beforeAsset = get_asset($assetId, true);
-        if (!$beforeAsset || !empty($beforeAsset['deleted_at'])) {
-            continue;
-        }
-        db()->prepare('UPDATE assets SET active_status = 0, deleted_at = NOW(), updated_by = ?, updated_at = NOW() WHERE id = ?')->execute([$actorUserId, $assetId]);
-        asset_filter_index_sync_asset_change($beforeAsset, null);
-        add_asset_activity_log_with_segment(
-            (int)($beforeAsset['segment_id'] ?? asset_default_segment_id()),
-            $assetId,
-            $actorUserId,
-            'common_row_removed',
-            'Common row removed after source change.',
-            asset_common_activity_details($beforeAsset)
-        );
-    }
-}
-
-function asset_sync_common_rows_for_profile_office(int $profileId, int $officeType, int $officeId, ?int $actingUserId = null): void
-{
-    $profile = get_asset_common_profile($profileId);
-    if (!$profile || (int)($profile['active_status'] ?? 0) !== 1 || $officeType <= 0 || $officeId <= 0) {
-        return;
-    }
-    $bindings = get_asset_common_profile_fields($profileId);
-    if ($bindings === []) {
-        return;
-    }
-    $childFieldMap = asset_common_child_field_map((int)$profile['segment_id']);
-    $desiredRows = (string)($profile['definition_mode'] ?? '') === asset_common_definition_mode_superadmin_defined()
-        ? asset_common_build_superadmin_defined_rows($profile, $bindings, $childFieldMap, $officeType, $officeId)
-        : asset_common_build_user_defined_rows($profile, $bindings, $childFieldMap, $officeType, $officeId);
-
-    $actorUserId = asset_common_sync_actor_user_id($actingUserId, $desiredRows[0]['context_asset'] ?? null);
-    db()->beginTransaction();
-    try {
-        $desiredRowKeys = [];
-        foreach ($desiredRows as $desiredRow) {
-            $desiredRowKeys[] = (string)$desiredRow['row_key'];
-            asset_common_upsert_generated_asset($profile, $officeType, $officeId, $desiredRow, $actorUserId);
-        }
-        asset_common_cleanup_generated_assets($profile, $officeType, $officeId, $desiredRowKeys, $actorUserId);
-        db()->commit();
-    } catch (Throwable $e) {
-        if (db()->inTransaction()) {
-            db()->rollBack();
-        }
-        throw $e;
-    }
-}
-
-function asset_sync_common_rows_for_profile_across_offices(int $profileId, ?int $actingUserId = null): void
-{
-    $profile = get_asset_common_profile($profileId);
-    if (!$profile) {
-        return;
-    }
-    $stmt = db()->prepare(
-        'SELECT DISTINCT office_type, office_id
-         FROM assets
-         WHERE (
-                (segment_id = ? AND category_id = ?)
-                OR (common_profile_id = ?)
-               )
-           AND deleted_at IS NULL
-           AND active_status = 1
-           AND office_id > 0
-           AND office_type > 0
-         ORDER BY office_type ASC, office_id ASC'
-    );
-    $stmt->execute([
-        (int)($profile['parent_segment_id'] ?? 0),
-        (int)($profile['parent_category_id'] ?? 0),
-        $profileId,
-    ]);
-    foreach ($stmt->fetchAll() as $scope) {
-        asset_sync_common_rows_for_profile_office(
-            $profileId,
-            (int)($scope['office_type'] ?? 0),
-            (int)($scope['office_id'] ?? 0),
-            $actingUserId
-        );
-    }
-}
-
-function asset_sync_common_rows_for_segment_office(int $segmentId, int $officeType, int $officeId, ?int $actingUserId = null): void
-{
-    if ($segmentId <= 0 || $officeType <= 0 || $officeId <= 0) {
-        return;
-    }
-    foreach (get_asset_common_profiles_for_segment($segmentId) as $profile) {
-        asset_sync_common_rows_for_profile_office((int)$profile['id'], $officeType, $officeId, $actingUserId);
-    }
-}
-
-function asset_sync_common_rows_after_asset_change(?array $beforeAsset, ?array $afterAsset, ?int $actingUserId = null): void
-{
-    $segmentScopes = [];
-    $profileScopes = [];
-    $queueSegmentScope = static function (?array $asset) use (&$segmentScopes): void {
-        if (!$asset) {
-            return;
-        }
-        $segmentId = (int)($asset['segment_id'] ?? 0);
-        $officeType = (int)($asset['office_type'] ?? 0);
-        $officeId = (int)($asset['office_id'] ?? 0);
-        if ($segmentId <= 0 || $officeType <= 0 || $officeId <= 0) {
-            return;
-        }
-        $segmentScopes[$segmentId . ':' . $officeType . ':' . $officeId] = [$segmentId, $officeType, $officeId];
-    };
-    $queueDependentProfiles = static function (?array $asset) use (&$profileScopes): void {
-        if (!$asset) {
-            return;
-        }
-        $segmentId = (int)($asset['segment_id'] ?? 0);
-        $categoryId = (int)($asset['category_id'] ?? 0);
-        $officeType = (int)($asset['office_type'] ?? 0);
-        $officeId = (int)($asset['office_id'] ?? 0);
-        if ($segmentId <= 0 || $categoryId <= 0 || $officeType <= 0 || $officeId <= 0) {
-            return;
-        }
-        foreach (get_asset_common_profiles_by_parent($segmentId, $categoryId) as $profile) {
-            $profileScopes[(int)$profile['id'] . ':' . $officeType . ':' . $officeId] = [(int)$profile['id'], $officeType, $officeId];
-        }
-    };
-    $queueSegmentScope($beforeAsset);
-    $queueSegmentScope($afterAsset);
-    $queueDependentProfiles($beforeAsset);
-    $queueDependentProfiles($afterAsset);
-
-    foreach ($segmentScopes as [$segmentId, $officeType, $officeId]) {
-        asset_sync_common_rows_for_segment_office($segmentId, $officeType, $officeId, $actingUserId);
-    }
-    foreach ($profileScopes as [$profileId, $officeType, $officeId]) {
-        asset_sync_common_rows_for_profile_office($profileId, $officeType, $officeId, $actingUserId);
-    }
 }
 
 function asset_mandatory_scope_optional(): int
@@ -5337,11 +4187,6 @@ function add_asset_activity_log(int $assetId, int $userId, string $actionType, s
 {
     $asset = get_asset($assetId);
     $segmentId = (int)($asset['segment_id'] ?? asset_default_segment_id());
-    add_asset_activity_log_with_segment($segmentId, $assetId, $userId, $actionType, $summary, $details);
-}
-
-function add_asset_activity_log_with_segment(int $segmentId, int $assetId, int $userId, string $actionType, string $summary, array $details = []): void
-{
     $stmt = db()->prepare(
         'INSERT INTO asset_activity_logs (segment_id, asset_id, user_id, action_type, summary, details, created_at)
          VALUES (?, ?, ?, ?, ?, ?, NOW())'
@@ -6152,8 +4997,6 @@ function create_asset_field(array $payload): void
     $fieldSortOrder = (int)($payload['sort_order'] ?? 0);
     $fieldId = 0;
     $childId = 0;
-    $bindingChange = ['old_profile_id' => 0, 'new_profile_id' => 0];
-    $createdTutorialFiles = [];
     if ($fieldSortOrder <= 0) {
         $fieldSortOrder = next_sort_order_for_filters('asset_fields', ['segment_id' => $segmentId]);
     }
@@ -6213,6 +5056,8 @@ function create_asset_field(array $payload): void
             replace_asset_field_options($childId, $payload['secondary_options'] ?? []);
             asset_assign_field_tutorial_video($fieldId, $payload['tutorial_video_upload'] ?? null, (string)($payload['hosted_tutorial_video_filename'] ?? ''), !empty($payload['remove_hosted_tutorial_video']), $createdTutorialFiles);
             asset_assign_field_tutorial_video($childId, $payload['secondary_tutorial_video_upload'] ?? null, (string)($payload['secondary_hosted_tutorial_video_filename'] ?? ''), !empty($payload['remove_secondary_hosted_tutorial_video']), $createdTutorialFiles);
+            asset_assign_field_tutorial_video($fieldId, $payload['tutorial_video_upload'] ?? null, (string)($payload['hosted_tutorial_video_filename'] ?? ''), !empty($payload['remove_hosted_tutorial_video']), $createdTutorialFiles);
+            asset_assign_field_tutorial_video($childId, $payload['secondary_tutorial_video_upload'] ?? null, (string)($payload['secondary_hosted_tutorial_video_filename'] ?? ''), !empty($payload['remove_secondary_hosted_tutorial_video']), $createdTutorialFiles);
         } else {
             $stmt = db()->prepare('INSERT INTO asset_fields (segment_id, field_key, label, data_type, field_information, video_tutorial_url, number_format_rule, text_max_length, secondary_of_field_id, conditional_map_json, mandatory_scope, is_required, is_displayed, is_import_enabled, is_unique, is_filter_enabled, filter_scope, is_common_download_field, is_download_level1, is_download_filter, is_download_sort, is_download_zip_file_selectable, is_download_token, active_status, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, NOW())');
             $stmt->execute([
@@ -6246,10 +5091,8 @@ function create_asset_field(array $payload): void
             }
             asset_assign_field_tutorial_video($fieldId, $payload['tutorial_video_upload'] ?? null, (string)($payload['hosted_tutorial_video_filename'] ?? ''), !empty($payload['remove_hosted_tutorial_video']), $createdTutorialFiles);
         }
-        $bindingChange = ['old_profile_id' => 0, 'new_profile_id' => 0];
         if ($fieldId > 0) {
-            $payload['acting_user_id'] = (int)(current_user()['id'] ?? 0);
-            $bindingChange = asset_upsert_common_profile_binding($fieldId, $payload);
+            asset_upsert_common_profile_binding($fieldId, $payload);
         }
         db()->commit();
     } catch (Throwable $e) {
@@ -6260,7 +5103,6 @@ function create_asset_field(array $payload): void
     }
     if ($fieldId > 0) {
         asset_filter_index_refresh_field($fieldId, $segmentId);
-        asset_sync_common_profiles_after_binding_change($bindingChange, (int)(current_user()['id'] ?? 0));
     }
     if ($childId > 0) {
         asset_filter_index_refresh_field($childId, $segmentId);
@@ -6275,7 +5117,6 @@ function update_asset_field(int $id, array $payload): void
         throw new RuntimeException('Field not found.');
     }
     $childField = get_asset_conditional_child_field($id, true, $segmentId);
-    $bindingChange = ['old_profile_id' => 0, 'new_profile_id' => 0];
     $createdTutorialFiles = [];
     db()->beginTransaction();
     try {
@@ -6363,8 +5204,7 @@ function update_asset_field(int $id, array $payload): void
             }
             asset_assign_field_tutorial_video($id, $payload['tutorial_video_upload'] ?? null, (string)($payload['hosted_tutorial_video_filename'] ?? ''), !empty($payload['remove_hosted_tutorial_video']), $createdTutorialFiles);
         }
-        $payload['acting_user_id'] = (int)(current_user()['id'] ?? 0);
-        $bindingChange = asset_upsert_common_profile_binding($id, $payload);
+        asset_upsert_common_profile_binding($id, $payload);
         db()->commit();
     } catch (Throwable $e) {
         if (db()->inTransaction()) {
@@ -6378,7 +5218,6 @@ function update_asset_field(int $id, array $payload): void
         throw $e;
     }
     asset_filter_index_refresh_field($id, $segmentId);
-    asset_sync_common_profiles_after_binding_change($bindingChange, (int)(current_user()['id'] ?? 0));
     if ($childField) {
         asset_filter_index_refresh_field((int)$childField['id'], $segmentId);
     }
@@ -6447,7 +5286,7 @@ function delete_asset_field(int $id, ?int $segmentId = null): bool
         $binding = get_asset_common_profile_field_binding_by_child_field($fieldId);
         if ($binding) {
             db()->prepare('DELETE FROM asset_common_profile_fields WHERE child_field_id = ?')->execute([$fieldId]);
-            asset_delete_common_profile_if_empty((int)$binding['profile_id'], (int)(current_user()['id'] ?? 0));
+            asset_delete_common_profile_if_empty((int)$binding['profile_id']);
         }
         db()->prepare('UPDATE asset_fields SET is_common_row_field = 0, updated_at = NOW() WHERE id = ?')->execute([$fieldId]);
     }
@@ -6845,7 +5684,6 @@ function validate_asset_payload(array $input, ?int $assetId = null, array $fileB
 {
     $segmentId = asset_normalize_segment_id(isset($input['segment_id']) ? (int)$input['segment_id'] : null);
     $errors = [];
-    $existingAsset = $assetId ? get_asset($assetId, true) : null;
     $categorySelectionEnabled = asset_category_selection_enabled($segmentId);
     $categoryId = $categorySelectionEnabled ? (int)($input['category_id'] ?? 0) : asset_single_category_id($segmentId);
     $subcategoryEnabled = asset_subcategory_enabled($segmentId);
@@ -6857,17 +5695,6 @@ function validate_asset_payload(array $input, ?int $assetId = null, array $fileB
     }
     if ($subcategoryEnabled && (!$subcategory || ($categoryId > 0 && (int)($subcategory['category_id'] ?? 0) !== $categoryId) || (!is_superadmin() && (int)$subcategory['active_status'] !== 1))) {
         $errors['subcategory_id'] = 'Valid sub-category is required.';
-    }
-    if ($assetId === null && $categoryId > 0 && !asset_common_category_allows_manual_rows($segmentId, $categoryId)) {
-        $errors['category_id'] = 'This category uses fixed common rows. Add new rows is not allowed here.';
-    }
-    if ($existingAsset
-        && !asset_common_asset_is_generated($existingAsset)
-        && $categoryId > 0
-        && !asset_common_category_allows_manual_rows($segmentId, $categoryId)
-        && (int)($existingAsset['category_id'] ?? 0) !== $categoryId
-    ) {
-        $errors['category_id'] = 'This category uses fixed common rows. Manual rows cannot be moved into it.';
     }
 
     $fieldMap = asset_field_map_for_segment(false, $segmentId);
@@ -6917,18 +5744,6 @@ function validate_asset_payload(array $input, ?int $assetId = null, array $fileB
         }
         $values[$fieldKey]['value_option'] = $resolvedChild;
         $values[$fieldKey]['display'] = $resolvedChild;
-    }
-    if ($existingAsset) {
-        if (asset_common_asset_is_generated($existingAsset)) {
-            $categoryId = (int)($existingAsset['category_id'] ?? $categoryId);
-            $subcategoryId = (int)($existingAsset['subcategory_id'] ?? $subcategoryId);
-        }
-        foreach (asset_common_locked_field_keys_for_asset($existingAsset) as $fieldKey) {
-            if (!isset($fieldMap[$fieldKey]) || ($fieldMap[$fieldKey]['data_type'] ?? '') === 'file') {
-                continue;
-            }
-            $values[$fieldKey] = asset_common_current_normalized_value($fieldMap[$fieldKey], $existingAsset);
-        }
     }
 
     return [
@@ -7241,7 +6056,6 @@ function create_asset(array $validated, array $user): int
         $createdAsset = get_asset($assetId, true);
         if ($createdAsset) {
             asset_filter_index_sync_asset_change(null, $createdAsset);
-            asset_sync_common_rows_after_asset_change(null, $createdAsset, (int)($user['id'] ?? 0));
         }
         finalize_asset_file_changes($fileCleanup, true);
         add_log((int)$user['id'], 'assets', $assetId, 'Asset created.');
@@ -7268,17 +6082,12 @@ function persist_asset_record(array $validated, array $user, array &$fileCleanup
     if (!$ctx) {
         throw new RuntimeException('Office context not found.');
     }
-    $profileId = asset_common_profile_id_for_category(
-        asset_normalize_segment_id((int)($validated['segment_id'] ?? 0)),
-        (int)($validated['category_id'] ?? 0)
-    );
-    $stmt = db()->prepare('INSERT INTO assets (segment_id, asset_number, category_id, subcategory_id, common_profile_id, is_user_added_row, office_type, office_id, active_status, created_by, created_at) VALUES (?, ?, ?, ?, ?, 1, ?, ?, 1, ?, NOW())');
+    $stmt = db()->prepare('INSERT INTO assets (segment_id, asset_number, category_id, subcategory_id, office_type, office_id, active_status, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, 1, ?, NOW())');
     $stmt->execute([
         asset_normalize_segment_id((int)($validated['segment_id'] ?? 0)),
         'PENDING',
         $validated['category_id'] > 0 ? $validated['category_id'] : null,
         $validated['subcategory_id'] > 0 ? $validated['subcategory_id'] : null,
-        $profileId,
         $ctx['office_type'],
         $ctx['office_id'],
         (int)$user['id'],
@@ -7302,16 +6111,12 @@ function update_asset(int $assetId, array $validated, array $user): void
     $logDetails = build_asset_update_log_details($asset, $validated, $fieldMap);
     $fileCleanup = ['new_paths' => [], 'delete_paths' => []];
     $beforeAsset = $asset;
-    $profileId = asset_common_asset_is_generated($asset)
-        ? (int)($asset['common_profile_id'] ?? 0)
-        : (asset_common_profile_id_for_category($segmentId, (int)($validated['category_id'] ?? 0)) ?? null);
     db()->beginTransaction();
     try {
-        $stmt = db()->prepare('UPDATE assets SET category_id = ?, subcategory_id = ?, common_profile_id = ?, updated_by = ?, updated_at = NOW() WHERE id = ?');
+        $stmt = db()->prepare('UPDATE assets SET category_id = ?, subcategory_id = ?, updated_by = ?, updated_at = NOW() WHERE id = ?');
         $stmt->execute([
             $validated['category_id'] > 0 ? $validated['category_id'] : null,
             $validated['subcategory_id'] > 0 ? $validated['subcategory_id'] : null,
-            $profileId,
             (int)$user['id'],
             $assetId,
         ]);
@@ -7320,7 +6125,6 @@ function update_asset(int $assetId, array $validated, array $user): void
         db()->commit();
         $afterAsset = get_asset($assetId, true);
         asset_filter_index_sync_asset_change($beforeAsset, $afterAsset);
-        asset_sync_common_rows_after_asset_change($beforeAsset, $afterAsset, (int)($user['id'] ?? 0));
         finalize_asset_file_changes($fileCleanup, true);
         add_log((int)$user['id'], 'assets', $assetId, 'Asset updated.');
         add_asset_activity_log(
@@ -7509,12 +6313,8 @@ function soft_delete_assets(array $assetIds, array $user): int
         if (!$asset || !user_can_manage_asset($user, $asset) || !empty($asset['deleted_at'])) {
             continue;
         }
-        if (asset_common_asset_is_generated($asset)) {
-            continue;
-        }
         db()->prepare('UPDATE assets SET active_status = 0, deleted_at = NOW(), updated_by = ?, updated_at = NOW() WHERE id = ?')->execute([(int)$user['id'], $assetId]);
         asset_filter_index_sync_asset_change($asset, null);
-        asset_sync_common_rows_after_asset_change($asset, null, (int)($user['id'] ?? 0));
         add_log((int)$user['id'], 'assets', $assetId, 'Asset soft deleted.');
         $deleted++;
     }
@@ -12876,11 +11676,6 @@ function asset_template_data_sheet_name(?int $segmentId = null): string
     return asset_template_safe_sheet_name(asset_template_segment_display_name($segmentId) . '_autogen');
 }
 
-function asset_template_metadata_sheet_name(array $taken = []): string
-{
-    return asset_template_safe_sheet_name('row_meta', $taken);
-}
-
 function asset_template_dropdown_sheet_name(?int $segmentId = null, array $taken = []): string
 {
     return asset_template_safe_sheet_name(asset_template_segment_display_name($segmentId) . '_autogen_dropdowns', $taken);
@@ -13145,18 +11940,12 @@ function build_asset_template_autogen_workbook(?int $segmentId = null): \PhpOffi
     export_apply_spreadsheet_font($spreadsheet);
     $dataSheet = $spreadsheet->getActiveSheet();
     $dataSheet->setTitle(asset_template_data_sheet_name($segmentId));
-    $metaSheet = new \PhpOffice\PhpSpreadsheet\Worksheet\Worksheet(
-        $spreadsheet,
-        asset_template_metadata_sheet_name([$dataSheet->getTitle()])
-    );
     $dropdownSheet = new \PhpOffice\PhpSpreadsheet\Worksheet\Worksheet(
         $spreadsheet,
-        asset_template_dropdown_sheet_name($segmentId, [$dataSheet->getTitle(), $metaSheet->getTitle()])
+        asset_template_dropdown_sheet_name($segmentId, [$dataSheet->getTitle()])
     );
-    $spreadsheet->addSheet($metaSheet);
     $spreadsheet->addSheet($dropdownSheet);
     $spreadsheet->setActiveSheetIndex(0);
-    $metaSheet->setSheetState(\PhpOffice\PhpSpreadsheet\Worksheet\Worksheet::SHEETSTATE_HIDDEN);
     $dropdownSheet->setSheetState(\PhpOffice\PhpSpreadsheet\Worksheet\Worksheet::SHEETSTATE_HIDDEN);
 
     $dataSheet->setShowGridlines(false);
@@ -13258,30 +12047,6 @@ function build_asset_template_autogen_workbook(?int $segmentId = null): \PhpOffi
     $dataSheet->getRowDimension(1)->setRowHeight(72);
     for ($row = $startRow; $row <= $endRow; $row++) {
         $dataSheet->setCellValueExplicit($columnLetters['serial'] . $row, (string)($row - 1), \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
-    }
-
-    $templateRows = build_asset_template_rows($segmentId, current_user());
-    $metaSheet->setCellValue('A1', 'row_number');
-    $metaSheet->setCellValue('B1', 'asset_id');
-    foreach ($templateRows as $offset => $templateRow) {
-        $row = $startRow + $offset;
-        if ($row > $endRow) {
-            break;
-        }
-        foreach (($templateRow['values'] ?? []) as $fieldKey => $value) {
-            if (!isset($columnLetters[$fieldKey])) {
-                continue;
-            }
-            $dataSheet->setCellValueExplicit(
-                $columnLetters[$fieldKey] . $row,
-                (string)$value,
-                \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING
-            );
-        }
-        if ((int)($templateRow['asset_id'] ?? 0) > 0) {
-            $metaSheet->setCellValue('A' . ($offset + 2), $row);
-            $metaSheet->setCellValue('B' . ($offset + 2), (int)$templateRow['asset_id']);
-        }
     }
 
     $requiredRefs = [];
@@ -13432,35 +12197,11 @@ function build_asset_template_autogen_workbook(?int $segmentId = null): \PhpOffi
         }
     }
 
-    foreach ($templateRows as $offset => $templateRow) {
-        $row = $startRow + $offset;
-        if ($row > $endRow) {
-            break;
-        }
-        foreach ((array)($templateRow['locked_keys'] ?? []) as $fieldKey) {
-            if (!isset($columnLetters[$fieldKey])) {
-                continue;
-            }
-            $cellRef = $columnLetters[$fieldKey] . $row;
-            $dataSheet->getStyle($cellRef)
-                ->getProtection()
-                ->setLocked(\PhpOffice\PhpSpreadsheet\Style\Protection::PROTECTION_PROTECTED);
-            $dataSheet->getStyle($cellRef)->applyFromArray([
-                'fill' => [
-                    'fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
-                    'startColor' => ['rgb' => 'F5F7FA'],
-                ],
-            ]);
-        }
-    }
-
     $dataSheet->getProtection()->setPassword('1234');
     $dataSheet->getProtection()->setSheet(true);
     $dataSheet->getProtection()->setSort(false);
     $dataSheet->getProtection()->setInsertRows(false);
     $dataSheet->getProtection()->setFormatCells(false);
-    $metaSheet->getProtection()->setPassword('1234');
-    $metaSheet->getProtection()->setSheet(true);
     $dropdownSheet->getProtection()->setPassword('1234');
     $dropdownSheet->getProtection()->setSheet(true);
 
@@ -13489,164 +12230,16 @@ function asset_template_headers(?int $segmentId = null): array
     return $headers;
 }
 
-function asset_template_prefill_rows(?int $segmentId = null, ?array $user = null): array
+function build_asset_template_rows(?int $segmentId = null): array
 {
-    $segmentId = asset_normalize_segment_id($segmentId);
-    $ctx = current_office_context($user);
-    if ($segmentId <= 0 || !$ctx) {
-        return [];
+    $row = [];
+    if (asset_category_selection_enabled($segmentId)) {
+        $row['category'] = '';
     }
-
-    asset_sync_common_rows_for_segment_office(
-        $segmentId,
-        (int)$ctx['office_type'],
-        (int)$ctx['office_id'],
-        (int)($user['id'] ?? 0)
-    );
-
-    $stmt = db()->prepare(
-        'SELECT a.*, c.name AS category_name, s.name AS subcategory_name
-         FROM assets a
-         LEFT JOIN asset_categories c ON c.id = a.category_id AND c.segment_id = a.segment_id
-         LEFT JOIN asset_subcategories s ON s.id = a.subcategory_id AND s.segment_id = a.segment_id
-         WHERE a.segment_id = ?
-           AND a.office_type = ?
-           AND a.office_id = ?
-           AND a.common_profile_id IS NOT NULL
-           AND a.common_profile_id > 0
-           AND a.deleted_at IS NULL
-           AND a.active_status = 1
-         ORDER BY a.category_id ASC, a.id ASC'
-    );
-    $stmt->execute([$segmentId, (int)$ctx['office_type'], (int)$ctx['office_id']]);
-    $assets = $stmt->fetchAll();
-    if (!$assets) {
-        return [];
+    if (asset_subcategory_enabled($segmentId)) {
+        $row['subcategory'] = '';
     }
-
-    $valuesByAsset = get_asset_values_for_assets(array_map(static fn(array $row): int => (int)$row['id'], $assets));
-    $rows = [];
-    foreach ($assets as $asset) {
-        $assetId = (int)($asset['id'] ?? 0);
-        if ($assetId <= 0) {
-            continue;
-        }
-        $asset['values'] = $valuesByAsset[$assetId] ?? [];
-        $values = [];
-        if (asset_category_selection_enabled($segmentId)) {
-            $values['category'] = (string)($asset['category_name'] ?? '');
-        }
-        if (asset_subcategory_enabled($segmentId)) {
-            $values['subcategory'] = (string)($asset['subcategory_name'] ?? '');
-        }
-        foreach (get_asset_fields(false, $segmentId) as $field) {
-            if ((int)$field['is_import_enabled'] !== 1 || (int)$field['active_status'] !== 1) {
-                continue;
-            }
-            $fieldKey = (string)$field['field_key'];
-            $values[$fieldKey] = (string)($asset['values'][$fieldKey] ?? '');
-        }
-        $lockedKeys = asset_common_asset_is_generated($asset)
-            ? asset_common_locked_field_keys_for_asset($asset)
-            : [];
-        if (asset_category_selection_enabled($segmentId)) {
-            $lockedKeys[] = 'category';
-        }
-        if (asset_subcategory_enabled($segmentId)) {
-            $lockedKeys[] = 'subcategory';
-        }
-        $rows[] = [
-            'asset_id' => $assetId,
-            'values' => $values,
-            'locked_keys' => array_values(array_unique(array_filter($lockedKeys))),
-        ];
-    }
-
-    return $rows;
-}
-
-function build_asset_template_rows(?int $segmentId = null, ?array $user = null): array
-{
-    return asset_template_prefill_rows($segmentId, $user);
-}
-
-function asset_import_metadata_sheet_name(): string
-{
-    return 'row_meta';
-}
-
-function asset_import_extract_metadata_map(string $tmpName): array
-{
-    ensure_library('PhpOffice\\PhpSpreadsheet\\IOFactory', 'PhpSpreadsheet is not installed.');
-    $reader = PhpOffice\PhpSpreadsheet\IOFactory::createReaderForFile($tmpName);
-    $reader->setReadDataOnly(true);
-    if (method_exists($reader, 'setReadEmptyCells')) {
-        $reader->setReadEmptyCells(false);
-    }
-    if (method_exists($reader, 'listWorksheetNames')) {
-        try {
-            $sheetNames = $reader->listWorksheetNames($tmpName);
-            $metaSheetName = null;
-            foreach ($sheetNames as $sheetName) {
-                if (strcasecmp(trim((string)$sheetName), asset_import_metadata_sheet_name()) === 0) {
-                    $metaSheetName = (string)$sheetName;
-                    break;
-                }
-            }
-            if ($metaSheetName !== null && method_exists($reader, 'setLoadSheetsOnly')) {
-                $reader->setLoadSheetsOnly([$metaSheetName]);
-            } else {
-                return [];
-            }
-        } catch (Throwable $e) {
-            return [];
-        }
-    } else {
-        return [];
-    }
-
-    $spreadsheet = $reader->load($tmpName);
-    $sheet = $spreadsheet->getSheetByName(asset_import_metadata_sheet_name());
-    if (!$sheet) {
-        foreach ($spreadsheet->getWorksheetIterator() as $worksheet) {
-            if (strcasecmp(trim((string)$worksheet->getTitle()), asset_import_metadata_sheet_name()) === 0) {
-                $sheet = $worksheet;
-                break;
-            }
-        }
-    }
-    if (!$sheet) {
-        return [];
-    }
-
-    $rows = $sheet->toArray(null, false, false, false);
-    $map = [];
-    foreach ($rows as $index => $row) {
-        if ($index === 0) {
-            continue;
-        }
-        $rowNumber = (int)($row[0] ?? 0);
-        $assetId = (int)($row[1] ?? 0);
-        if ($rowNumber > 0 && $assetId > 0) {
-            $map[$rowNumber] = $assetId;
-        }
-    }
-    return $map;
-}
-
-function asset_import_target_asset(int $assetId, ?int $segmentId = null): ?array
-{
-    if ($assetId <= 0) {
-        return null;
-    }
-    $asset = get_asset($assetId, true);
-    if (!$asset || !empty($asset['deleted_at'])) {
-        return null;
-    }
-    if ($segmentId !== null && asset_normalize_segment_id((int)($asset['segment_id'] ?? 0)) !== asset_normalize_segment_id($segmentId)) {
-        return null;
-    }
-    return $asset;
+    return [$row];
 }
 
 function asset_import_detect_target_sheet_name($reader, string $tmpName): ?string
@@ -13865,7 +12458,6 @@ function parse_asset_import_file(string $tmpName, string $originalName, array $u
     if (!$rows) {
         return ['errors' => ['Uploaded file is empty.'], 'rows' => []];
     }
-    $metadataMap = asset_import_extract_metadata_map($tmpName);
 
     $importRows = [];
     $topErrors = [];
@@ -13889,7 +12481,7 @@ function parse_asset_import_file(string $tmpName, string $originalName, array $u
         if (!$hasValue) {
             continue;
         }
-        $importRows[] = stage_asset_import_row($payload, (int)$rowNumber, $segmentId, (int)($metadataMap[(int)$rowNumber] ?? 0));
+        $importRows[] = stage_asset_import_row($payload, (int)$rowNumber, $segmentId);
     }
 
     if (!$importRows) {
@@ -13922,20 +12514,17 @@ function validate_import_review_row(array $row, ?int $segmentId = null): array
         }
         $payload[$field['field_key']] = trim((string)($row['fields'][$field['field_key']] ?? ''));
     }
-    return stage_asset_import_row($payload, (int)($row['row_number'] ?? 0), $segmentId, (int)($row['target_asset_id'] ?? 0));
+    return stage_asset_import_row($payload, (int)($row['row_number'] ?? 0), $segmentId);
 }
 
-function stage_asset_import_row(array $input, int $rowNumber, ?int $segmentId = null, int $targetAssetId = 0): array
+function stage_asset_import_row(array $input, int $rowNumber, ?int $segmentId = null): array
 {
     $segmentId = asset_normalize_segment_id($segmentId);
-    $targetAsset = asset_import_target_asset($targetAssetId, $segmentId);
     $categoryName = asset_category_selection_enabled($segmentId) ? trim((string)($input['category'] ?? '')) : '';
     $subcategoryEnabled = asset_subcategory_enabled($segmentId);
     $subcategoryName = $subcategoryEnabled ? trim((string)($input['subcategory'] ?? '')) : '';
 
-    $categoryId = asset_category_selection_enabled($segmentId)
-        ? ((int)($targetAsset['category_id'] ?? 0))
-        : asset_single_category_id($segmentId);
+    $categoryId = asset_category_selection_enabled($segmentId) ? 0 : asset_single_category_id($segmentId);
     if ($categoryName !== '') {
         foreach (get_asset_categories(false, $segmentId) as $category) {
             if (strcasecmp($category['name'], $categoryName) === 0) {
@@ -13945,7 +12534,7 @@ function stage_asset_import_row(array $input, int $rowNumber, ?int $segmentId = 
         }
     }
 
-    $subcategoryId = $subcategoryEnabled ? (int)($targetAsset['subcategory_id'] ?? 0) : 0;
+    $subcategoryId = 0;
     if ($subcategoryEnabled && $categoryId > 0) {
         foreach (get_asset_subcategories($categoryId, false, $segmentId) as $subcategory) {
             if (strcasecmp($subcategory['name'], $subcategoryName) === 0) {
@@ -13968,11 +12557,10 @@ function stage_asset_import_row(array $input, int $rowNumber, ?int $segmentId = 
         'category_id' => $categoryId,
         'subcategory_id' => $subcategoryId,
         'fields' => $fieldInputs,
-    ], $targetAsset, [], true);
+    ], null, [], true);
 
     return [
         'row_number' => $rowNumber,
-        'target_asset_id' => $targetAsset ? (int)$targetAsset['id'] : 0,
         'category' => $categoryName,
         'subcategory' => $subcategoryName,
         'category_id' => $categoryId,
@@ -14056,16 +12644,7 @@ function commit_asset_import_review(array $user): array
         db()->beginTransaction();
         try {
             foreach ($validRows as $item) {
-                $targetAssetId = (int)($item['row']['target_asset_id'] ?? 0);
-                if ($targetAssetId > 0) {
-                    $targetAsset = asset_import_target_asset($targetAssetId, $segmentId);
-                    if (!$targetAsset || !user_can_manage_asset($user, $targetAsset)) {
-                        throw new RuntimeException('Import row target is no longer available.');
-                    }
-                    update_asset($targetAssetId, $item['payload'], $user);
-                } else {
-                    persist_asset_record($item['payload'], $user);
-                }
+                persist_asset_record($item['payload'], $user);
                 $saved++;
             }
             db()->prepare('UPDATE asset_import_batches SET imported_count = ?, skipped_count = ?, updated_at = NOW() WHERE id = ?')->execute([$saved, count($invalidRows), $batchId]);

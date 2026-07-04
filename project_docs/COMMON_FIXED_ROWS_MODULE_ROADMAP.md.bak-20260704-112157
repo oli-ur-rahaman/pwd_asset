@@ -1,0 +1,364 @@
+# Common Fixed Rows Module Documentation Plan
+
+## Summary
+
+Prepare one implementation-grade roadmap document under:
+
+- `D:\Laragon-root\www\pwd_asset\project_docs\COMMON_FIXED_ROWS_MODULE_ROADMAP.md`
+
+The document is an execution artifact, not a brainstorming note. It contains:
+
+- finalized product intent
+- hard implementation decisions
+- phased task breakdown
+- progress tracking section
+- testing policy and test cases
+- acceptance criteria per phase
+
+## Current Progress Snapshot
+
+Last updated: 2026-07-03
+
+| Phase | Status | Notes |
+| --- | --- | --- |
+| Phase 1. Schema foundation | In Progress | Runtime migration layer and fresh-install schema updated with common-row profile tables and asset metadata columns. |
+| Phase 2. Backend profile validation | In Progress | Added common-row enums, profile loaders, binding persistence helpers, and validation entry points for future UI payloads. |
+| Phase 3. Materialization and sync engine | Not Started | No row-generation logic yet. |
+| Phase 4. Superadmin management UI | Not Started | No UI controls yet. |
+| Phase 5. User UI behavior | Not Started | No board behavior changes yet. |
+| Phase 6. Excel template integration | Not Started | No template changes yet. |
+| Phase 7. Bulk import and audit integration | Not Started | No import behavior changes yet. |
+| Phase 8. History and downstream integrity | Not Started | Not wired yet. |
+
+### Current Implementation Notes
+
+- `asset_common_profiles`, `asset_common_profile_fields`, `asset_common_admin_rows`, and `asset_common_admin_row_values` are now part of the schema layer.
+- `assets` now has additive metadata columns reserved for future materialized common rows.
+- `asset_fields` now has `is_common_row_field` as the field-level marker used by future UI integration.
+- common-row configuration is currently backend-ready but hidden:
+  - if a future field form posts explicit common-row inputs, backend can validate and persist the category profile/binding
+  - current field forms do not send those keys, so existing behavior stays unchanged
+- field delete now also clears common-profile bindings safely when present
+
+### Progress Log
+
+#### 2026-07-04
+
+- Phase 1 marked complete for the first implementation slice:
+  - runtime migration layer updated
+  - fresh install schema updated
+  - additive columns and common-row tables added
+  - no existing user workflow changed yet
+- Phase 2 marked complete for the first implementation slice:
+  - common-row mode/policy helper functions added
+  - profile lookup and profile-field binding helpers added
+  - create/update/delete field flows prepared for future common-row UI payloads
+  - cleanup logic added so field deletion removes profile bindings safely
+- Phase 3 onward still pending:
+  - no row materialization
+  - no sync engine
+  - no UI controls
+  - no template/import behavior changes
+
+## Document Structure
+
+### 1. Title and purpose
+
+- module name
+- date
+- objective in 3-5 lines
+- short explanation that this extends the current segment/category table system
+
+### 2. Locked business rules
+
+This section records the decisions already established:
+
+- rows are category-table based
+- two definition types:
+  - `superadmin_defined`
+  - `user_defined`
+- two row policies:
+  - `fixed`
+  - `addable`
+- one child profile points to one parent segment + one parent category
+- one child common field maps to one parent field only
+- one parent field may feed multiple child fields in different segments
+- common/generated rows use immutable backend row keys
+- source-row removal auto-removes generated child rows
+- categories without a profile keep current behavior unchanged
+
+### 3. Data model and interface changes
+
+This section describes:
+
+- new DB tables
+- new asset metadata columns
+- category-profile model
+- field-mapping model
+- superadmin row-definition model
+- materialized-row model in normal assets
+- management UI additions
+- user-side behavioral changes
+
+It is decision-complete enough that implementation does not require new design choices.
+
+## Phase and Task Definition
+
+### Phase 1. Schema foundation
+
+Tasks:
+
+- add profile and row-definition tables
+- add new columns to `assets` and `asset_fields`
+- add indexes and uniqueness rules
+- update fresh install schema
+- define non-breaking migration behavior
+
+Progress entry format:
+
+- `Status: Not Started / In Progress / Done`
+- `DB migration reviewed`
+- `Fresh install schema reviewed`
+- `Backward compatibility checked`
+
+Acceptance:
+
+- migration succeeds
+- no current flow breaks when profile is absent
+
+### Phase 2. Backend profile validation
+
+Tasks:
+
+- add profile load/save helpers
+- add common-field validation rules
+- enforce one profile per category
+- enforce one parent segment/category per user-defined profile
+- enforce field-mapping consistency
+- define cleanup behavior when common fields are removed
+
+Progress entry format:
+
+- helper layer
+- validation layer
+- contradictory-config blocking
+- cleanup rules
+
+Acceptance:
+
+- invalid profile combinations are blocked in backend
+
+### Phase 3. Materialization and sync engine
+
+Tasks:
+
+- create central common-row sync engine
+- implement `user_defined` row generation from parent rows
+- implement `superadmin_defined` row generation from admin-defined rows
+- preserve editable non-common field values
+- auto-remove generated rows when source disappears
+- wire trigger points into existing flows
+
+Progress entry format:
+
+- user-defined sync
+- superadmin-defined sync
+- source-update propagation
+- source-delete propagation
+- trigger integrations
+
+Acceptance:
+
+- generated/common rows appear and stay synchronized
+
+### Phase 4. Superadmin management UI
+
+Tasks:
+
+- extend field add/edit UI with common-row settings
+- build category-level profile controls
+- build admin-defined row management UI
+- add row reorder, add, edit, delete controls
+- enforce inherited settings when category profile already exists
+
+Progress entry format:
+
+- field form controls
+- profile display
+- row-definition table
+- validation feedback
+
+Acceptance:
+
+- superadmin can configure both example use cases cleanly
+
+### Phase 5. User UI behavior
+
+Tasks:
+
+- enforce `fixed` vs `addable`
+- lock common-field cells in UI
+- block delete on generated/common rows
+- allow delete on user-added rows in addable mode
+- keep add/edit UX aligned with current board behavior
+
+Progress entry format:
+
+- add behavior
+- edit behavior
+- delete behavior
+- row-lock rendering
+
+Acceptance:
+
+- UI matches business rules exactly
+
+### Phase 6. Excel template integration
+
+Tasks:
+
+- materialize common rows before template generation
+- write fixed/common rows into generated template
+- lock common-field cells
+- support addable extra rows
+- embed hidden backend row key for re-import matching
+- define fallback behavior for custom uploaded template mismatch
+
+Progress entry format:
+
+- autogen template support
+- row key embedding
+- fixed-mode behavior
+- addable-mode behavior
+- custom-template fallback handling
+
+Acceptance:
+
+- generated template supports both fixed and addable common-row flows
+
+### Phase 7. Bulk import and audit integration
+
+Tasks:
+
+- classify imported rows into generated/common vs user-added
+- update only editable cells on generated/common rows
+- reject illegal extra rows in fixed mode
+- allow append in addable mode
+- ensure audit modal reflects locked common-field truth
+
+Progress entry format:
+
+- audit parsing
+- row matching
+- fixed-mode rejection
+- addable append
+- save behavior
+
+Acceptance:
+
+- bulk import cannot corrupt common-row integrity
+
+### Phase 8. History and downstream integrity
+
+Tasks:
+
+- log generated-row creation/update/removal distinctly
+- verify declaration logic includes generated rows
+- verify downloads/exports/audit/comparison use final materialized rows
+- verify soft-delete behavior remains coherent
+
+Progress entry format:
+
+- activity log integration
+- declaration integration
+- export/download integration
+- comparison/audit integration
+
+Acceptance:
+
+- downstream modules work with one coherent row model
+
+## Progress Entry Policy
+
+The roadmap MD includes a standard progress table for every phase with:
+
+- `Phase`
+- `Owner`
+- `Status`
+- `Last Updated`
+- `Blocking Issue`
+- `Notes`
+
+Status values:
+
+- `Not Started`
+- `In Progress`
+- `Blocked`
+- `Done`
+
+Update rule:
+
+- every implementation session updates only the touched phases
+- if a phase is partially complete, tasks are marked individually
+- if any product rule changes, the “Locked business rules” section must be revised first before implementation continues
+
+## Testing Policy
+
+### Testing principles
+
+- no phase is marked `Done` without direct verification
+- tests must cover:
+  - no-profile regression
+  - superadmin-defined behavior
+  - user-defined behavior
+  - fixed behavior
+  - addable behavior
+  - template and import behavior
+  - downstream consistency
+
+### Test sections in the MD
+
+The file includes:
+
+1. `Unit/Helper Verification`
+- profile loading
+- mapping validation
+- row-key generation
+- sync decisions
+
+2. `Workflow Verification`
+- add info
+- edit
+- delete
+- template download
+- bulk import
+- declaration
+- export/download
+
+3. `Regression Verification`
+- existing categories without a common profile
+- conditional fields
+- file fields
+- BIMH fields
+- segment filters
+- comparison page
+
+4. `Acceptance Scenarios`
+- salary-demand example
+- hospital-master example
+- addable extension example
+
+### Completion rule
+
+A phase is marked `Done` only if:
+
+- all implementation tasks are complete
+- all related acceptance checks pass
+- no existing working flow is broken in regression checks
+
+## Assumptions
+
+- the document is stored under `project_docs`
+- this is the primary execution roadmap for the module
+- later implementation sessions should update this same MD instead of creating competing versions
+- if new product examples change the row-lineage model, the roadmap must be replaced, not patched informally

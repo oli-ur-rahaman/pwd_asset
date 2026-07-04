@@ -39,14 +39,6 @@ if ($action !== null && !csrf_validate($_POST['csrf_token'] ?? null)) {
     exit('Invalid CSRF token.');
 }
 
-if ($page === 'download_asset_common_admin_template') {
-    if (!can_manage_superadmin_scope()) {
-        http_response_code(403);
-        exit('Not allowed.');
-    }
-    output_asset_common_admin_template_download(input_int('profile_id'));
-}
-
 if ($page === 'download_job_status') {
     header('Content-Type: application/json; charset=utf-8');
     try {
@@ -472,7 +464,6 @@ if ($action === 'save_asset_common_admin_row') {
         $profileId = input_int('profile_id');
         $rowId = input_int('row_id');
         save_asset_common_admin_row($profileId, [
-            'scope_token' => input_str('scope_token', '0:0'),
             'sort_order' => input_int('sort_order'),
             'values' => $_POST['common_row_values'] ?? [],
         ], $rowId > 0 ? $rowId : null);
@@ -491,20 +482,6 @@ if ($action === 'delete_asset_common_admin_row') {
     try {
         delete_asset_common_admin_row(input_int('profile_id'), input_int('row_id'));
         flash('success', 'Common admin row deleted.');
-    } catch (Throwable $e) {
-        flash('error', $e->getMessage());
-    }
-    $adminRedirect();
-}
-
-if ($action === 'upload_asset_common_admin_template') {
-    if (!can_manage_superadmin_scope()) {
-        http_response_code(403);
-        exit('Not allowed.');
-    }
-    try {
-        $summary = import_asset_common_admin_rows_from_template(input_int('profile_id'), $_FILES['template_file'] ?? []);
-        flash('success', 'Common rows template imported. Rows processed: ' . (int)($summary['rows_processed'] ?? 0) . '.');
     } catch (Throwable $e) {
         flash('error', $e->getMessage());
     }

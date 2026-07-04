@@ -28,7 +28,6 @@ $commonSupportedTypeLookup = array_fill_keys($commonSupportedTypes, true);
 $commonProfilesByCategory = asset_common_profiles_by_category_map($activeSegmentId, true);
 $commonBindingsByFieldId = get_asset_common_profile_field_bindings_for_segment($activeSegmentId);
 $commonParentFieldCandidatesBySegment = asset_common_parent_field_candidates_by_segment(true);
-$commonScopeOptions = asset_common_scope_options();
 $trackableFilterFields = array_values(array_filter($fields, static function (array $field): bool {
     return (int)($field['active_status'] ?? 0) === 1
         && !asset_is_conditional_secondary($field)
@@ -360,7 +359,7 @@ if (!function_exists('render_common_admin_row_input')) {
 
 <section class="card">
     <h2>Superadmin Defined Common Rows</h2>
-    <p class="hint">Use this section only for category profiles whose definition mode is `Superadmin Defined`. One row definition can populate multiple bound fields in the same category. Rows can stay global for all offices or be assigned to one exact office scope.</p>
+    <p class="hint">Use this section only for category profiles whose definition mode is `Superadmin Defined`. These rows become the fixed shared row set for the target category table.</p>
     <?php
         $superadminDefinedProfiles = array_values(array_filter($commonProfilesByCategory, static fn(array $profile): bool => (string)($profile['definition_mode'] ?? '') === asset_common_definition_mode_superadmin_defined()));
     ?>
@@ -384,23 +383,10 @@ if (!function_exists('render_common_admin_row_input')) {
             <section class="sub-card">
                 <h3><?= e((string)($profileCategory['name'] ?? 'Category')); ?></h3>
                 <p class="muted">Row policy: <?= e((string)($commonRowPolicyOptions[(string)$profile['row_policy']] ?? $profile['row_policy'])); ?></p>
-                <div class="action-row common-admin-toolbar">
-                    <a class="button-link" href="index.php?<?= e(http_build_query(['page' => 'download_asset_common_admin_template', 'profile_id' => $profileId])); ?>">Download Template</a>
-                    <form method="post" action="index.php" class="inline-form" enctype="multipart/form-data">
-                        <?= csrf_input(); ?>
-                        <input type="hidden" name="action" value="upload_asset_common_admin_template">
-                        <input type="hidden" name="segment_id" value="<?= e((string)$activeSegmentId); ?>">
-                        <input type="hidden" name="profile_id" value="<?= e((string)$profileId); ?>">
-                        <input type="file" name="template_file" accept=".xlsx,.xls" required>
-                        <button type="submit" class="btn-small">Upload Template</button>
-                    </form>
-                </div>
-                <p class="hint">Template upload replaces the full row set for this profile, including any scope-specific office rows included in the sheet.</p>
                 <div class="table-wrap">
                     <table>
                         <thead>
                             <tr>
-                                <th>Scope</th>
                                 <th>Order</th>
                                 <?php foreach ($profileFields as $profileField): ?>
                                     <th><?= e((string)($profileField['child_field_label'] ?? 'Field')); ?></th>
@@ -412,13 +398,6 @@ if (!function_exists('render_common_admin_row_input')) {
                             <?php foreach ($adminRows as $adminRow): ?>
                                 <?php $rowFormId = 'common-admin-row-' . $profileId . '-' . (int)$adminRow['id']; ?>
                                 <tr>
-                                    <td>
-                                        <select form="<?= e($rowFormId); ?>" class="inline-edit" name="scope_token" required>
-                                            <?php foreach ($commonScopeOptions as $scopeOption): ?>
-                                                <option value="<?= e((string)$scopeOption['token']); ?>" <?= (string)($adminRow['scope_token'] ?? '0:0') === (string)$scopeOption['token'] ? 'selected' : ''; ?>><?= e((string)$scopeOption['label']); ?></option>
-                                            <?php endforeach; ?>
-                                        </select>
-                                    </td>
                                     <td><input form="<?= e($rowFormId); ?>" class="inline-edit" type="number" name="sort_order" min="1" step="1" value="<?= e((string)($adminRow['sort_order'] ?? 10)); ?>" required></td>
                                     <?php foreach ($profileFields as $profileField): ?>
                                         <?php $childFieldId = (int)($profileField['child_field_id'] ?? 0); ?>
@@ -446,13 +425,6 @@ if (!function_exists('render_common_admin_row_input')) {
                             <?php endforeach; ?>
                             <tr>
                                 <?php $newRowFormId = 'common-admin-row-new-' . $profileId; ?>
-                                <td>
-                                    <select form="<?= e($newRowFormId); ?>" class="inline-edit" name="scope_token" required>
-                                        <?php foreach ($commonScopeOptions as $scopeOption): ?>
-                                            <option value="<?= e((string)$scopeOption['token']); ?>" <?= (string)$scopeOption['token'] === '0:0' ? 'selected' : ''; ?>><?= e((string)$scopeOption['label']); ?></option>
-                                        <?php endforeach; ?>
-                                    </select>
-                                </td>
                                 <td><input form="<?= e($newRowFormId); ?>" class="inline-edit" type="number" name="sort_order" min="1" step="1" value="<?= e((string)((count($adminRows) + 1) * 10)); ?>" required></td>
                                 <?php foreach ($profileFields as $profileField): ?>
                                     <?php $childFieldId = (int)($profileField['child_field_id'] ?? 0); ?>

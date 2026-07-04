@@ -37,15 +37,9 @@ if ($renderEmptyState && !$assets):
     <tr><td colspan="<?= e((string)$columnCount); ?>" class="muted">No assets found.</td></tr>
 <?php endif; ?>
 <?php foreach ($assets as $index => $asset): ?>
-    <?php $rowGenerated = asset_common_asset_is_generated($asset); ?>
-    <?php $rowManualCommon = asset_common_asset_is_manual_common($asset); ?>
-    <tr<?= $rowGenerated ? ' data-common-generated-row="1" title="Generated common row"' : ($rowManualCommon ? ' data-common-manual-row="1" title="Manual row inside common category"' : ''); ?>>
+    <tr>
         <?php if (!is_superadmin() && $canModifyAssets && !$isUnderMeView): ?>
-            <td>
-                <?php if (!$rowGenerated): ?>
-                    <input type="checkbox" name="asset_ids[]" value="<?= e((string)$asset['id']); ?>" form="asset-delete-form">
-                <?php endif; ?>
-            </td>
+            <td><input type="checkbox" name="asset_ids[]" value="<?= e((string)$asset['id']); ?>" form="asset-delete-form"></td>
         <?php endif; ?>
         <td><?= e((string)($rowNumberOffset + $index + 1)); ?></td>
         <?php if ($showAssetNumber && !empty($visibleColumnKeys['asset_number'])): ?><td><?= e((string)$asset['asset_number']); ?></td><?php endif; ?>

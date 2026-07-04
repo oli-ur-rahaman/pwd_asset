@@ -384,15 +384,13 @@ CREATE TABLE IF NOT EXISTS asset_common_admin_rows (
     id INT AUTO_INCREMENT PRIMARY KEY,
     profile_id INT NOT NULL,
     stable_row_key VARCHAR(100) NOT NULL,
-    scope_office_type INT NOT NULL DEFAULT 0,
-    scope_office_id INT NOT NULL DEFAULT 0,
     sort_order INT NOT NULL DEFAULT 0,
     active_status TINYINT NOT NULL DEFAULT 1,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT NULL,
     UNIQUE KEY uniq_asset_common_admin_rows_profile_key (profile_id, stable_row_key),
     KEY idx_asset_common_admin_rows_profile (profile_id),
-    KEY idx_asset_common_admin_rows_profile_sort (profile_id, scope_office_type, scope_office_id, sort_order, id)
+    KEY idx_asset_common_admin_rows_profile_sort (profile_id, sort_order, id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS asset_common_admin_row_values (

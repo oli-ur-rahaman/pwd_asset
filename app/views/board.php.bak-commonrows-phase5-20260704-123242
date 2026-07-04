@@ -373,18 +373,6 @@ foreach ($fields as $field) {
     }
 }
 $defaultCategoryId = !$editingAsset && count($categories) === 1 ? (int)$categories[0]['id'] : 0;
-$commonProfilesForBoard = asset_common_profiles_by_category_map($activeSegmentId, true);
-$manualAddAllowedCategoryIds = [];
-foreach ($categories as $category) {
-    if (asset_common_category_allows_manual_rows($activeSegmentId, (int)$category['id'])) {
-        $manualAddAllowedCategoryIds[(int)$category['id']] = true;
-    }
-}
-$hasManualAddCategory = !empty($manualAddAllowedCategoryIds);
-$defaultCategoryAllowsManualAdd = $defaultCategoryId > 0 && !empty($manualAddAllowedCategoryIds[$defaultCategoryId]);
-$showAddInfoButton = $canModifyAssets && !$isUnderMeView && ($editingAsset || $hasManualAddCategory);
-$editingAssetIsGenerated = $editingAsset ? asset_common_asset_is_generated($editingAsset) : false;
-$editingAssetLockedFieldKeys = $editingAsset ? array_fill_keys(asset_common_locked_field_keys_for_asset($editingAsset), true) : [];
 $historyAssetId = (int)request_str('asset_history', '0');
 $historyAsset = $historyAssetId > 0 ? get_asset($historyAssetId, true) : null;
 $historyAsset = ($historyAsset && (int)($historyAsset['segment_id'] ?? 0) === $activeSegmentId) ? $historyAsset : null;
@@ -963,7 +951,7 @@ if (is_superadmin()) {
 <?php if (!$assetBoardFiltersOnly && !$assetComparisonTableOnly && !is_superadmin() && $showBoardContent): ?>
 <section class="card">
     <div class="toolbar-row">
-        <?php if ($showAddInfoButton): ?>
+        <?php if ($canModifyAssets && !$isUnderMeView): ?>
             <button type="button" data-modal="asset-modal">+Add Info</button>
             <?php if ($bulkImportEnabled): ?><button type="button" data-modal="import-modal">Bulk Entry</button><?php endif; ?>
         <?php endif; ?>
@@ -974,9 +962,6 @@ if (is_superadmin()) {
     </div>
     <?php if (!$downloadModuleReady): ?>
         <p class="hint">Download Manager must have at least one Level 1 field before downloads can run.</p>
-    <?php endif; ?>
-    <?php if ($canModifyAssets && !$isUnderMeView && !$showAddInfoButton): ?>
-        <p class="hint">This segment currently has only fixed common-row categories. New manual rows are blocked here.</p>
     <?php endif; ?>
 </section>
 <?php elseif (!$assetBoardFiltersOnly): ?>
@@ -1264,68 +1249,42 @@ if (is_superadmin()) {
             <input type="hidden" name="action" value="asset_save">
             <input type="hidden" name="asset_id" value="<?= e((string)($editingAsset['id'] ?? '0')); ?>">
             <input type="hidden" name="segment_id" value="<?= e((string)$activeSegmentId); ?>">
-            <?php if ($editingAssetIsGenerated): ?>
-                <p class="hint">This is a generated common row. Common source-driven fields are locked here and stay synchronized from their parent source.</p>
-            <?php elseif (!$editingAsset && !$hasManualAddCategory): ?>
-                <p class="hint">No category in this segment allows manual row creation right now.</p>
-            <?php endif; ?>
             <?php if (!$categorySelectionEnabled && $defaultCategoryId > 0): ?>
                 <input type="hidden" name="category_id" value="<?= e((string)$defaultCategoryId); ?>">
             <?php endif; ?>
             <?php if ($categorySelectionEnabled): ?>
             <label>Category *
-                <select name="category_id" id="asset-category-select" required <?= $editingAssetIsGenerated ? 'disabled' : ''; ?>>
+                <select name="category_id" id="asset-category-select" required>
                     <option value="">Select</option>
                     <?php foreach ($categories as $category): ?>
-                        <?php
-                            $categoryId = (int)$category['id'];
-                            $categoryManualAllowed = !empty($manualAddAllowedCategoryIds[$categoryId]);
-                            $optionDisabled = !$editingAsset && !$categoryManualAllowed;
-                        ?>
-                        <option
-                            value="<?= e((string)$categoryId); ?>"
-                            <?= ((int)($editingAsset['category_id'] ?? $defaultCategoryId) === $categoryId) ? 'selected' : ''; ?>
-                            <?= $optionDisabled ? 'disabled' : ''; ?>
-                        ><?= e($category['name']); ?><?= $optionDisabled ? ' [Fixed]' : ''; ?></option>
+                        <option value="<?= e((string)$category['id']); ?>" <?= ((int)($editingAsset['category_id'] ?? $defaultCategoryId) === (int)$category['id']) ? 'selected' : ''; ?>><?= e($category['name']); ?></option>
                     <?php endforeach; ?>
                 </select>
-                <?php if ($editingAssetIsGenerated): ?>
-                    <input type="hidden" name="category_id" value="<?= e((string)($editingAsset['category_id'] ?? 0)); ?>">
-                <?php endif; ?>
             </label>
             <?php endif; ?>
             <?php if ($subcategoryEnabled): ?>
                 <label>Sub-category *
-                    <select name="subcategory_id" id="asset-subcategory-select" required <?= $editingAssetIsGenerated ? 'disabled' : ''; ?>>
+                    <select name="subcategory_id" id="asset-subcategory-select" required>
                         <option value="">Select</option>
                         <?php foreach ($subcategories as $subcategory): ?>
                             <option value="<?= e((string)$subcategory['id']); ?>" data-category="<?= e((string)$subcategory['category_id']); ?>" <?= (int)($editingAsset['subcategory_id'] ?? 0) === (int)$subcategory['id'] ? 'selected' : ''; ?>><?= e($subcategory['name']); ?></option>
                         <?php endforeach; ?>
                     </select>
-                    <?php if ($editingAssetIsGenerated): ?>
-                        <input type="hidden" name="subcategory_id" value="<?= e((string)($editingAsset['subcategory_id'] ?? 0)); ?>">
-                    <?php endif; ?>
                 </label>
             <?php endif; ?>
             <?php foreach ($fields as $field): ?>
                 <?php if ((int)$field['active_status'] !== 1) { continue; } ?>
-                <?php $fieldKey = (string)$field['field_key']; ?>
-                <?php $isLockedCommonField = $editingAsset && !empty($editingAssetLockedFieldKeys[$fieldKey]); ?>
                 <label>
                     <span class="field-label-row">
-                        <span><?= e((string)($uiFieldLabels[$fieldKey] ?? $field['label'])); ?><?= $fieldMandatoryMarker($field); ?><?= $isLockedCommonField ? ' [Locked]' : ''; ?></span>
-                        <?php $renderFieldHelpButton($fieldHelpMeta[$fieldKey] ?? null, 'field-help-button field-help-inline', 'Field information'); ?>
+                        <span><?= e((string)($uiFieldLabels[$field['field_key']] ?? $field['label'])); ?><?= $fieldMandatoryMarker($field); ?></span>
+                        <?php $renderFieldHelpButton($fieldHelpMeta[$field['field_key']] ?? null, 'field-help-button field-help-inline', 'Field information'); ?>
                     </span>
-                    <?php $value = (string)($editValues[$fieldKey] ?? ''); ?>
+                    <?php $value = (string)($editValues[$field['field_key']] ?? ''); ?>
                     <?php $textMaxLength = (int)($field['text_max_length'] ?? 0); ?>
-                    <?php if ($isLockedCommonField): ?>
-                        <input type="hidden" name="fields[<?= e($fieldKey); ?>]" value="<?= e($value); ?>">
-                        <input type="text" value="<?= e($value); ?>" readonly>
-                        <span class="hint">This value is controlled by the linked common row source.</span>
-                    <?php elseif ($field['data_type'] === 'file'): ?>
+                    <?php if ($field['data_type'] === 'file'): ?>
                         <?php
                             $fileRule = get_asset_field_file_rule((int)$field['id']);
-                            $fieldFiles = $editFiles[$fieldKey] ?? [];
+                            $fieldFiles = $editFiles[$field['field_key']] ?? [];
                             $accept = implode(',', array_map(static fn(string $ext): string => '.' . $ext, asset_parse_extensions_string((string)$fileRule['allowed_extensions'])));
                             $showRemoveCheckbox = (int)$fileRule['is_multiple'] === 1 || !asset_is_input_required($field);
                         ?>
@@ -1424,9 +1383,7 @@ if (is_superadmin()) {
                 </label>
             <?php endforeach; ?>
             <div class="modal-actions">
-                <?php if ($editingAsset || $hasManualAddCategory): ?>
-                    <button type="submit">Save</button>
-                <?php endif; ?>
+                <button type="submit">Save</button>
                 <button type="button" class="modal-close" data-close="asset-modal">Cancel</button>
             </div>
         </form>

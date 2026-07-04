@@ -816,24 +816,6 @@ tbody tr:hover td {
 tbody tr:hover td:first-child {
   box-shadow: inset 3px 0 0 var(--theme-primary);
 }
-tbody tr[data-common-generated-row="1"] td {
-  background: linear-gradient(180deg, #f7fbff 0%, #eef6ff 100%);
-}
-tbody tr[data-common-generated-row="1"] td:first-child {
-  box-shadow: inset 3px 0 0 #5b92c9;
-}
-tbody tr[data-common-manual-row="1"] td {
-  background: linear-gradient(180deg, #fffdf7 0%, #fff8e8 100%);
-}
-tbody tr[data-common-manual-row="1"] td:first-child {
-  box-shadow: inset 3px 0 0 #d1a24a;
-}
-tbody tr[data-common-generated-row="1"]:hover td {
-  background: #e7f1fd;
-}
-tbody tr[data-common-manual-row="1"]:hover td {
-  background: #fff1cb;
-}
 .sticky-table-header-layer {
   position: fixed;
   top: 0;
