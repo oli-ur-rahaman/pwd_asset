@@ -25,6 +25,7 @@ $commonDefinitionModeOptions = asset_common_definition_mode_options();
 $commonRowPolicyOptions = asset_common_row_policy_options();
 $commonSupportedTypes = asset_common_supported_field_data_types();
 $commonSupportedTypeLookup = array_fill_keys($commonSupportedTypes, true);
+$commonRowsSupported = asset_segment_common_rows_supported($activeSegmentId);
 $commonProfilesByCategory = asset_common_profiles_by_category_map($activeSegmentId, true);
 $commonBindingsByFieldId = get_asset_common_profile_field_bindings_for_segment($activeSegmentId);
 $commonParentFieldCandidatesBySegment = asset_common_parent_field_candidates_by_segment(true);
@@ -310,169 +311,8 @@ if (!function_exists('render_common_admin_row_input')) {
 </section>
 
 <section class="card">
-    <h2>Common Fixed Row Profiles</h2>
-    <p class="hint">This management slice binds fields to a category-level common-row profile. Later slices will add the row-content editor for `superadmin_defined` profiles and the UI lock behavior for users.</p>
-    <div class="table-wrap">
-        <table>
-            <thead>
-                <tr><th>Category</th><th>Mode</th><th>Row Policy</th><th>Parent Segment</th><th>Parent Category</th><th>Bound Fields</th></tr>
-            </thead>
-            <tbody>
-                <?php foreach ($categories as $category): ?>
-                    <?php
-                        $profile = $commonProfilesByCategory[(int)$category['id']] ?? null;
-                        $profileFields = $profile ? get_asset_common_profile_fields((int)$profile['id']) : [];
-                        $parentSegmentName = '';
-                        $parentCategoryName = '';
-                        if ($profile) {
-                            $parentSegmentId = (int)($profile['parent_segment_id'] ?? 0);
-                            $parentCategoryId = (int)($profile['parent_category_id'] ?? 0);
-                            $parentSegmentName = $parentSegmentId > 0 ? (string)($segmentsById[$parentSegmentId]['segment_name'] ?? '') : '';
-                            if ($parentCategoryId > 0) {
-                                foreach (($commonParentCategoriesBySegment[$parentSegmentId] ?? []) as $parentCategoryRow) {
-                                    if ((int)$parentCategoryRow['id'] === $parentCategoryId) {
-                                        $parentCategoryName = (string)$parentCategoryRow['name'];
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                    ?>
-                    <tr>
-                        <td><?= e((string)$category['name']); ?></td>
-                        <td><?= $profile ? e((string)($commonDefinitionModeOptions[(string)$profile['definition_mode']] ?? $profile['definition_mode'])) : 'Not configured'; ?></td>
-                        <td><?= $profile ? e((string)($commonRowPolicyOptions[(string)$profile['row_policy']] ?? $profile['row_policy'])) : 'Not configured'; ?></td>
-                        <td><?= $parentSegmentName !== '' ? e($parentSegmentName) : '-'; ?></td>
-                        <td><?= $parentCategoryName !== '' ? e($parentCategoryName) : '-'; ?></td>
-                        <td>
-                            <?php if ($profileFields): ?>
-                                <?= e(implode(', ', array_values(array_filter(array_map(static fn(array $row): string => (string)($row['child_field_label'] ?? ''), $profileFields))))); ?>
-                            <?php else: ?>
-                                <span class="muted">No common-row fields yet</span>
-                            <?php endif; ?>
-                        </td>
-                    </tr>
-                <?php endforeach; ?>
-            </tbody>
-        </table>
-    </div>
-</section>
-
-<section class="card">
-    <h2>Superadmin Defined Common Rows</h2>
-    <p class="hint">Use this section only for category profiles whose definition mode is `Superadmin Defined`. One row definition can populate multiple bound fields in the same category. Rows can stay global for all offices or be assigned to one exact office scope.</p>
-    <?php
-        $superadminDefinedProfiles = array_values(array_filter($commonProfilesByCategory, static fn(array $profile): bool => (string)($profile['definition_mode'] ?? '') === asset_common_definition_mode_superadmin_defined()));
-    ?>
-    <?php if (!$superadminDefinedProfiles): ?>
-        <p class="muted">No superadmin-defined profiles are configured in this segment yet.</p>
-    <?php else: ?>
-        <?php foreach ($superadminDefinedProfiles as $profile): ?>
-            <?php
-                $profileId = (int)$profile['id'];
-                $profileCategory = $categoriesById[(int)$profile['category_id']] ?? null;
-                $profileFields = get_asset_common_profile_fields($profileId);
-                $adminRows = get_asset_common_admin_rows_detailed($profileId);
-                $profileFieldMetaById = [];
-                foreach ($profileFields as $profileField) {
-                    $childFieldId = (int)($profileField['child_field_id'] ?? 0);
-                    if ($childFieldId > 0) {
-                        $profileFieldMetaById[$childFieldId] = get_asset_field($childFieldId, $activeSegmentId) ?: [];
-                    }
-                }
-            ?>
-            <section class="sub-card">
-                <h3><?= e((string)($profileCategory['name'] ?? 'Category')); ?></h3>
-                <p class="muted">Row policy: <?= e((string)($commonRowPolicyOptions[(string)$profile['row_policy']] ?? $profile['row_policy'])); ?></p>
-                <div class="action-row common-admin-toolbar">
-                    <a class="button-link" href="index.php?<?= e(http_build_query(['page' => 'download_asset_common_admin_template', 'profile_id' => $profileId])); ?>">Download Template</a>
-                    <form method="post" action="index.php" class="inline-form" enctype="multipart/form-data">
-                        <?= csrf_input(); ?>
-                        <input type="hidden" name="action" value="upload_asset_common_admin_template">
-                        <input type="hidden" name="segment_id" value="<?= e((string)$activeSegmentId); ?>">
-                        <input type="hidden" name="profile_id" value="<?= e((string)$profileId); ?>">
-                        <input type="file" name="template_file" accept=".xlsx,.xls" required>
-                        <button type="submit" class="btn-small">Upload Template</button>
-                    </form>
-                </div>
-                <p class="hint">Template upload replaces the full row set for this profile, including any scope-specific office rows included in the sheet.</p>
-                <div class="table-wrap">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Scope</th>
-                                <th>Order</th>
-                                <?php foreach ($profileFields as $profileField): ?>
-                                    <th><?= e((string)($profileField['child_field_label'] ?? 'Field')); ?></th>
-                                <?php endforeach; ?>
-                                <th>Action</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php foreach ($adminRows as $adminRow): ?>
-                                <?php $rowFormId = 'common-admin-row-' . $profileId . '-' . (int)$adminRow['id']; ?>
-                                <tr>
-                                    <td>
-                                        <select form="<?= e($rowFormId); ?>" class="inline-edit" name="scope_token" required>
-                                            <?php foreach ($commonScopeOptions as $scopeOption): ?>
-                                                <option value="<?= e((string)$scopeOption['token']); ?>" <?= (string)($adminRow['scope_token'] ?? '0:0') === (string)$scopeOption['token'] ? 'selected' : ''; ?>><?= e((string)$scopeOption['label']); ?></option>
-                                            <?php endforeach; ?>
-                                        </select>
-                                    </td>
-                                    <td><input form="<?= e($rowFormId); ?>" class="inline-edit" type="number" name="sort_order" min="1" step="1" value="<?= e((string)($adminRow['sort_order'] ?? 10)); ?>" required></td>
-                                    <?php foreach ($profileFields as $profileField): ?>
-                                        <?php $childFieldId = (int)($profileField['child_field_id'] ?? 0); ?>
-                                        <td><?= render_common_admin_row_input($rowFormId, $profileFieldMetaById[$childFieldId] ?? [], $childFieldId, (string)($adminRow['values'][$childFieldId] ?? '')); ?></td>
-                                    <?php endforeach; ?>
-                                    <td>
-                                        <div class="action-row">
-                                            <form method="post" action="index.php" id="<?= e($rowFormId); ?>" class="inline-form">
-                                                <?= csrf_input(); ?>
-                                                <input type="hidden" name="action" value="save_asset_common_admin_row">
-                                                <input type="hidden" name="profile_id" value="<?= e((string)$profileId); ?>">
-                                                <input type="hidden" name="row_id" value="<?= e((string)$adminRow['id']); ?>">
-                                                <button type="submit" class="btn-small office-save-button">Save</button>
-                                            </form>
-                                            <form method="post" action="index.php" class="inline-form">
-                                                <?= csrf_input(); ?>
-                                                <input type="hidden" name="action" value="delete_asset_common_admin_row">
-                                                <input type="hidden" name="profile_id" value="<?= e((string)$profileId); ?>">
-                                                <input type="hidden" name="row_id" value="<?= e((string)$adminRow['id']); ?>">
-                                                <button type="submit" class="btn-small btn-danger">Delete</button>
-                                            </form>
-                                        </div>
-                                    </td>
-                                </tr>
-                            <?php endforeach; ?>
-                            <tr>
-                                <?php $newRowFormId = 'common-admin-row-new-' . $profileId; ?>
-                                <td>
-                                    <select form="<?= e($newRowFormId); ?>" class="inline-edit" name="scope_token" required>
-                                        <?php foreach ($commonScopeOptions as $scopeOption): ?>
-                                            <option value="<?= e((string)$scopeOption['token']); ?>" <?= (string)$scopeOption['token'] === '0:0' ? 'selected' : ''; ?>><?= e((string)$scopeOption['label']); ?></option>
-                                        <?php endforeach; ?>
-                                    </select>
-                                </td>
-                                <td><input form="<?= e($newRowFormId); ?>" class="inline-edit" type="number" name="sort_order" min="1" step="1" value="<?= e((string)((count($adminRows) + 1) * 10)); ?>" required></td>
-                                <?php foreach ($profileFields as $profileField): ?>
-                                    <?php $childFieldId = (int)($profileField['child_field_id'] ?? 0); ?>
-                                    <td><?= render_common_admin_row_input($newRowFormId, $profileFieldMetaById[$childFieldId] ?? [], $childFieldId, ''); ?></td>
-                                <?php endforeach; ?>
-                                <td>
-                                    <form method="post" action="index.php" id="<?= e($newRowFormId); ?>" class="inline-form">
-                                        <?= csrf_input(); ?>
-                                        <input type="hidden" name="action" value="save_asset_common_admin_row">
-                                        <input type="hidden" name="profile_id" value="<?= e((string)$profileId); ?>">
-                                        <button type="submit">Add Row</button>
-                                    </form>
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </section>
-        <?php endforeach; ?>
-    <?php endif; ?>
+    <h2>Common Field Binding</h2>
+    <p class="hint">Declare whether a field is `user_defined` or `superadmin_defined` here. Manage `superadmin_defined` row content from the dedicated <a href="index.php?page=common_fields">Common Fields</a> page.</p>
 </section>
 
 <section class="card">
@@ -742,18 +582,15 @@ if (!function_exists('render_common_admin_row_input')) {
             </select>
         </label>
         <div class="field-config-group field-common-row-wrap" data-common-row-toggle-wrap>
-            <label><input type="checkbox" name="is_common_row_field" value="1" data-common-row-toggle> Common fixed-row field</label>
-            <span class="hint">Supported types only: <?= e(implode(', ', $commonSupportedTypes)); ?>.</span>
+            <label><input type="checkbox" name="is_common_row_field" value="1" data-common-row-toggle <?= $commonRowsSupported ? '' : 'disabled'; ?>> Common fixed-row field</label>
+            <span class="hint">
+                Supported types only: <?= e(implode(', ', $commonSupportedTypes)); ?>.
+                <?php if (!$commonRowsSupported): ?>
+                    Common fields are allowed only when this segment has zero or one category.
+                <?php endif; ?>
+            </span>
         </div>
         <div class="grid compact-grid field-common-row-settings hidden" data-common-row-section>
-            <label>Profile Category
-                <select name="common_profile_category_id" data-common-profile-category>
-                    <option value="">Select category</option>
-                    <?php foreach ($categories as $category): ?>
-                        <option value="<?= e((string)$category['id']); ?>"><?= e((string)$category['name']); ?></option>
-                    <?php endforeach; ?>
-                </select>
-            </label>
             <label>Definition Mode
                 <select name="common_definition_mode" data-common-definition-mode>
                     <?php foreach ($commonDefinitionModeOptions as $modeValue => $modeLabel): ?>
@@ -761,7 +598,7 @@ if (!function_exists('render_common_admin_row_input')) {
                     <?php endforeach; ?>
                 </select>
             </label>
-            <label>Row Policy
+            <label data-common-userdefined-control>Row Policy
                 <select name="common_row_policy">
                     <?php foreach ($commonRowPolicyOptions as $policyValue => $policyLabel): ?>
                         <option value="<?= e((string)$policyValue); ?>"><?= e((string)$policyLabel); ?></option>
@@ -799,7 +636,8 @@ if (!function_exists('render_common_admin_row_input')) {
                     <?php endforeach; ?>
                 </select>
             </label>
-            <div class="hint field-common-row-hint" data-common-parent-control>For `user_defined`, parent segment, category, and field are required. For `superadmin_defined`, leave parent selections empty. Row-content editing will be added in the next UI slice.</div>
+            <div class="hint field-common-row-hint" data-common-parent-control>For `user_defined`, parent segment, category, and field are required.</div>
+            <div class="hint field-common-row-hint hidden" data-common-superadmin-note>For `superadmin_defined`, save the field here, then manage row content from the <a href="index.php?page=common_fields">Common Fields</a> page.</div>
         </div>
         <button type="submit">Add Field</button>
     </form>
@@ -959,18 +797,10 @@ if (!function_exists('render_common_admin_row_input')) {
                                         </select>
                                     </label>
                                     <label class="inline-check" data-common-row-toggle-wrap>
-                                        <input form="<?= e($formId); ?>" type="checkbox" name="is_common_row_field" value="1" data-common-row-toggle <?= $commonBinding ? 'checked' : ''; ?> <?= $fieldSupportsCommonRows ? '' : 'disabled'; ?>>
+                                        <input form="<?= e($formId); ?>" type="checkbox" name="is_common_row_field" value="1" data-common-row-toggle <?= $commonBinding ? 'checked' : ''; ?> <?= ($fieldSupportsCommonRows && $commonRowsSupported) ? '' : 'disabled'; ?>>
                                         Common row
                                     </label>
                                     <div class="grid compact-grid field-common-row-settings<?= $commonBinding ? '' : ' hidden'; ?>" data-common-row-section>
-                                        <label>Profile Category
-                                            <select form="<?= e($formId); ?>" class="inline-edit" name="common_profile_category_id" data-common-profile-category>
-                                                <option value="">Select category</option>
-                                                <?php foreach ($categories as $category): ?>
-                                                    <option value="<?= e((string)$category['id']); ?>" <?= (int)($commonBinding['category_id'] ?? 0) === (int)$category['id'] ? 'selected' : ''; ?>><?= e((string)$category['name']); ?></option>
-                                                <?php endforeach; ?>
-                                            </select>
-                                        </label>
                                         <label>Definition Mode
                                             <select form="<?= e($formId); ?>" class="inline-edit" name="common_definition_mode" data-common-definition-mode>
                                                 <?php foreach ($commonDefinitionModeOptions as $modeValue => $modeLabel): ?>
@@ -978,7 +808,7 @@ if (!function_exists('render_common_admin_row_input')) {
                                                 <?php endforeach; ?>
                                             </select>
                                         </label>
-                                        <label>Row Policy
+                                        <label data-common-userdefined-control>Row Policy
                                             <select form="<?= e($formId); ?>" class="inline-edit" name="common_row_policy">
                                                 <?php foreach ($commonRowPolicyOptions as $policyValue => $policyLabel): ?>
                                                     <option value="<?= e((string)$policyValue); ?>" <?= (string)($commonBinding['row_policy'] ?? asset_common_row_policy_fixed()) === (string)$policyValue ? 'selected' : ''; ?>><?= e((string)$policyLabel); ?></option>
@@ -1016,8 +846,9 @@ if (!function_exists('render_common_admin_row_input')) {
                                                 <?php endforeach; ?>
                                             </select>
                                         </label>
+                                        <div class="hint hidden" data-common-superadmin-note>For `superadmin_defined`, save the field here, then manage row content from the <a href="index.php?page=common_fields">Common Fields</a> page.</div>
                                     </div>
-                                    <?php if (!$fieldSupportsCommonRows): ?><div class="hint">Common rows support only: <?= e(implode(', ', $commonSupportedTypes)); ?>.</div><?php endif; ?>
+                                    <?php if (!$fieldSupportsCommonRows || !$commonRowsSupported): ?><div class="hint">Common rows support only: <?= e(implode(', ', $commonSupportedTypes)); ?>, and only in segments with zero or one category.</div><?php endif; ?>
                                     <button type="submit" class="btn-small office-save-button">Save</button>
                                 </form>
                                 <form method="post" action="index.php" class="inline-form">

@@ -2261,12 +2261,10 @@ function build_asset_common_admin_template_workbook(int $profileId): \PhpOffice\
         ]]
     );
     $existingRows = get_asset_common_admin_rows_detailed($profileId);
-    $existingRowCount = count($existingRows);
     $scopeOptions = array_values(asset_common_scope_options());
     $rowLimit = asset_template_row_limit();
     $startRow = 2;
     $endRow = $startRow + $rowLimit - 1;
-    $firstEditableRow = min($endRow + 1, $startRow + $existingRowCount);
 
     $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
     export_apply_spreadsheet_font($spreadsheet);
@@ -2418,17 +2416,12 @@ function build_asset_common_admin_template_workbook(int $profileId): \PhpOffice\
     ]);
     $sheet->getStyle('A2:' . $lastColumnLetter . $endRow)->getFont()->setSize(10);
     $sheet->getStyle($columnLetters['instruction'] . '2:' . $columnLetters['instruction'] . $endRow)->getAlignment()->setWrapText(true);
-    $sheet->getStyle('A1:' . $lastColumnLetter . $endRow)
-        ->getProtection()
-        ->setLocked(\PhpOffice\PhpSpreadsheet\Style\Protection::PROTECTION_PROTECTED);
 
     foreach ($inputColumns as $column) {
         $colLetter = $columnLetters[$column['key']];
-        if ($firstEditableRow <= $endRow) {
-            $sheet->getStyle($colLetter . $firstEditableRow . ':' . $colLetter . $endRow)
-                ->getProtection()
-                ->setLocked(\PhpOffice\PhpSpreadsheet\Style\Protection::PROTECTION_UNPROTECTED);
-        }
+        $sheet->getStyle($colLetter . $startRow . ':' . $colLetter . $endRow)
+            ->getProtection()
+            ->setLocked(\PhpOffice\PhpSpreadsheet\Style\Protection::PROTECTION_UNPROTECTED);
 
         if ((string)$column['data_type'] === 'date') {
             $sheet->getStyle($colLetter . $startRow . ':' . $colLetter . $endRow)->getNumberFormat()->setFormatCode('@');
@@ -2478,6 +2471,7 @@ function build_asset_common_admin_template_workbook(int $profileId): \PhpOffice\
         }
     }
 
+    $sheet->getStyle('A1:' . $lastColumnLetter . $endRow)->getProtection()->setLocked(\PhpOffice\PhpSpreadsheet\Style\Protection::PROTECTION_PROTECTED);
     $sheet->getProtection()->setSheet(true);
     $sheet->getProtection()->setPassword('1234');
 
@@ -2518,8 +2512,6 @@ function import_asset_common_admin_rows_from_template(int $profileId, array $fil
     if ($profileFields === []) {
         throw new RuntimeException('No bound fields are configured for this profile.');
     }
-    $existingRows = get_asset_common_admin_rows_detailed($profileId);
-    $lockedRowCount = count($existingRows);
     $scopeOptions = array_flip(asset_common_scope_options());
     $fieldMetaById = [];
     $fieldMapByKey = [];
@@ -2542,9 +2534,6 @@ function import_asset_common_admin_rows_from_template(int $profileId, array $fil
     $parsedRows = [];
     foreach ($rows as $index => $row) {
         if ($index === 0) {
-            continue;
-        }
-        if ($index <= $lockedRowCount) {
             continue;
         }
         $scopeLabel = trim((string)($row[1] ?? ''));
@@ -2586,18 +2575,21 @@ function import_asset_common_admin_rows_from_template(int $profileId, array $fil
 
     db()->beginTransaction();
     try {
-        $maxSortStmt = db()->prepare('SELECT COALESCE(MAX(sort_order), 0) FROM asset_common_admin_rows WHERE profile_id = ?');
-        $maxSortStmt->execute([$profileId]);
-        $nextSortOrder = (int)$maxSortStmt->fetchColumn();
-
+        $existingRowIds = db()->prepare('SELECT id FROM asset_common_admin_rows WHERE profile_id = ?');
+        $existingRowIds->execute([$profileId]);
+        $rowIds = array_map('intval', $existingRowIds->fetchAll(PDO::FETCH_COLUMN) ?: []);
+        if ($rowIds) {
+            $placeholders = implode(',', array_fill(0, count($rowIds), '?'));
+            db()->prepare("DELETE FROM asset_common_admin_row_values WHERE row_id IN ({$placeholders})")->execute($rowIds);
+        }
+        db()->prepare('DELETE FROM asset_common_admin_rows WHERE profile_id = ?')->execute([$profileId]);
         foreach ($parsedRows as $parsedRow) {
-            $nextSortOrder += 10;
             db()->prepare('INSERT INTO asset_common_admin_rows (profile_id, stable_row_key, scope_office_type, scope_office_id, sort_order, active_status, created_at) VALUES (?, ?, ?, ?, ?, 1, NOW())')->execute([
                 $profileId,
                 asset_common_admin_row_key(),
                 $parsedRow['scope_office_type'],
                 $parsedRow['scope_office_id'],
-                $nextSortOrder,
+                $parsedRow['sort_order'],
             ]);
             $rowId = (int)db()->lastInsertId();
             foreach ($parsedRow['values'] as $childFieldId => $valueText) {

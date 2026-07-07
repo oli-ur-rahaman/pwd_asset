@@ -1,0 +1,337 @@
+<?php
+require __DIR__ . '/header.php';
+
+$segments = asset_common_superadmin_segments();
+$requestedSegmentId = asset_active_segment_id((int)request_str('segment_id', '0'));
+$activeSegment = null;
+foreach ($segments as $segmentRow) {
+    if ((int)($segmentRow['id'] ?? 0) === $requestedSegmentId) {
+        $activeSegment = $segmentRow;
+        break;
+    }
+}
+if (!$activeSegment) {
+    $activeSegment = $segments[0] ?? null;
+}
+$activeSegmentId = (int)($activeSegment['id'] ?? 0);
+$previewScope = input_str('preview_scope', '0:0');
+$previewScopeParts = asset_common_parse_scope_token($previewScope);
+$previewOfficeType = (int)($previewScopeParts['office_type'] ?? 0);
+$previewOfficeId = (int)($previewScopeParts['office_id'] ?? 0);
+$commonScopeOptions = asset_common_scope_options();
+$previewScopeOptions = ['0:0' => 'All Offices (Global View)'] + asset_common_specific_office_scope_options();
+$commonRowPolicyOptions = asset_common_row_policy_options();
+$commonRowsSupported = $activeSegmentId > 0 ? asset_segment_common_rows_supported($activeSegmentId) : true;
+$profilesByCategory = $activeSegmentId > 0 ? asset_common_superadmin_profiles_by_category($activeSegmentId) : [];
+$activeProfile = null;
+if (isset($profilesByCategory[0])) {
+    $activeProfile = $profilesByCategory[0];
+} elseif ($profilesByCategory !== []) {
+    $activeProfile = reset($profilesByCategory) ?: null;
+}
+$activeCategoryKey = $activeProfile ? (string)((int)($activeProfile['category_id'] ?? 0)) : '';
+$activeProfileId = (int)($activeProfile['id'] ?? 0);
+
+if (!function_exists('render_common_admin_row_input')) {
+    function render_common_admin_row_input(string $formId, array $fieldMeta, int $childFieldId, string $value): string
+    {
+        $fieldName = 'common_row_values[' . $childFieldId . ']';
+        $class = 'inline-edit';
+        $dataType = (string)($fieldMeta['data_type'] ?? 'text');
+        if ($dataType === 'yes_no') {
+            $html = '<select form="' . e($formId) . '" class="' . e($class) . '" name="' . e($fieldName) . '">';
+            $html .= '<option value=""></option>';
+            foreach (['Yes', 'No'] as $option) {
+                $selected = strcasecmp($value, $option) === 0 ? ' selected' : '';
+                $html .= '<option value="' . e($option) . '"' . $selected . '>' . e($option) . '</option>';
+            }
+            $html .= '</select>';
+            return $html;
+        }
+        if ($dataType === 'dropdown') {
+            $html = '<select form="' . e($formId) . '" class="' . e($class) . '" name="' . e($fieldName) . '">';
+            $html .= '<option value=""></option>';
+            foreach (get_asset_field_options((int)($fieldMeta['id'] ?? 0), true) as $option) {
+                $optionValue = (string)($option['option_value'] ?? '');
+                $selected = $optionValue === $value ? ' selected' : '';
+                $html .= '<option value="' . e($optionValue) . '"' . $selected . '>' . e($optionValue) . '</option>';
+            }
+            $html .= '</select>';
+            return $html;
+        }
+        if ($dataType === 'bimh') {
+            $estName = trim(asset_bimh_est_name_for_id($value));
+            $isMissing = $value !== '' && ($estName === '' || strcasecmp($estName, 'BIMH ID is not in the Database.') === 0);
+            $hintText = $value === '' ? '' : ($isMissing ? 'Not found' : $estName);
+            $hintClass = $isMissing ? 'hint danger-text' : 'hint';
+            $html = '<div class="common-bimh-input-wrap">';
+            $html .= '<input form="' . e($formId) . '" class="' . e($class) . '" type="text" name="' . e($fieldName) . '" value="' . e($value) . '">';
+            if ($hintText !== '') {
+                $html .= '<div class="' . e($hintClass) . '">' . e($hintText) . '</div>';
+            }
+            $html .= '</div>';
+            return $html;
+        }
+        $inputType = $dataType === 'date' ? 'date' : 'text';
+        return '<input form="' . e($formId) . '" class="' . e($class) . '" type="' . e($inputType) . '" name="' . e($fieldName) . '" value="' . e($value) . '">';
+    }
+}
+
+$renderProfileSection = static function (array $profile) use (
+    $commonScopeOptions,
+    $previewOfficeType,
+    $previewOfficeId,
+    $previewScope
+): void {
+    $activeSegmentId = (int)($profile['segment_id'] ?? 0);
+    $profilesByCategory = asset_common_superadmin_profiles_by_category($activeSegmentId);
+    $categories = array_values(array_filter(
+        get_asset_categories(true, $activeSegmentId),
+        static fn(array $category): bool => isset($profilesByCategory[(int)($category['id'] ?? 0)])
+    ));
+    $categoriesById = [];
+    foreach ($categories as $category) {
+        $categoriesById[(int)$category['id']] = $category;
+    }
+    $profileId = (int)($profile['id'] ?? 0);
+    $category = $categoriesById[(int)($profile['category_id'] ?? 0)] ?? null;
+    if (!$category && (int)($profile['category_id'] ?? 0) === 0) {
+        $category = ['id' => 0, 'name' => 'Default'];
+    }
+    $profileFields = get_asset_common_profile_fields($profileId);
+    $fieldMetaById = [];
+    foreach ($profileFields as $profileField) {
+        $childFieldId = (int)($profileField['child_field_id'] ?? 0);
+        if ($childFieldId > 0) {
+            $fieldMetaById[$childFieldId] = get_asset_field($childFieldId, $activeSegmentId) ?: [];
+        }
+    }
+    $adminRows = get_asset_common_admin_rows_detailed($profileId);
+    $previewRows = asset_common_fetch_admin_rows($profileId, $previewOfficeType, $previewOfficeId);
+    ?>
+    <section class="card">
+        <div class="card-head">
+            <div>
+                <h2><?= e((string)($category['name'] ?? 'Category')); ?></h2>
+                <p class="hint">Only fields declared as `superadmin_defined` common fields are editable here.</p>
+            </div>
+        </div>
+
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Office Name</th>
+                        <th>Order</th>
+                        <?php foreach ($profileFields as $profileField): ?>
+                            <th><?= e((string)($profileField['child_field_label'] ?? 'Field')); ?></th>
+                        <?php endforeach; ?>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($adminRows as $adminRow): ?>
+                        <?php $rowFormId = 'common-fields-row-' . $profileId . '-' . (int)$adminRow['id']; ?>
+                        <tr>
+                            <td>
+                                <select form="<?= e($rowFormId); ?>" class="inline-edit" name="scope_token" required>
+                                    <?php foreach ($commonScopeOptions as $scopeToken => $scopeLabel): ?>
+                                        <option value="<?= e((string)$scopeToken); ?>" <?= (string)($adminRow['scope_token'] ?? '0:0') === (string)$scopeToken ? 'selected' : ''; ?>><?= e((string)$scopeLabel); ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </td>
+                            <td><input form="<?= e($rowFormId); ?>" class="inline-edit" type="number" name="sort_order" min="1" step="1" value="<?= e((string)($adminRow['sort_order'] ?? 10)); ?>" required></td>
+                            <?php foreach ($profileFields as $profileField): ?>
+                                <?php $childFieldId = (int)($profileField['child_field_id'] ?? 0); ?>
+                                <td><?= render_common_admin_row_input($rowFormId, $fieldMetaById[$childFieldId] ?? [], $childFieldId, (string)($adminRow['values'][$childFieldId] ?? '')); ?></td>
+                            <?php endforeach; ?>
+                            <td>
+                                <div class="action-row">
+                                    <form method="post" action="index.php" id="<?= e($rowFormId); ?>" class="inline-form">
+                                        <?= csrf_input(); ?>
+                                        <input type="hidden" name="action" value="save_asset_common_admin_row">
+                                        <input type="hidden" name="profile_id" value="<?= e((string)$profileId); ?>">
+                                        <input type="hidden" name="row_id" value="<?= e((string)$adminRow['id']); ?>">
+                                        <input type="hidden" name="segment_id" value="<?= e((string)$activeSegmentId); ?>">
+                                        <input type="hidden" name="redirect_page" value="common_fields">
+                                        <input type="hidden" name="common_category" value="<?= e((string)($category['id'] ?? '')); ?>">
+                                        <input type="hidden" name="preview_scope" value="<?= e($previewScope); ?>">
+                                        <button type="submit" class="btn-small office-save-button">Save</button>
+                                    </form>
+                                    <form method="post" action="index.php" class="inline-form">
+                                        <?= csrf_input(); ?>
+                                        <input type="hidden" name="action" value="delete_asset_common_admin_row">
+                                        <input type="hidden" name="profile_id" value="<?= e((string)$profileId); ?>">
+                                        <input type="hidden" name="row_id" value="<?= e((string)$adminRow['id']); ?>">
+                                        <input type="hidden" name="segment_id" value="<?= e((string)$activeSegmentId); ?>">
+                                        <input type="hidden" name="redirect_page" value="common_fields">
+                                        <input type="hidden" name="common_category" value="<?= e((string)($category['id'] ?? '')); ?>">
+                                        <input type="hidden" name="preview_scope" value="<?= e($previewScope); ?>">
+                                        <button type="submit" class="btn-small btn-danger">Delete</button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                    <?php $newRowFormId = 'common-fields-row-new-' . $profileId; ?>
+                    <tr>
+                        <td>
+                            <select form="<?= e($newRowFormId); ?>" class="inline-edit" name="scope_token" required>
+                                <?php foreach ($commonScopeOptions as $scopeToken => $scopeLabel): ?>
+                                    <option value="<?= e((string)$scopeToken); ?>" <?= (string)$scopeToken === '0:0' ? 'selected' : ''; ?>><?= e((string)$scopeLabel); ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </td>
+                        <td><input form="<?= e($newRowFormId); ?>" class="inline-edit" type="number" name="sort_order" min="1" step="1" value="<?= e((string)((count($adminRows) + 1) * 10)); ?>" required></td>
+                        <?php foreach ($profileFields as $profileField): ?>
+                            <?php $childFieldId = (int)($profileField['child_field_id'] ?? 0); ?>
+                            <td><?= render_common_admin_row_input($newRowFormId, $fieldMetaById[$childFieldId] ?? [], $childFieldId, ''); ?></td>
+                        <?php endforeach; ?>
+                        <td>
+                            <form method="post" action="index.php" id="<?= e($newRowFormId); ?>" class="inline-form">
+                                <?= csrf_input(); ?>
+                                <input type="hidden" name="action" value="save_asset_common_admin_row">
+                                <input type="hidden" name="profile_id" value="<?= e((string)$profileId); ?>">
+                                <input type="hidden" name="segment_id" value="<?= e((string)$activeSegmentId); ?>">
+                                <input type="hidden" name="redirect_page" value="common_fields">
+                                <input type="hidden" name="common_category" value="<?= e((string)($category['id'] ?? '')); ?>">
+                                <input type="hidden" name="preview_scope" value="<?= e($previewScope); ?>">
+                                <button type="submit">Add Row</button>
+                            </form>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="sub-card">
+            <div class="card-head">
+                <div>
+                    <h3>User UI Preview</h3>
+                    <p class="hint">Select an office to see the common rows that office would receive.</p>
+                </div>
+            </div>
+            <form method="get" action="index.php" class="inline-form">
+                <input type="hidden" name="page" value="common_fields">
+                <input type="hidden" name="segment_id" value="<?= e((string)$activeSegmentId); ?>">
+                <input type="hidden" name="common_category" value="<?= e((string)($category['id'] ?? '')); ?>">
+                <label>Preview Office
+                    <select name="preview_scope">
+                        <?php foreach ($previewScopeOptions as $scopeToken => $scopeLabel): ?>
+                            <option value="<?= e((string)$scopeToken); ?>" <?= $previewScope === (string)$scopeToken ? 'selected' : ''; ?>><?= e((string)$scopeLabel); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </label>
+                <button type="submit" class="btn-small">Preview</button>
+            </form>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <?php foreach ($profileFields as $profileField): ?>
+                                <th><?= e((string)($profileField['child_field_label'] ?? 'Field')); ?></th>
+                            <?php endforeach; ?>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php if (!$previewRows): ?>
+                            <tr><td colspan="<?= e((string)max(1, count($profileFields))); ?>" class="muted">No common rows match this preview office yet.</td></tr>
+                        <?php else: ?>
+                            <?php foreach ($previewRows as $previewRow): ?>
+                                <tr>
+                                    <?php foreach ($profileFields as $profileField): ?>
+                                        <?php $childFieldId = (int)($profileField['child_field_id'] ?? 0); ?>
+                                        <td><?= e((string)($previewRow['values'][$childFieldId] ?? '')); ?></td>
+                                    <?php endforeach; ?>
+                                </tr>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+    <?php
+};
+?>
+
+<section class="card">
+    <h1>Common Fields</h1>
+    <p class="hint">Manage `superadmin_defined` common rows here. `user_defined` common fields stay in the Management flow for now.</p>
+</section>
+
+<?php if (!$segments): ?>
+    <section class="card">
+        <p class="muted">No segments have `superadmin_defined` common fields yet.</p>
+    </section>
+<?php else: ?>
+    <section class="card card-transparent segment-switch-card">
+        <div class="toolbar-row scope-switch-row">
+            <?php foreach ($segments as $segment): ?>
+                <?php $segmentId = (int)($segment['id'] ?? 0); ?>
+                <a class="button-link<?= $segmentId === $activeSegmentId ? ' is-active' : ''; ?>" href="index.php?<?= e(http_build_query(['page' => 'common_fields', 'segment_id' => $segmentId, 'preview_scope' => $previewScope])); ?>"><?= e((string)($segment['segment_name'] ?? 'Segment')); ?></a>
+            <?php endforeach; ?>
+        </div>
+    </section>
+
+    <section class="card">
+        <h2><?= e((string)($activeSegment['segment_name'] ?? 'Segment')); ?></h2>
+        <p class="hint">Manage `superadmin_defined` common rows for this segment.</p>
+    </section>
+
+    <?php if (!$commonRowsSupported): ?>
+        <section class="card">
+            <p class="hint">This segment has more than one category, so it no longer matches the current common-fields rule. The legacy common-field data is shown here for review only. To align with the new rule, reduce the segment to zero or one category or remove the legacy common-field setup.</p>
+        </section>
+    <?php endif; ?>
+
+    <?php if ($activeProfile && $activeProfileId > 0): ?>
+        <section class="card">
+            <h2>Category Type Selection</h2>
+            <form method="post" action="index.php" class="inline-form common-fields-policy-form">
+                <?= csrf_input(); ?>
+                <input type="hidden" name="action" value="save_asset_common_profile_row_policy">
+                <input type="hidden" name="profile_id" value="<?= e((string)$activeProfileId); ?>">
+                <input type="hidden" name="segment_id" value="<?= e((string)$activeSegmentId); ?>">
+                <input type="hidden" name="common_category" value="<?= e((string)$activeCategoryKey); ?>">
+                <input type="hidden" name="preview_scope" value="<?= e($previewScope); ?>">
+                <label>Category Type
+                    <select name="common_row_policy">
+                        <?php foreach ($commonRowPolicyOptions as $policyValue => $policyLabel): ?>
+                            <option value="<?= e((string)$policyValue); ?>" <?= (string)($activeProfile['row_policy'] ?? asset_common_row_policy_fixed()) === (string)$policyValue ? 'selected' : ''; ?>><?= e((string)$policyLabel); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </label>
+                <button type="submit" class="btn-small">Save</button>
+            </form>
+        </section>
+        <section class="card">
+            <h2>Excel Template</h2>
+            <form method="post" action="index.php" class="grid common-fields-template-grid" enctype="multipart/form-data">
+                <div>
+                    <a class="button-link" href="index.php?<?= e(http_build_query(['page' => 'download_asset_common_admin_template', 'segment_id' => $activeSegmentId, 'common_category' => $activeCategoryKey])); ?>">Download Excel Template</a>
+                </div>
+                <div>
+                    <input type="file" name="template_file" accept=".xlsx,.xls" required>
+                </div>
+                <div>
+                    <?= csrf_input(); ?>
+                    <input type="hidden" name="action" value="upload_asset_common_admin_template">
+                    <input type="hidden" name="segment_id" value="<?= e((string)$activeSegmentId); ?>">
+                    <input type="hidden" name="profile_id" value="<?= e((string)$activeProfileId); ?>">
+                    <input type="hidden" name="redirect_page" value="common_fields">
+                    <input type="hidden" name="common_category" value="<?= e((string)$activeCategoryKey); ?>">
+                    <input type="hidden" name="preview_scope" value="<?= e($previewScope); ?>">
+                    <button type="submit" class="btn-small">Upload Filled Up Excel Sheet</button>
+                </div>
+            </form>
+        </section>
+        <?php $renderProfileSection($activeProfile); ?>
+    <?php else: ?>
+        <section class="card">
+            <p class="muted">No `superadmin_defined` profile exists for this segment.</p>
+        </section>
+    <?php endif; ?>
+<?php endif; ?>
+
+<?php require __DIR__ . '/footer.php'; ?>

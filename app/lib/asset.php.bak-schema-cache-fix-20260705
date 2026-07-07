@@ -7,7 +7,7 @@ function ensure_asset_schema(): void
         return;
     }
     $initialized = true;
-    if (asset_schema_cache_matches() && asset_schema_cache_is_safe_to_trust()) {
+    if (asset_schema_cache_matches()) {
         return;
     }
 
@@ -109,7 +109,7 @@ function ensure_asset_schema(): void
             active_status TINYINT NOT NULL DEFAULT 1,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT NULL,
-            UNIQUE KEY uniq_asset_common_profiles_segment_category (segment_id, category_id),
+            UNIQUE KEY uniq_asset_common_profiles_category (category_id),
             KEY idx_asset_common_profiles_segment (segment_id),
             KEY idx_asset_common_profiles_parent (parent_segment_id, parent_category_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
@@ -545,8 +545,6 @@ function ensure_asset_schema(): void
     asset_ensure_segment_indexes();
     asset_ensure_index('asset_filter_items', 'idx_asset_filter_items_segment_field', ['segment_id', 'field_id', 'active_status']);
     asset_ensure_index('asset_filter_items', 'idx_asset_filter_items_segment_key', ['segment_id', 'field_key', 'active_status']);
-    asset_drop_index_if_exists('asset_common_profiles', 'uniq_asset_common_profiles_category');
-    asset_ensure_unique_index('asset_common_profiles', 'uniq_asset_common_profiles_segment_category', ['segment_id', 'category_id']);
     asset_ensure_index('asset_common_profiles', 'idx_asset_common_profiles_segment', ['segment_id']);
     asset_ensure_index('asset_common_profiles', 'idx_asset_common_profiles_parent', ['parent_segment_id', 'parent_category_id']);
     asset_ensure_index('asset_common_profile_fields', 'idx_asset_common_profile_fields_profile', ['profile_id']);
@@ -590,52 +588,6 @@ function asset_schema_cache_matches(): bool
         return false;
     }
     return trim((string)file_get_contents($file)) === asset_schema_version();
-}
-
-function asset_schema_cache_is_safe_to_trust(): bool
-{
-    foreach ([
-        ['table' => 'segments', 'column' => 'template_source'],
-        ['table' => 'asset_fields', 'column' => 'is_common_row_field'],
-        ['table' => 'assets', 'column' => 'common_profile_id'],
-        ['table' => 'assets', 'column' => 'common_row_key'],
-        ['table' => 'asset_common_admin_rows', 'column' => 'scope_office_type'],
-        ['table' => 'asset_common_admin_row_values', 'column' => 'row_id'],
-    ] as $check) {
-        if (!asset_schema_column_exists($check['table'], $check['column'])) {
-            return false;
-        }
-    }
-
-    foreach ([
-        'asset_filter_items',
-        'asset_common_profiles',
-        'asset_common_profile_fields',
-        'asset_common_admin_rows',
-        'asset_common_admin_row_values',
-        'asset_download_jobs',
-        'project_backup_jobs',
-    ] as $table) {
-        if (!asset_schema_table_exists($table)) {
-            return false;
-        }
-    }
-
-    return true;
-}
-
-function asset_schema_table_exists(string $table): bool
-{
-    $stmt = db()->prepare('SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? LIMIT 1');
-    $stmt->execute([$table]);
-    return (bool)$stmt->fetchColumn();
-}
-
-function asset_schema_column_exists(string $table, string $column): bool
-{
-    $stmt = db()->prepare('SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ? LIMIT 1');
-    $stmt->execute([$table, $column]);
-    return (bool)$stmt->fetchColumn();
 }
 
 function asset_mark_schema_cache_ready(): void
@@ -1275,40 +1227,6 @@ function asset_common_profiles_by_category_map(int $segmentId, bool $includeInac
     return $map;
 }
 
-function asset_segment_category_count(int $segmentId, bool $includeInactive = true): int
-{
-    return count(get_asset_categories($includeInactive, $segmentId));
-}
-
-function asset_segment_common_rows_supported(int $segmentId): bool
-{
-    return asset_segment_category_count($segmentId, true) <= 1;
-}
-
-function asset_segment_common_profile_category_id(int $segmentId): int
-{
-    $categories = get_asset_categories(true, $segmentId);
-    if (count($categories) === 1) {
-        return (int)($categories[0]['id'] ?? 0);
-    }
-    return 0;
-}
-
-function asset_segment_has_common_row_configuration(int $segmentId): bool
-{
-    if ($segmentId <= 0) {
-        return false;
-    }
-    $stmt = db()->prepare('SELECT COUNT(*) FROM asset_common_profiles WHERE segment_id = ?');
-    $stmt->execute([$segmentId]);
-    if ((int)$stmt->fetchColumn() > 0) {
-        return true;
-    }
-    $stmt = db()->prepare('SELECT COUNT(*) FROM asset_fields WHERE segment_id = ? AND is_common_row_field = 1');
-    $stmt->execute([$segmentId]);
-    return (int)$stmt->fetchColumn() > 0;
-}
-
 function asset_common_profile_allows_manual_rows(?array $profile): bool
 {
     if (!$profile) {
@@ -1539,8 +1457,7 @@ function asset_upsert_common_profile_binding(int $childFieldId, array $payload):
         ? (int)($payload['common_parent_field_id'] ?? 0)
         : null;
 
-    $segmentId = asset_normalize_segment_id((int)($payload['segment_id'] ?? 0));
-    $profile = get_asset_common_profile_by_category($profileCategoryId, $segmentId, true);
+    $profile = get_asset_common_profile_by_category($profileCategoryId, null, true);
     if (!$profile) {
         $stmt = db()->prepare('
             INSERT INTO asset_common_profiles (
@@ -1548,7 +1465,7 @@ function asset_upsert_common_profile_binding(int $childFieldId, array $payload):
             ) VALUES (?, ?, ?, ?, ?, ?, 1, NOW())
         ');
         $stmt->execute([
-            $segmentId,
+            asset_normalize_segment_id((int)($payload['segment_id'] ?? 0)),
             $profileCategoryId,
             $definitionMode,
             $rowPolicy,
@@ -1652,13 +1569,7 @@ function asset_common_parse_scope_token(string $token): array
     $parts = explode(':', $token, 2);
     $officeType = (int)($parts[0] ?? 0);
     $officeId = (int)($parts[1] ?? 0);
-    if ($officeType < 0 || $officeId < 0) {
-        return ['office_type' => 0, 'office_id' => 0];
-    }
-    if ($officeType === 0 && $officeId === 0) {
-        return ['office_type' => 0, 'office_id' => 0];
-    }
-    if ($officeType <= 0) {
+    if ($officeType <= 0 || $officeId <= 0) {
         return ['office_type' => 0, 'office_id' => 0];
     }
     return ['office_type' => $officeType, 'office_id' => $officeId];
@@ -1666,17 +1577,8 @@ function asset_common_parse_scope_token(string $token): array
 
 function asset_common_scope_label(int $officeType, int $officeId): string
 {
-    if ($officeType <= 0 && $officeId <= 0) {
+    if ($officeType <= 0 || $officeId <= 0) {
         return 'All Offices (Global)';
-    }
-    if ($officeId === 0) {
-        return match ($officeType) {
-            2 => 'All Zone',
-            3 => 'All Circle',
-            4 => 'All Division',
-            5 => 'All Subdivision',
-            default => 'All Offices (Global)',
-        };
     }
     return office_kind_to_type(office_type_to_kind($officeType)) > 0
         ? ucfirst(str_replace('_', '-', office_type_to_kind($officeType))) . ' - ' . office_name_from_type_id($officeType, $officeId)
@@ -1687,10 +1589,6 @@ function asset_common_scope_options(): array
 {
     $options = [
         asset_common_scope_token(0, 0) => 'All Offices (Global)',
-        asset_common_scope_token(2, 0) => 'All Zone',
-        asset_common_scope_token(3, 0) => 'All Circle',
-        asset_common_scope_token(4, 0) => 'All Division',
-        asset_common_scope_token(5, 0) => 'All Subdivision',
     ];
     $overview = get_offices_overview();
     foreach ($overview['zones'] ?? [] as $row) {
@@ -1803,38 +1701,46 @@ function asset_common_fetch_source_assets(int $segmentId, int $categoryId, int $
 
 function asset_common_fetch_admin_rows(int $profileId, ?int $officeType = null, ?int $officeId = null): array
 {
-    $scopePairs = [[0, 0]];
-    if (($officeType ?? 0) > 0) {
-        $scopePairs[] = [(int)$officeType, 0];
-        if (($officeId ?? 0) > 0) {
-            $scopePairs[] = [(int)$officeType, (int)$officeId];
-        }
+    $hasScopedRows = false;
+    if (($officeType ?? 0) > 0 && ($officeId ?? 0) > 0) {
+        $scopeStmt = db()->prepare(
+            'SELECT COUNT(*)
+             FROM asset_common_admin_rows
+             WHERE profile_id = ?
+               AND active_status = 1
+               AND scope_office_type = ?
+               AND scope_office_id = ?'
+        );
+        $scopeStmt->execute([$profileId, $officeType, $officeId]);
+        $hasScopedRows = (int)$scopeStmt->fetchColumn() > 0;
     }
-    $conditions = [];
-    $params = [$profileId];
-    foreach ($scopePairs as [$scopeType, $scopeId]) {
-        $conditions[] = '(r.scope_office_type = ? AND r.scope_office_id = ?)';
-        $params[] = $scopeType;
-        $params[] = $scopeId;
+    if ($hasScopedRows) {
+        $stmt = db()->prepare(
+            'SELECT r.id, r.profile_id, r.stable_row_key, r.scope_office_type, r.scope_office_id, r.sort_order, r.active_status,
+                    v.child_field_id, v.value_text
+             FROM asset_common_admin_rows r
+             LEFT JOIN asset_common_admin_row_values v ON v.row_id = r.id
+             WHERE r.profile_id = ?
+               AND r.active_status = 1
+               AND r.scope_office_type = ?
+               AND r.scope_office_id = ?
+             ORDER BY r.sort_order ASC, r.id ASC, v.id ASC'
+        );
+        $stmt->execute([$profileId, $officeType, $officeId]);
+    } else {
+        $stmt = db()->prepare(
+            'SELECT r.id, r.profile_id, r.stable_row_key, r.scope_office_type, r.scope_office_id, r.sort_order, r.active_status,
+                    v.child_field_id, v.value_text
+             FROM asset_common_admin_rows r
+             LEFT JOIN asset_common_admin_row_values v ON v.row_id = r.id
+             WHERE r.profile_id = ?
+               AND r.active_status = 1
+               AND r.scope_office_type = 0
+               AND r.scope_office_id = 0
+             ORDER BY r.sort_order ASC, r.id ASC, v.id ASC'
+        );
+        $stmt->execute([$profileId]);
     }
-    $stmt = db()->prepare(
-        'SELECT r.id, r.profile_id, r.stable_row_key, r.scope_office_type, r.scope_office_id, r.sort_order, r.active_status,
-                v.child_field_id, v.value_text
-         FROM asset_common_admin_rows r
-         LEFT JOIN asset_common_admin_row_values v ON v.row_id = r.id
-         WHERE r.profile_id = ?
-           AND r.active_status = 1
-           AND (' . implode(' OR ', $conditions) . ')
-         ORDER BY r.sort_order ASC,
-                  CASE
-                      WHEN r.scope_office_type = 0 AND r.scope_office_id = 0 THEN 1
-                      WHEN r.scope_office_id = 0 THEN 2
-                      ELSE 3
-                  END ASC,
-                  r.id ASC,
-                  v.id ASC'
-    );
-    $stmt->execute($params);
     $rows = [];
     foreach ($stmt->fetchAll() as $row) {
         $rowId = (int)$row['id'];
@@ -1861,195 +1767,6 @@ function asset_common_fetch_admin_rows(int $profileId, ?int $officeType = null, 
 function get_asset_common_admin_rows_detailed(int $profileId): array
 {
     return asset_common_fetch_admin_rows($profileId);
-}
-
-function asset_common_specific_office_scope_options(): array
-{
-    $options = [];
-    $overview = get_offices_overview();
-    foreach (['zones' => 2, 'circles' => 3, 'divisions' => 4, 'subdivisions' => 5] as $key => $officeType) {
-        foreach ($overview[$key] ?? [] as $row) {
-            $officeId = (int)($row['id'] ?? 0);
-            if ($officeId <= 0) {
-                continue;
-            }
-            $options[asset_common_scope_token($officeType, $officeId)] = asset_common_scope_label($officeType, $officeId);
-        }
-    }
-    return $options;
-}
-
-function asset_common_superadmin_segments(): array
-{
-    $segments = [];
-    foreach (get_asset_segments(true) as $segment) {
-        $segmentId = (int)($segment['id'] ?? 0);
-        if ($segmentId <= 0) {
-            continue;
-        }
-        $profiles = get_asset_common_profiles_for_segment($segmentId, true);
-        foreach ($profiles as $profile) {
-            if ((string)($profile['definition_mode'] ?? '') === asset_common_definition_mode_superadmin_defined()) {
-                $segments[] = $segment;
-                break;
-            }
-        }
-    }
-    return $segments;
-}
-
-function asset_common_superadmin_profiles_by_category(int $segmentId): array
-{
-    $profiles = [];
-    foreach (get_asset_common_profiles_for_segment($segmentId, true) as $profile) {
-        if ((string)($profile['definition_mode'] ?? '') !== asset_common_definition_mode_superadmin_defined()) {
-            continue;
-        }
-        $profiles[(int)($profile['category_id'] ?? 0)] = $profile;
-    }
-    return $profiles;
-}
-
-function asset_common_all_category_key(): string
-{
-    return '__all__';
-}
-
-function asset_common_superadmin_profiles_for_segment(int $segmentId): array
-{
-    return array_values(asset_common_superadmin_profiles_by_category($segmentId));
-}
-
-function asset_common_all_category_field_definitions(int $segmentId): array
-{
-    $definitions = [];
-    foreach (asset_common_superadmin_profiles_for_segment($segmentId) as $profile) {
-        foreach (get_asset_common_profile_fields((int)($profile['id'] ?? 0)) as $profileField) {
-            $childFieldId = (int)($profileField['child_field_id'] ?? 0);
-            if ($childFieldId <= 0 || isset($definitions[$childFieldId])) {
-                continue;
-            }
-            $field = get_asset_field($childFieldId, $segmentId);
-            if (!$field) {
-                continue;
-            }
-            $definitions[$childFieldId] = [
-                'child_field_id' => $childFieldId,
-                'child_field_label' => (string)($profileField['child_field_label'] ?? ($field['label'] ?? 'Field')),
-                'field_sort_order' => (int)($field['sort_order'] ?? 0),
-            ];
-        }
-    }
-    uasort($definitions, static function (array $left, array $right): int {
-        $sortCompare = ((int)$left['field_sort_order']) <=> ((int)$right['field_sort_order']);
-        if ($sortCompare !== 0) {
-            return $sortCompare;
-        }
-        return strcasecmp((string)$left['child_field_label'], (string)$right['child_field_label']);
-    });
-    return array_values($definitions);
-}
-
-function asset_common_all_category_rows(int $segmentId): array
-{
-    $rows = [];
-    foreach (asset_common_superadmin_profiles_for_segment($segmentId) as $profile) {
-        foreach (get_asset_common_admin_rows_detailed((int)($profile['id'] ?? 0)) as $row) {
-            $stableRowKey = (string)($row['stable_row_key'] ?? '');
-            $scopeToken = (string)($row['scope_token'] ?? asset_common_scope_token(
-                (int)($row['scope_office_type'] ?? 0),
-                (int)($row['scope_office_id'] ?? 0)
-            ));
-            $mergeKey = $stableRowKey !== ''
-                ? $stableRowKey . '|' . $scopeToken . '|' . (int)($row['sort_order'] ?? 0)
-                : 'row_' . (int)($row['id'] ?? 0);
-            if (!isset($rows[$mergeKey])) {
-                $rows[$mergeKey] = [
-                    'stable_row_key' => $stableRowKey,
-                    'scope_office_type' => (int)($row['scope_office_type'] ?? 0),
-                    'scope_office_id' => (int)($row['scope_office_id'] ?? 0),
-                    'scope_token' => $scopeToken,
-                    'scope_label' => (string)($row['scope_label'] ?? ''),
-                    'sort_order' => (int)($row['sort_order'] ?? 0),
-                    'values' => [],
-                ];
-            }
-            foreach ((array)($row['values'] ?? []) as $childFieldId => $valueText) {
-                $childFieldId = (int)$childFieldId;
-                if ($childFieldId <= 0) {
-                    continue;
-                }
-                $rows[$mergeKey]['values'][$childFieldId] = (string)$valueText;
-            }
-        }
-    }
-    uasort($rows, static function (array $left, array $right): int {
-        $sortCompare = ((int)$left['sort_order']) <=> ((int)$right['sort_order']);
-        if ($sortCompare !== 0) {
-            return $sortCompare;
-        }
-        return strcmp((string)$left['stable_row_key'], (string)$right['stable_row_key']);
-    });
-    return array_values($rows);
-}
-
-function asset_common_profile_resolve_for_segment_category(int $segmentId, string $commonCategory): ?array
-{
-    $segmentId = asset_normalize_segment_id($segmentId);
-    if ($segmentId <= 0) {
-        return null;
-    }
-    $categoryId = (int)$commonCategory;
-    $profile = get_asset_common_profile_by_category($categoryId, $segmentId, true);
-    if (!$profile || (string)($profile['definition_mode'] ?? '') !== asset_common_definition_mode_superadmin_defined()) {
-        return null;
-    }
-    return $profile;
-}
-
-function asset_common_sync_target_offices_for_profile(array $profile): array
-{
-    $definitionMode = (string)($profile['definition_mode'] ?? '');
-    if ($definitionMode === asset_common_definition_mode_superadmin_defined()) {
-        $overview = get_offices_overview();
-        $scopes = [];
-        foreach (['zones' => 2, 'circles' => 3, 'divisions' => 4, 'subdivisions' => 5] as $key => $officeType) {
-            foreach ($overview[$key] ?? [] as $row) {
-                $officeId = (int)($row['id'] ?? 0);
-                if ($officeId <= 0) {
-                    continue;
-                }
-                $scopes[$officeType . ':' . $officeId] = ['office_type' => $officeType, 'office_id' => $officeId];
-            }
-        }
-        return array_values($scopes);
-    }
-
-    $stmt = db()->prepare(
-        'SELECT DISTINCT office_type, office_id
-         FROM assets
-         WHERE (
-                (segment_id = ? AND category_id = ?)
-                OR (common_profile_id = ?)
-               )
-           AND deleted_at IS NULL
-           AND active_status = 1
-           AND office_id > 0
-           AND office_type > 0
-         ORDER BY office_type ASC, office_id ASC'
-    );
-    $stmt->execute([
-        (int)($profile['parent_segment_id'] ?? 0),
-        (int)($profile['parent_category_id'] ?? 0),
-        (int)($profile['id'] ?? 0),
-    ]);
-    return array_map(
-        static fn(array $scope): array => [
-            'office_type' => (int)($scope['office_type'] ?? 0),
-            'office_id' => (int)($scope['office_id'] ?? 0),
-        ],
-        $stmt->fetchAll()
-    );
 }
 
 function asset_common_admin_row_key(): string
@@ -2149,11 +1866,6 @@ function save_asset_common_admin_row(int $profileId, array $input, ?int $rowId =
         if (db()->inTransaction()) {
             db()->rollBack();
         }
-        foreach ($createdTutorialFiles as $createdTutorialFile) {
-            if ($createdTutorialFile !== '' && is_file($createdTutorialFile)) {
-                @unlink($createdTutorialFile);
-            }
-        }
         throw $e;
     }
 }
@@ -2179,61 +1891,13 @@ function delete_asset_common_admin_row(int $profileId, int $rowId): void
     }
 }
 
-function asset_common_admin_template_column_definitions(int $profileId): array
+function asset_common_admin_template_headers(int $profileId): array
 {
-    $profile = get_asset_common_profile($profileId, true);
-    if (!$profile) {
-        throw new RuntimeException('Common-row profile not found.');
-    }
-    $columns = [[
-        'key' => 'office_scope',
-        'label' => 'Office Name',
-        'instruction_label' => 'Office Name',
-        'data_type' => 'dropdown',
-        'validation_kind' => 'office_scope',
-        'required_input' => true,
-        'required_final' => false,
-        'options' => array_values(asset_common_scope_options()),
-    ]];
-    $segmentId = (int)($profile['segment_id'] ?? 0);
+    $headers = ['Scope', 'Sort Order'];
     foreach (get_asset_common_profile_fields($profileId) as $profileField) {
-        $childFieldId = (int)($profileField['child_field_id'] ?? 0);
-        $field = $childFieldId > 0 ? get_asset_field($childFieldId, $segmentId) : null;
-        if (!$field) {
-            continue;
-        }
-        $type = (string)($field['data_type'] ?? 'text');
-        $validationKind = match ($type) {
-            'dropdown' => 'dropdown',
-            'yes_no' => 'yes_no',
-            'date' => 'date',
-            'number' => 'number',
-            default => 'text',
-        };
-        $options = [];
-        if ($validationKind === 'dropdown') {
-            $options = array_map(
-                static fn(array $option): string => (string)($option['option_value'] ?? ''),
-                get_asset_field_options($childFieldId, true)
-            );
-        } elseif ($validationKind === 'yes_no') {
-            $options = ['Yes', 'No'];
-        }
-        $columns[] = [
-            'key' => 'field_' . $childFieldId,
-            'field_id' => $childFieldId,
-            'label' => (string)($profileField['child_field_label'] ?? 'Field'),
-            'instruction_label' => asset_label_for_submission_message($field),
-            'data_type' => $type,
-            'validation_kind' => $validationKind,
-            'required_input' => true,
-            'required_final' => false,
-            'options' => $options,
-            'number_format_rule' => (string)($field['number_format_rule'] ?? ''),
-            'text_max_length' => (int)($field['text_max_length'] ?? 0),
-        ];
+        $headers[] = (string)($profileField['child_field_label'] ?? 'Field');
     }
-    return $columns;
+    return $headers;
 }
 
 function build_asset_common_admin_template_workbook(int $profileId): \PhpOffice\PhpSpreadsheet\Spreadsheet
@@ -2244,256 +1908,77 @@ function build_asset_common_admin_template_workbook(int $profileId): \PhpOffice\
         throw new RuntimeException('Common-row profile not found.');
     }
     $profileFields = get_asset_common_profile_fields($profileId);
-    $inputColumns = asset_common_admin_template_column_definitions($profileId);
-    $displayColumns = array_merge(
-        [[
-            'key' => 'serial',
-            'label' => 'SL',
-            'data_type' => 'number',
-            'non_editable' => true,
-        ]],
-        $inputColumns,
-        [[
-            'key' => 'instruction',
-            'label' => 'Instruction',
-            'data_type' => 'text',
-            'non_editable' => true,
-        ]]
-    );
     $existingRows = get_asset_common_admin_rows_detailed($profileId);
-    $existingRowCount = count($existingRows);
-    $scopeOptions = array_values(asset_common_scope_options());
-    $rowLimit = asset_template_row_limit();
-    $startRow = 2;
-    $endRow = $startRow + $rowLimit - 1;
-    $firstEditableRow = min($endRow + 1, $startRow + $existingRowCount);
+    $scopeOptions = asset_common_scope_options();
 
     $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
     export_apply_spreadsheet_font($spreadsheet);
     $sheet = $spreadsheet->getActiveSheet();
-    $sheet->setTitle('data');
-    $dropdownSheet = new \PhpOffice\PhpSpreadsheet\Worksheet\Worksheet($spreadsheet, 'dropdowns');
+    $sheet->setTitle('common_rows');
+    $dropdownSheet = new \PhpOffice\PhpSpreadsheet\Worksheet\Worksheet($spreadsheet, 'scope_options');
     $spreadsheet->addSheet($dropdownSheet);
     $dropdownSheet->setSheetState(\PhpOffice\PhpSpreadsheet\Worksheet\Worksheet::SHEETSTATE_HIDDEN);
     $spreadsheet->setActiveSheetIndex(0);
-    $sheet->setShowGridlines(false);
-    $sheet->freezePane('A2');
 
-    $helperColumnIndex = 1;
-    $definedRanges = [];
-    $writeListRange = static function (\PhpOffice\PhpSpreadsheet\Spreadsheet $book, \PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $listSheet, string $rangeName, array $values, int &$columnIndex) use (&$definedRanges): string {
-        $values = array_values(array_unique(array_values(array_filter(array_map(static fn($value): string => trim((string)$value), $values), static fn(string $value): bool => $value !== ''))));
-        if (!$values) {
-            $values = [''];
-        }
-        $col = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($columnIndex);
-        $listSheet->setCellValue($col . '1', $rangeName);
-        foreach ($values as $offset => $value) {
-            $listSheet->setCellValueExplicit($col . ($offset + 2), $value, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
-        }
-        $rangeRef = '$' . $col . '$2:$' . $col . '$' . (count($values) + 1);
-        if (!isset($definedRanges[$rangeName])) {
-            $book->addNamedRange(new \PhpOffice\PhpSpreadsheet\NamedRange($rangeName, $listSheet, $rangeRef));
-            $definedRanges[$rangeName] = true;
-        }
-        $columnIndex++;
-        return $rangeName;
-    };
-
-    foreach ($inputColumns as &$column) {
-        if (($column['validation_kind'] ?? '') === 'office_scope') {
-            $column['range_name'] = $writeListRange($spreadsheet, $dropdownSheet, 'COMMON_SCOPE_OPTIONS', $scopeOptions, $helperColumnIndex);
-        } elseif (($column['validation_kind'] ?? '') === 'dropdown') {
-            $column['range_name'] = $writeListRange(
-                $spreadsheet,
-                $dropdownSheet,
-                'COMMON_LIST_' . asset_template_named_token((string)$column['key']),
-                $column['options'] ?? [],
-                $helperColumnIndex
-            );
-        } elseif (($column['validation_kind'] ?? '') === 'yes_no') {
-            $column['range_name'] = $writeListRange(
-                $spreadsheet,
-                $dropdownSheet,
-                'COMMON_YESNO_' . asset_template_named_token((string)$column['key']),
-                $column['options'] ?? ['Yes', 'No'],
-                $helperColumnIndex
-            );
-        }
+    $headers = asset_common_admin_template_headers($profileId);
+    foreach ($headers as $index => $label) {
+        $columnIndex = $index + 1;
+        $cell = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($columnIndex) . '1';
+        $sheet->setCellValue($cell, $label);
+        $sheet->getColumnDimensionByColumn($columnIndex)->setWidth($index === 0 ? 36 : 22);
     }
-    unset($column);
+    $sheet->getStyle('A1:' . \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex(count($headers)) . '1')->applyFromArray([
+        'font' => ['bold' => true],
+        'fill' => [
+            'fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
+            'startColor' => ['rgb' => 'EAF2FF'],
+        ],
+    ]);
 
-    $columnLetters = [];
-    foreach ($displayColumns as $index => $column) {
-        $letter = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($index + 1);
-        $columnLetters[$column['key']] = $letter;
-        $sheet->setCellValue($letter . '1', asset_template_build_header_rich_text($column));
-        $sheet->getColumnDimension($letter)->setWidth(asset_template_column_width($column));
+    $dropdownSheet->setCellValue('A1', 'Scope');
+    $scopeRow = 2;
+    foreach ($scopeOptions as $label) {
+        $dropdownSheet->setCellValue('A' . $scopeRow, $label);
+        $scopeRow++;
     }
+    $scopeRange = '$A$2:$A$' . max(2, $scopeRow - 1);
+    $spreadsheet->addNamedRange(new \PhpOffice\PhpSpreadsheet\NamedRange('COMMON_SCOPE_OPTIONS', $dropdownSheet, $scopeRange));
 
-    $lastColumnLetter = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex(count($displayColumns));
-    $sheet->getRowDimension(1)->setRowHeight(72);
-    for ($row = $startRow; $row <= $endRow; $row++) {
-        $sheet->setCellValue('A' . $row, '=ROW()-1');
-    }
-
-    $rowNumber = $startRow;
+    $rowNumber = 2;
     foreach ($existingRows as $row) {
-        if ($rowNumber > $endRow) {
-            break;
-        }
-        $sheet->setCellValueExplicit(
-            $columnLetters['office_scope'] . $rowNumber,
-            (string)($row['scope_label'] ?? asset_common_scope_label(0, 0)),
-            \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING
-        );
-        foreach ($profileFields as $profileField) {
+        $sheet->setCellValue('A' . $rowNumber, (string)($row['scope_label'] ?? asset_common_scope_label(0, 0)));
+        $sheet->setCellValue('B' . $rowNumber, (int)($row['sort_order'] ?? 0));
+        foreach ($profileFields as $offset => $profileField) {
             $childFieldId = (int)($profileField['child_field_id'] ?? 0);
-            $columnKey = 'field_' . $childFieldId;
-            if (!isset($columnLetters[$columnKey])) {
-                continue;
-            }
-            $sheet->setCellValueExplicit(
-                $columnLetters[$columnKey] . $rowNumber,
-                (string)($row['values'][$childFieldId] ?? ''),
-                \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING
-            );
+            $column = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($offset + 3);
+            $sheet->setCellValueExplicit($column . $rowNumber, (string)($row['values'][$childFieldId] ?? ''), \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
         }
         $rowNumber++;
     }
-
-    $requiredRefs = [];
-    foreach ($inputColumns as $column) {
-        if (empty($column['required_input']) && empty($column['required_final'])) {
-            continue;
-        }
-        $requiredRefs[] = [
-            'ref' => $columnLetters[$column['key']] . $startRow,
-            'label' => $column['instruction_label'],
-        ];
-    }
-    $inputFirstLetter = $columnLetters[$inputColumns[0]['key'] ?? 'office_scope'] ?? 'B';
-    $inputLastLetter = $columnLetters[$inputColumns[count($inputColumns) - 1]['key'] ?? 'office_scope'] ?? $inputFirstLetter;
-    for ($row = $startRow; $row <= $endRow; $row++) {
-        $rowRequiredRefs = array_map(static function (array $item) use ($row): array {
-            $columnPart = preg_replace('/\d+$/', '', $item['ref']);
-            return ['ref' => $columnPart . $row, 'label' => $item['label']];
-        }, $requiredRefs);
-        $instructionFormula = build_asset_template_instruction_formula(
-            $inputFirstLetter . $row . ':' . $inputLastLetter . $row,
-            $rowRequiredRefs,
-            $columnLetters['instruction'] . $row
-        );
-        $sheet->setCellValue($columnLetters['instruction'] . $row, $instructionFormula);
+    if ($rowNumber === 2) {
+        $sheet->setCellValue('A2', 'All Offices (Global)');
+        $sheet->setCellValue('B2', 10);
     }
 
-    $sheet->getStyle('A1:' . $lastColumnLetter . '1')->applyFromArray([
-        'alignment' => [
-            'wrapText' => true,
-            'vertical' => \PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_CENTER,
-            'horizontal' => \PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER,
-        ],
-        'fill' => [
-            'fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
-            'startColor' => ['rgb' => 'EAF1F8'],
-        ],
-        'borders' => [
-            'allBorders' => [
-                'borderStyle' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN,
-                'color' => ['rgb' => 'C4CBD3'],
-            ],
-        ],
-    ]);
-    $sheet->getStyle('A1:' . $lastColumnLetter . $endRow)->applyFromArray([
-        'borders' => [
-            'allBorders' => [
-                'borderStyle' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN,
-                'color' => ['rgb' => 'D0D4D9'],
-            ],
-        ],
-        'alignment' => [
-            'vertical' => \PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_TOP,
-            'wrapText' => true,
-        ],
-    ]);
-    $sheet->getStyle('A2:' . $lastColumnLetter . $endRow)->getFont()->setSize(10);
-    $sheet->getStyle($columnLetters['instruction'] . '2:' . $columnLetters['instruction'] . $endRow)->getAlignment()->setWrapText(true);
-    $sheet->getStyle('A1:' . $lastColumnLetter . $endRow)
-        ->getProtection()
-        ->setLocked(\PhpOffice\PhpSpreadsheet\Style\Protection::PROTECTION_PROTECTED);
-
-    foreach ($inputColumns as $column) {
-        $colLetter = $columnLetters[$column['key']];
-        if ($firstEditableRow <= $endRow) {
-            $sheet->getStyle($colLetter . $firstEditableRow . ':' . $colLetter . $endRow)
-                ->getProtection()
-                ->setLocked(\PhpOffice\PhpSpreadsheet\Style\Protection::PROTECTION_UNPROTECTED);
-        }
-
-        if ((string)$column['data_type'] === 'date') {
-            $sheet->getStyle($colLetter . $startRow . ':' . $colLetter . $endRow)->getNumberFormat()->setFormatCode('@');
-        } elseif ((string)$column['data_type'] === 'number' && trim((string)($column['number_format_rule'] ?? '')) !== '') {
-            $sheet->getStyle($colLetter . $startRow . ':' . $colLetter . $endRow)->getNumberFormat()->setFormatCode('@');
-        } elseif ((string)$column['data_type'] === 'number') {
-            $sheet->getStyle($colLetter . $startRow . ':' . $colLetter . $endRow)->getNumberFormat()->setFormatCode('0.############');
-        }
-
-        for ($row = $startRow; $row <= $endRow; $row++) {
-            $cellRef = $colLetter . $row;
-            $validation = $sheet->getCell($cellRef)->getDataValidation();
-            $validation->setAllowBlank(true);
-            $validation->setShowErrorMessage(true);
-            $validation->setErrorStyle(\PhpOffice\PhpSpreadsheet\Cell\DataValidation::STYLE_STOP);
-            $validation->setErrorTitle('Invalid Entry');
-            $validation->setShowInputMessage(false);
-
-            switch ((string)($column['validation_kind'] ?? '')) {
-                case 'office_scope':
-                case 'dropdown':
-                case 'yes_no':
-                    $validation->setType(\PhpOffice\PhpSpreadsheet\Cell\DataValidation::TYPE_LIST);
-                    $validation->setShowDropDown(true);
-                    $validation->setFormula1('=' . (string)($column['range_name'] ?? ''));
-                    $validation->setError('Choose from dropdown.');
-                    break;
-                case 'date':
-                    $validation->setType(\PhpOffice\PhpSpreadsheet\Cell\DataValidation::TYPE_CUSTOM);
-                    $validation->setFormula1(asset_template_date_validation_formula($cellRef));
-                    $validation->setError('Use yyyy-mm-dd format.');
-                    break;
-                case 'number':
-                    $validation->setType(\PhpOffice\PhpSpreadsheet\Cell\DataValidation::TYPE_CUSTOM);
-                    $validation->setFormula1(asset_template_number_validation_formula($cellRef, (string)($column['number_format_rule'] ?? '')));
-                    $validation->setError('Enter a valid number.');
-                    break;
-                default:
-                    if ((int)($column['text_max_length'] ?? 0) > 0) {
-                        $validation->setType(\PhpOffice\PhpSpreadsheet\Cell\DataValidation::TYPE_TEXTLENGTH);
-                        $validation->setOperator(\PhpOffice\PhpSpreadsheet\Cell\DataValidation::OPERATOR_LESSTHANOREQUAL);
-                        $validation->setFormula1((string)(int)$column['text_max_length']);
-                        $validation->setError('Keep within ' . (int)$column['text_max_length'] . ' characters.');
-                    }
-                    break;
-            }
-        }
+    $validationEnd = max($rowNumber + 25, 100);
+    for ($row = 2; $row <= $validationEnd; $row++) {
+        $validation = $sheet->getCell('A' . $row)->getDataValidation();
+        $validation->setType(\PhpOffice\PhpSpreadsheet\Cell\DataValidation::TYPE_LIST);
+        $validation->setFormula1('=COMMON_SCOPE_OPTIONS');
+        $validation->setAllowBlank(false);
+        $validation->setShowDropDown(true);
+        $validation->setShowErrorMessage(true);
+        $validation->setErrorTitle('Invalid Scope');
+        $validation->setError('Choose a valid scope from dropdown.');
     }
-
-    $sheet->getProtection()->setSheet(true);
-    $sheet->getProtection()->setPassword('1234');
 
     return $spreadsheet;
 }
 
 function output_asset_common_admin_template_download(int $profileId): void
 {
-    if ($profileId <= 0) {
-        throw new RuntimeException('Common-row profile not found.');
-    }
     $workbook = build_asset_common_admin_template_workbook($profileId);
     $profile = get_asset_common_profile($profileId, true);
-    if (!$profile) {
-        throw new RuntimeException('Common-row profile not found.');
-    }
     $filename = 'common_rows_profile_' . $profileId . '_segment_' . asset_template_safe_sheet_name((string)($profile['segment_id'] ?? 'segment')) . '.xlsx';
     header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     header('Content-Disposition: attachment; filename="' . $filename . '"');
@@ -2518,8 +2003,6 @@ function import_asset_common_admin_rows_from_template(int $profileId, array $fil
     if ($profileFields === []) {
         throw new RuntimeException('No bound fields are configured for this profile.');
     }
-    $existingRows = get_asset_common_admin_rows_detailed($profileId);
-    $lockedRowCount = count($existingRows);
     $scopeOptions = array_flip(asset_common_scope_options());
     $fieldMetaById = [];
     $fieldMapByKey = [];
@@ -2528,15 +2011,10 @@ function import_asset_common_admin_rows_from_template(int $profileId, array $fil
         $fieldMapByKey[(string)$fieldRow['field_key']] = $fieldRow;
     }
     $spreadsheet = \PhpOffice\PhpSpreadsheet\IOFactory::load((string)$file['tmp_name']);
-    $sheet = $spreadsheet->getSheetByName('data') ?: $spreadsheet->getActiveSheet();
+    $sheet = $spreadsheet->getSheetByName('common_rows') ?: $spreadsheet->getActiveSheet();
     $rows = $sheet->toArray(null, false, false, false);
     if (!$rows || count($rows) < 2) {
         throw new RuntimeException('Template has no data rows.');
-    }
-    $expectedColumns = count($profileFields) + 3;
-    $headerCount = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::columnIndexFromString($sheet->getHighestDataColumn(1));
-    if ($headerCount !== $expectedColumns) {
-        throw new RuntimeException('Data sheet column count must match SL, Office Name, common fields, and Instruction.');
     }
 
     $parsedRows = [];
@@ -2544,11 +2022,9 @@ function import_asset_common_admin_rows_from_template(int $profileId, array $fil
         if ($index === 0) {
             continue;
         }
-        if ($index <= $lockedRowCount) {
-            continue;
-        }
-        $scopeLabel = trim((string)($row[1] ?? ''));
-        $hasPayload = $scopeLabel !== '';
+        $scopeLabel = trim((string)($row[0] ?? ''));
+        $sortOrder = (int)($row[1] ?? 0);
+        $hasPayload = $scopeLabel !== '' || $sortOrder > 0;
         foreach ($profileFields as $offset => $profileField) {
             if (trim((string)($row[$offset + 2] ?? '')) !== '') {
                 $hasPayload = true;
@@ -2579,25 +2055,28 @@ function import_asset_common_admin_rows_from_template(int $profileId, array $fil
         $parsedRows[] = [
             'scope_office_type' => (int)$scope['office_type'],
             'scope_office_id' => (int)$scope['office_id'],
-            'sort_order' => max(1, $index * 10),
+            'sort_order' => max(1, $sortOrder > 0 ? $sortOrder : (($index + 1) * 10)),
             'values' => $values,
         ];
     }
 
     db()->beginTransaction();
     try {
-        $maxSortStmt = db()->prepare('SELECT COALESCE(MAX(sort_order), 0) FROM asset_common_admin_rows WHERE profile_id = ?');
-        $maxSortStmt->execute([$profileId]);
-        $nextSortOrder = (int)$maxSortStmt->fetchColumn();
-
+        $existingRowIds = db()->prepare('SELECT id FROM asset_common_admin_rows WHERE profile_id = ?');
+        $existingRowIds->execute([$profileId]);
+        $rowIds = array_map('intval', $existingRowIds->fetchAll(PDO::FETCH_COLUMN) ?: []);
+        if ($rowIds) {
+            $placeholders = implode(',', array_fill(0, count($rowIds), '?'));
+            db()->prepare("DELETE FROM asset_common_admin_row_values WHERE row_id IN ({$placeholders})")->execute($rowIds);
+        }
+        db()->prepare('DELETE FROM asset_common_admin_rows WHERE profile_id = ?')->execute([$profileId]);
         foreach ($parsedRows as $parsedRow) {
-            $nextSortOrder += 10;
             db()->prepare('INSERT INTO asset_common_admin_rows (profile_id, stable_row_key, scope_office_type, scope_office_id, sort_order, active_status, created_at) VALUES (?, ?, ?, ?, ?, 1, NOW())')->execute([
                 $profileId,
                 asset_common_admin_row_key(),
                 $parsedRow['scope_office_type'],
                 $parsedRow['scope_office_id'],
-                $nextSortOrder,
+                $parsedRow['sort_order'],
             ]);
             $rowId = (int)db()->lastInsertId();
             foreach ($parsedRow['values'] as $childFieldId => $valueText) {
@@ -2886,8 +2365,25 @@ function asset_sync_common_rows_for_profile_across_offices(int $profileId, ?int 
     if (!$profile) {
         return;
     }
-    $scopes = asset_common_sync_target_offices_for_profile($profile);
-    foreach ($scopes as $scope) {
+    $stmt = db()->prepare(
+        'SELECT DISTINCT office_type, office_id
+         FROM assets
+         WHERE (
+                (segment_id = ? AND category_id = ?)
+                OR (common_profile_id = ?)
+               )
+           AND deleted_at IS NULL
+           AND active_status = 1
+           AND office_id > 0
+           AND office_type > 0
+         ORDER BY office_type ASC, office_id ASC'
+    );
+    $stmt->execute([
+        (int)($profile['parent_segment_id'] ?? 0),
+        (int)($profile['parent_category_id'] ?? 0),
+        $profileId,
+    ]);
+    foreach ($stmt->fetchAll() as $scope) {
         asset_sync_common_rows_for_profile_office(
             $profileId,
             (int)($scope['office_type'] ?? 0),
@@ -6436,9 +5932,6 @@ function get_asset_category(int $id, ?int $segmentId = null): ?array
 function create_asset_category(string $name, ?int $segmentId = null): void
 {
     $segmentId = asset_normalize_segment_id($segmentId);
-    if (asset_segment_has_common_row_configuration($segmentId)) {
-        throw new RuntimeException('This segment already uses common fields. Remove the common-field setup before adding another category.');
-    }
     $stmt = db()->prepare('INSERT INTO asset_categories (segment_id, name, active_status, sort_order, created_at) VALUES (?, ?, 1, ?, NOW())');
     $stmt->execute([$segmentId, $name, next_sort_order_for_filters('asset_categories', ['segment_id' => $segmentId])]);
 }
@@ -6460,9 +5953,6 @@ function set_asset_category_status(int $id, int $status, ?int $segmentId = null)
 function delete_asset_category(int $id, ?int $segmentId = null): bool
 {
     asset_assert_segment_match(get_asset_category($id, $segmentId), $segmentId, 'Category');
-    if (asset_segment_has_common_row_configuration(asset_normalize_segment_id($segmentId))) {
-        throw new RuntimeException('Delete the common-field setup first before removing this category.');
-    }
     $stmt = db()->prepare('SELECT COUNT(*) FROM assets WHERE category_id = ?');
     $stmt->execute([$id]);
     if ((int)$stmt->fetchColumn() > 0) {
@@ -7237,16 +6727,13 @@ function validate_asset_field_definition(array $input, array $fileInput = [], ?i
             $errors[] = 'Common row fields currently support text, number, date, dropdown, yes-no, and BIMH only.';
         }
 
-        $segmentCategories = get_asset_categories(true, $segmentId);
-        $segmentCategoryCount = count($segmentCategories);
-        if ($segmentCategoryCount > 1) {
-            $errors[] = 'Common fields are allowed only in segments with zero or one category.';
+        $commonProfileCategoryId = (int)($input['common_profile_category_id'] ?? $input['category_id'] ?? 0);
+        $commonCategory = $commonProfileCategoryId > 0 ? get_asset_category($commonProfileCategoryId, $segmentId) : null;
+        if (!$commonCategory) {
+            $errors[] = 'Common row category is required.';
         }
-        $commonProfileCategoryId = $segmentCategoryCount === 1 ? (int)($segmentCategories[0]['id'] ?? 0) : 0;
-        $commonCategory = $segmentCategoryCount === 1 ? ($segmentCategories[0] ?? null) : ['id' => 0, 'segment_id' => $segmentId, 'name' => 'Default'];
 
-        $existingProfiles = get_asset_common_profiles_for_segment($segmentId, true);
-        $existingProfile = $existingProfiles[0] ?? null;
+        $existingProfile = $commonCategory ? get_asset_common_profile_by_category((int)$commonCategory['id'], $segmentId, true) : null;
         $commonDefinitionModeInput = trim((string)($input['common_definition_mode'] ?? ''));
         $commonRowPolicyInput = trim((string)($input['common_row_policy'] ?? ''));
 
@@ -7283,23 +6770,17 @@ function validate_asset_field_definition(array $input, array $fileInput = [], ?i
             if ($commonDefinitionModeInput === '') {
                 $errors[] = 'Common row definition mode is required.';
             }
-            if ($commonDefinitionMode !== asset_common_definition_mode_superadmin_defined() && $commonRowPolicyInput === '') {
+            if ($commonRowPolicyInput === '') {
                 $errors[] = 'Common row policy is required.';
             }
         }
 
         if ($commonDefinitionMode === asset_common_definition_mode_user_defined()) {
             $commonParentFieldId = (int)($input['common_parent_field_id'] ?? 0);
-            $parentSegmentCategories = $commonParentSegmentId > 0 ? get_asset_categories(true, $commonParentSegmentId) : [];
-            $parentSegmentCategoryCount = count($parentSegmentCategories);
-            if ($parentSegmentCategoryCount > 1) {
-                $errors[] = 'User-defined common fields can point only to a parent segment with zero or one category.';
-            }
-            $commonParentCategoryId = $parentSegmentCategoryCount === 1 ? (int)($parentSegmentCategories[0]['id'] ?? 0) : 0;
-            $parentCategory = $commonParentCategoryId > 0 ? get_asset_category($commonParentCategoryId, $commonParentSegmentId) : ['id' => 0];
+            $parentCategory = $commonParentCategoryId > 0 ? get_asset_category($commonParentCategoryId, $commonParentSegmentId) : null;
             $parentField = $commonParentFieldId > 0 ? get_asset_field($commonParentFieldId, $commonParentSegmentId) : null;
-            if ($commonParentSegmentId <= 0 || ($parentSegmentCategoryCount === 1 && !$parentCategory)) {
-                $errors[] = 'Parent segment is required for user-defined common rows.';
+            if ($commonParentSegmentId <= 0 || !$parentCategory) {
+                $errors[] = 'Parent segment and parent category are required for user-defined common rows.';
             }
             if (!$parentField) {
                 $errors[] = 'Parent field is required for user-defined common rows.';

@@ -1,20 +1,38 @@
-<?php
+﻿<?php
 require __DIR__ . '/header.php';
 
 $user = current_user();
 $auditViewScope = 'my_office';
 $auditChoices = asset_audit_level_choices($user, $auditViewScope);
-$detailAuditChoices = array_filter(
-    $auditChoices,
-    static fn(string $key): bool => $key !== 'count',
-    ARRAY_FILTER_USE_KEY
-);
+$auditValueMap = asset_audit_level_value_map($user, $auditViewScope);
+$selectedAuditLevel = request_str('audit_level', 'count');
+if (!isset($auditChoices[$selectedAuditLevel])) {
+    $selectedAuditLevel = 'count';
+}
 $auditSegments = asset_audit_segments($user, $auditViewScope);
+$selectedAuditLabel = (string)($auditChoices[$selectedAuditLevel] ?? 'Row_count');
 ?>
 
 <section class="card">
     <h2>Audit</h2>
-    <p class="hint">Review row counts by field. Click any field row to inspect office or Level_1-wise provided and not provided details.</p>
+    <p class="hint">Review how much data has been entered in each segment field using row count, office count, or the declared Level_1 items.</p>
+</section>
+
+<section class="card">
+    <div class="hero-row audit-page-topbar">
+        <div class="segments audit-choice-bar">
+            <?php foreach ($auditChoices as $auditKey => $auditLabel): ?>
+                <a
+                    href="index.php?page=audit&audit_level=<?= urlencode((string)$auditKey); ?>"
+                    class="segment <?= $selectedAuditLevel === $auditKey ? 'is-active' : ''; ?>"
+                ><?= e((string)$auditLabel); ?></a>
+            <?php endforeach; ?>
+        </div>
+        <div class="action-row">
+            <a class="button-link" href="index.php?<?= e(http_build_query(['page' => 'audit_export', 'scope' => 'page', 'format' => 'excel', 'audit_level' => $selectedAuditLevel])); ?>">Excel</a>
+            <a class="button-link" href="index.php?<?= e(http_build_query(['page' => 'audit_export', 'scope' => 'page', 'format' => 'pdf', 'audit_level' => $selectedAuditLevel])); ?>">PDF</a>
+        </div>
+    </div>
 </section>
 
 <section class="audit-grid">
@@ -33,7 +51,7 @@ $auditSegments = asset_audit_segments($user, $auditViewScope);
                         <tr>
                             <th class="audit-col-sl">SL No</th>
                             <th>Field Name</th>
-                            <th class="audit-col-count">Row_count</th>
+                            <th class="audit-col-count">Count</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -44,16 +62,16 @@ $auditSegments = asset_audit_segments($user, $auditViewScope);
                         <?php else: ?>
                             <?php foreach ($fields as $index => $field): ?>
                                 <tr
-                                    class="audit-detail-row"
-                                    data-audit-row="1"
+                                    class="audit-detail-row <?= $selectedAuditLevel === 'count' ? 'is-disabled-audit-row' : ''; ?>"
+                                    data-audit-row="<?= $selectedAuditLevel === 'count' ? '0' : '1'; ?>"
                                     data-segment-id="<?= $segmentId; ?>"
                                     data-field-key="<?= e((string)($field['field_key'] ?? '')); ?>"
                                     data-field-label="<?= e((string)($field['label'] ?? '')); ?>"
-                                    tabindex="0"
+                                    <?= $selectedAuditLevel === 'count' ? '' : 'tabindex="0"'; ?>
                                 >
                                     <td><?= $index + 1; ?></td>
                                     <td><?= e((string)($field['label'] ?? '')); ?></td>
-                                    <td><?= e(asset_audit_count_cell($assets, $field, 'count', [], $segmentId)); ?></td>
+                                    <td><?= e(asset_audit_count_cell($assets, $field, $selectedAuditLevel, $auditValueMap, $segmentId)); ?></td>
                                 </tr>
                             <?php endforeach; ?>
                         <?php endif; ?>
@@ -64,35 +82,13 @@ $auditSegments = asset_audit_segments($user, $auditViewScope);
     <?php endforeach; ?>
 </section>
 
-<div class="modal-backdrop" id="auditSelectorModal" aria-hidden="true">
-    <div class="modal-card audit-detail-modal-card">
-        <button type="button" class="welcome-modal-close audit-detail-close" id="auditSelectorClose" aria-label="Close">&times;</button>
-        <div class="flash-modal-head audit-detail-head">
-            <div>
-                <h3 id="auditSelectorTitle">Choose Audit View</h3>
-                <p class="hint" id="auditSelectorSubtitle">Select office or a Level_1 field to inspect this field.</p>
-            </div>
-        </div>
-        <div class="segments audit-choice-bar">
-            <?php foreach ($detailAuditChoices as $auditKey => $auditLabel): ?>
-                <button
-                    type="button"
-                    class="segment"
-                    data-audit-selector="<?= e((string)$auditKey); ?>"
-                    data-audit-selector-label="<?= e((string)$auditLabel); ?>"
-                ><?= e((string)$auditLabel); ?></button>
-            <?php endforeach; ?>
-        </div>
-    </div>
-</div>
-
 <div class="modal-backdrop" id="auditDetailModal" aria-hidden="true">
     <div class="modal-card audit-detail-modal-card">
         <button type="button" class="welcome-modal-close audit-detail-close" id="auditDetailClose" aria-label="Close">&times;</button>
         <div class="flash-modal-head audit-detail-head">
             <div>
                 <h3 id="auditDetailTitle">Audit Details</h3>
-                <p class="hint" id="auditDetailSubtitle">Items counted under the selected audit view will appear here.</p>
+                <p class="hint" id="auditDetailSubtitle">Items counted under <?= e($selectedAuditLabel); ?> will appear here.</p>
             </div>
         </div>
         <div class="audit-detail-toolbar">
@@ -115,11 +111,8 @@ $auditSegments = asset_audit_segments($user, $auditViewScope);
 
 <script>
 (function () {
-    var selectorModal = document.getElementById('auditSelectorModal');
-    var selectorCloseButton = document.getElementById('auditSelectorClose');
-    var selectorTitle = document.getElementById('auditSelectorTitle');
-    var selectorSubtitle = document.getElementById('auditSelectorSubtitle');
-    var selectorButtons = Array.prototype.slice.call(document.querySelectorAll('[data-audit-selector]'));
+    var selectedAuditLevel = <?= json_encode($selectedAuditLevel, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>;
+    var selectedAuditLabel = <?= json_encode($selectedAuditLabel, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>;
     var modal = document.getElementById('auditDetailModal');
     var closeButton = document.getElementById('auditDetailClose');
     var title = document.getElementById('auditDetailTitle');
@@ -135,9 +128,7 @@ $auditSegments = asset_audit_segments($user, $auditViewScope);
         payload: null,
         segmentId: '',
         fieldKey: '',
-        fieldLabel: '',
-        levelKey: '',
-        levelLabel: ''
+        fieldLabel: ''
     };
 
     function escapeHtml(value) {
@@ -157,16 +148,6 @@ $auditSegments = asset_audit_segments($user, $auditViewScope);
     function closeModal() {
         modal.classList.remove('open');
         modal.setAttribute('aria-hidden', 'true');
-    }
-
-    function openSelectorModal() {
-        selectorModal.classList.add('open');
-        selectorModal.setAttribute('aria-hidden', 'false');
-    }
-
-    function closeSelectorModal() {
-        selectorModal.classList.remove('open');
-        selectorModal.setAttribute('aria-hidden', 'true');
     }
 
     function hierarchyHasMatch(node, mode) {
@@ -301,7 +282,7 @@ $auditSegments = asset_audit_segments($user, $auditViewScope);
     }
 
     function updateExportLinks() {
-        if (!state.segmentId || !state.fieldKey || !state.levelKey) {
+        if (!state.segmentId || !state.fieldKey) {
             excelLink.setAttribute('href', '#');
             pdfLink.setAttribute('href', '#');
             return;
@@ -310,7 +291,7 @@ $auditSegments = asset_audit_segments($user, $auditViewScope);
             page: 'audit_export',
             scope: 'detail',
             format: 'excel',
-            audit_level: state.levelKey,
+            audit_level: selectedAuditLevel,
             segment_id: state.segmentId,
             field_key: state.fieldKey,
             detail_mode: state.mode
@@ -392,26 +373,23 @@ $auditSegments = asset_audit_segments($user, $auditViewScope);
         updateCount();
     }
 
-    function loadDetail(row, levelKey, levelLabel) {
+    function loadDetail(row) {
         var segmentId = row.getAttribute('data-segment-id') || '';
         var fieldKey = row.getAttribute('data-field-key') || '';
         state.segmentId = segmentId;
         state.fieldKey = fieldKey;
         state.fieldLabel = row.getAttribute('data-field-label') || '';
-        state.levelKey = levelKey;
-        state.levelLabel = levelLabel;
         rowNodes.forEach(function (node) {
             node.classList.remove('is-active-audit-row');
         });
         row.classList.add('is-active-audit-row');
-        title.textContent = state.fieldLabel + ' - ' + levelLabel;
+        title.textContent = state.fieldLabel + ' - ' + selectedAuditLabel;
         subtitle.textContent = 'Loading counted items...';
         countBox.textContent = 'Count: 0';
         updateExportLinks();
         content.innerHTML = '<div class="audit-detail-loading"><span class="spinner small"></span><span>Loading details...</span></div>';
-        closeSelectorModal();
         openModal();
-        fetch('index.php?page=audit_detail&segment_id=' + encodeURIComponent(segmentId) + '&field_key=' + encodeURIComponent(fieldKey) + '&audit_level=' + encodeURIComponent(levelKey), {
+        fetch('index.php?page=audit_detail&segment_id=' + encodeURIComponent(segmentId) + '&field_key=' + encodeURIComponent(fieldKey) + '&audit_level=' + encodeURIComponent(selectedAuditLevel), {
             headers: {
                 'X-Requested-With': 'XMLHttpRequest'
             }
@@ -436,22 +414,6 @@ $auditSegments = asset_audit_segments($user, $auditViewScope);
             });
     }
 
-    function promptAuditView(row) {
-        state.segmentId = row.getAttribute('data-segment-id') || '';
-        state.fieldKey = row.getAttribute('data-field-key') || '';
-        state.fieldLabel = row.getAttribute('data-field-label') || '';
-        state.payload = null;
-        state.levelKey = '';
-        state.levelLabel = '';
-        rowNodes.forEach(function (node) {
-            node.classList.remove('is-active-audit-row');
-        });
-        row.classList.add('is-active-audit-row');
-        selectorTitle.textContent = state.fieldLabel;
-        selectorSubtitle.textContent = 'Choose office or a Level_1 field to inspect this audit detail.';
-        openSelectorModal();
-    }
-
     modeButtons.forEach(function (button) {
         button.addEventListener('click', function () {
             setMode(button.getAttribute('data-audit-mode') || 'all');
@@ -459,37 +421,22 @@ $auditSegments = asset_audit_segments($user, $auditViewScope);
     });
 
     rowNodes.forEach(function (row) {
+        if (row.getAttribute('data-audit-row') !== '1') {
+            return;
+        }
         row.addEventListener('click', function () {
-            promptAuditView(row);
+            loadDetail(row);
         });
         row.addEventListener('keydown', function (event) {
             if (event.key === 'Enter' || event.key === ' ') {
                 event.preventDefault();
-                promptAuditView(row);
+                loadDetail(row);
             }
         });
     });
 
-    selectorButtons.forEach(function (button) {
-        button.addEventListener('click', function () {
-            var activeRow = document.querySelector('.audit-detail-row.is-active-audit-row');
-            if (!activeRow) {
-                return;
-            }
-            loadDetail(
-                activeRow,
-                button.getAttribute('data-audit-selector') || '',
-                button.getAttribute('data-audit-selector-label') || ''
-            );
-        });
-    });
-
-    selectorCloseButton.addEventListener('click', closeSelectorModal);
     closeButton.addEventListener('click', closeModal);
     document.addEventListener('keydown', function (event) {
-        if (event.key === 'Escape' && selectorModal.classList.contains('open')) {
-            closeSelectorModal();
-        }
         if (event.key === 'Escape' && modal.classList.contains('open')) {
             closeModal();
         }

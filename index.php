@@ -44,7 +44,16 @@ if ($page === 'download_asset_common_admin_template') {
         http_response_code(403);
         exit('Not allowed.');
     }
-    output_asset_common_admin_template_download(input_int('profile_id'));
+    $profileId = input_int('profile_id');
+    if ($profileId <= 0) {
+        $resolvedProfile = asset_common_profile_resolve_for_segment_category(input_int('segment_id'), request_str('common_category'));
+        $profileId = (int)($resolvedProfile['id'] ?? 0);
+    }
+    if ($profileId <= 0 || !get_asset_common_profile($profileId, true)) {
+        http_response_code(404);
+        exit('Common-row profile not found.');
+    }
+    output_asset_common_admin_template_download($profileId);
 }
 
 if ($page === 'download_project_backup') {
@@ -104,6 +113,23 @@ $adminRedirect = static function (): void {
     $params = ['page' => 'admin'];
     if ($segmentId > 0) {
         $params['segment_id'] = $segmentId;
+    }
+    redirect('index.php?' . http_build_query($params));
+};
+
+$commonFieldsRedirect = static function (): void {
+    $params = ['page' => 'common_fields'];
+    $segmentId = input_int('segment_id');
+    if ($segmentId > 0) {
+        $params['segment_id'] = $segmentId;
+    }
+    $commonCategory = input_str('common_category');
+    if ($commonCategory !== '') {
+        $params['common_category'] = $commonCategory;
+    }
+    $previewScope = input_str('preview_scope');
+    if ($previewScope !== '') {
+        $params['preview_scope'] = $previewScope;
     }
     redirect('index.php?' . http_build_query($params));
 };
@@ -175,8 +201,12 @@ if ($action === 'create_asset_category') {
     if ($name === '') {
         flash('error', 'Category name is required.');
     } else {
-        create_asset_category($name, $segmentId);
-        flash('success', 'Category created.');
+        try {
+            create_asset_category($name, $segmentId);
+            flash('success', 'Category created.');
+        } catch (Throwable $e) {
+            flash('error', $e->getMessage());
+        }
     }
     $adminRedirect();
 }
@@ -514,6 +544,9 @@ if ($action === 'save_asset_common_admin_row') {
     } catch (Throwable $e) {
         flash('error', $e->getMessage());
     }
+    if (input_str('redirect_page') === 'common_fields') {
+        $commonFieldsRedirect();
+    }
     $adminRedirect();
 }
 
@@ -527,6 +560,9 @@ if ($action === 'delete_asset_common_admin_row') {
         flash('success', 'Common admin row deleted.');
     } catch (Throwable $e) {
         flash('error', $e->getMessage());
+    }
+    if (input_str('redirect_page') === 'common_fields') {
+        $commonFieldsRedirect();
     }
     $adminRedirect();
 }
@@ -542,7 +578,27 @@ if ($action === 'upload_asset_common_admin_template') {
     } catch (Throwable $e) {
         flash('error', $e->getMessage());
     }
+    if (input_str('redirect_page') === 'common_fields') {
+        $commonFieldsRedirect();
+    }
     $adminRedirect();
+}
+
+if ($action === 'save_asset_common_profile_row_policy') {
+    if (!can_manage_superadmin_scope()) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
+    try {
+        $profileId = input_int('profile_id');
+        $rowPolicy = asset_normalize_common_row_policy(input_str('common_row_policy', asset_common_row_policy_fixed()));
+        db()->prepare('UPDATE asset_common_profiles SET row_policy = ?, updated_at = NOW() WHERE id = ?')->execute([$rowPolicy, $profileId]);
+        asset_sync_common_rows_for_profile_across_offices($profileId, (int)(current_user()['id'] ?? 0));
+        flash('success', 'Common row policy updated.');
+    } catch (Throwable $e) {
+        flash('error', $e->getMessage());
+    }
+    $commonFieldsRedirect();
 }
 
 if ($action === 'rebuild_asset_filter_index_segment') {
@@ -1749,6 +1805,15 @@ if ($page === 'admin') {
         exit('Not allowed.');
     }
     require __DIR__ . '/app/views/admin.php';
+    exit;
+}
+
+if ($page === 'common_fields') {
+    if (!can_manage_superadmin_scope()) {
+        http_response_code(403);
+        exit('Not allowed.');
+    }
+    require __DIR__ . '/app/views/common_fields.php';
     exit;
 }
 

@@ -856,8 +856,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const definitionMode = container.querySelector('[data-common-definition-mode]')?.value || '';
         const showParentControls = showSection && definitionMode !== 'superadmin_defined';
+        const showUserDefinedControls = showSection && definitionMode !== 'superadmin_defined';
+        const showSuperadminNote = showSection && definitionMode === 'superadmin_defined';
         section.querySelectorAll('[data-common-parent-control]').forEach((node) => {
             node.classList.toggle('hidden', !showParentControls);
+        });
+        section.querySelectorAll('[data-common-userdefined-control]').forEach((node) => {
+            node.classList.toggle('hidden', !showUserDefinedControls);
+        });
+        section.querySelectorAll('[data-common-superadmin-note]').forEach((node) => {
+            node.classList.toggle('hidden', !showSuperadminNote);
         });
         const parentSegmentSelect = container.querySelector('[data-common-parent-segment]');
         const parentCategorySelect = container.querySelector('[data-common-parent-category]');
@@ -870,6 +878,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
             input.disabled = !showParentControls;
+        });
+        section.querySelectorAll('[data-common-userdefined-control] select, [data-common-userdefined-control] input, [data-common-userdefined-control] textarea').forEach((input) => {
+            input.disabled = !showUserDefinedControls;
         });
     };
 
