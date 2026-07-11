@@ -14,12 +14,12 @@ if (!$activeSegment) {
     $activeSegment = $segments[0] ?? null;
 }
 $activeSegmentId = (int)($activeSegment['id'] ?? 0);
-$previewScope = request_str('preview_scope', '0:0');
+$previewScope = input_str('preview_scope', '0:0');
 $previewScopeParts = asset_common_parse_scope_token($previewScope);
 $previewOfficeType = (int)($previewScopeParts['office_type'] ?? 0);
 $previewOfficeId = (int)($previewScopeParts['office_id'] ?? 0);
 $commonScopeOptions = asset_common_scope_options();
-$previewScopeOptions = asset_common_scope_options();
+$previewScopeOptions = ['0:0' => 'All Offices (Global View)'] + asset_common_specific_office_scope_options();
 $commonRowPolicyOptions = asset_common_row_policy_options();
 $commonRowsSupported = $activeSegmentId > 0 ? asset_segment_common_rows_supported($activeSegmentId) : true;
 $profilesByCategory = $activeSegmentId > 0 ? asset_common_superadmin_profiles_by_category($activeSegmentId) : [];

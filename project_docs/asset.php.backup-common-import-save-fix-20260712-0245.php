@@ -15355,13 +15355,12 @@ function commit_asset_import_review(array $user): array
             $errors[] = 'Row ' . $row['row_number'] . ' still has validation errors.';
             continue;
         }
-        $targetAssetId = (int)($restagedRow['target_asset_id'] ?? 0);
         $validated = validate_asset_payload([
             'segment_id' => $segmentId,
             'category_id' => (int)$restagedRow['category_id'],
             'subcategory_id' => (int)$restagedRow['subcategory_id'],
             'fields' => $restagedRow['fields'] ?? [],
-        ], $targetAssetId > 0 ? $targetAssetId : null, [], true);
+        ], null, [], true);
         if (!empty($validated['errors'])) {
             $restagedRow['errors'] = $validated['errors'];
             $invalidRows[] = $restagedRow;
@@ -15380,8 +15379,9 @@ function commit_asset_import_review(array $user): array
     }
 
     if ($validRows) {
-        foreach ($validRows as $item) {
-            try {
+        db()->beginTransaction();
+        try {
+            foreach ($validRows as $item) {
                 $targetAssetId = (int)($item['row']['target_asset_id'] ?? 0);
                 if ($targetAssetId > 0) {
                     $targetAsset = asset_import_target_asset($targetAssetId, $segmentId);
@@ -15393,15 +15393,24 @@ function commit_asset_import_review(array $user): array
                     persist_asset_record($item['payload'], $user);
                 }
                 $saved++;
-            } catch (Throwable $e) {
+            }
+            db()->prepare('UPDATE asset_import_batches SET imported_count = ?, skipped_count = ?, updated_at = NOW() WHERE id = ?')->execute([$saved, count($invalidRows), $batchId]);
+            db()->commit();
+        } catch (Throwable $e) {
+            if (db()->inTransaction()) {
+                db()->rollBack();
+            }
+            foreach ($validRows as $item) {
                 $failedRow = $item['row'];
                 $failedRow['errors'] = ['_db' => 'Database save failed for this row.'];
                 $invalidRows[] = $failedRow;
-                $errors[] = 'Database save failed for row ' . (int)($item['row']['row_number'] ?? 0) . '. ' . $e->getMessage();
             }
+            $saved = 0;
+            $errors[] = 'Database save failed. No rows were imported. ' . $e->getMessage();
         }
+    } else {
+        db()->prepare('UPDATE asset_import_batches SET imported_count = ?, skipped_count = ?, updated_at = NOW() WHERE id = ?')->execute([$saved, count($invalidRows), $batchId]);
     }
-    db()->prepare('UPDATE asset_import_batches SET imported_count = ?, skipped_count = ?, updated_at = NOW() WHERE id = ?')->execute([$saved, count($invalidRows), $batchId]);
 
     if ($invalidRows) {
         $_SESSION['asset_import_review']['rows'] = $invalidRows;

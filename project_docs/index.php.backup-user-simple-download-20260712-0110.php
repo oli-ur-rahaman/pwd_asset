@@ -108,23 +108,6 @@ if ($page === 'download_job_file') {
     asset_download_stream_job_file(request_str('job'), current_user());
 }
 
-if ($page === 'download_user_scope_excel') {
-    if (is_superadmin()) {
-        http_response_code(403);
-        exit('Not allowed.');
-    }
-    $user = current_user();
-    $viewScope = request_str('office_view_scope', 'my_office');
-    if ($viewScope !== 'office_under_me') {
-        $viewScope = 'my_office';
-    }
-    if ($viewScope === 'office_under_me' && !office_user_has_under_me_scope($user)) {
-        http_response_code(403);
-        exit('Not allowed.');
-    }
-    output_asset_user_simple_scope_excel_download($user, $viewScope);
-}
-
 $adminRedirect = static function (): void {
     $segmentId = input_int('segment_id');
     $params = ['page' => 'admin'];

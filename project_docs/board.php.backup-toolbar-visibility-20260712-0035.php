@@ -965,13 +965,16 @@ if (is_superadmin()) {
     <div class="toolbar-row">
         <?php if ($showAddInfoButton): ?>
             <button type="button" data-modal="asset-modal">+Add Info</button>
+            <?php if ($bulkImportEnabled): ?><button type="button" data-modal="import-modal">Bulk Entry</button><?php endif; ?>
         <?php endif; ?>
-        <?php if ($canModifyAssets && !$isUnderMeView && $bulkImportEnabled): ?><button type="button" data-modal="import-modal">Bulk Entry</button><?php endif; ?>
         <?php if (!$isUnderMeView && $bulkImportEnabled): ?>
             <a href="asset_template.php?<?= e(http_build_query(['segment_id' => $activeSegmentId])); ?>" class="button-link">Excel Template</a>
         <?php endif; ?>
-        <a href="index.php?<?= e(http_build_query(['page' => 'download_user_scope_excel', 'office_view_scope' => $currentOfficeViewScope])); ?>" class="button-link btn-secondary">Download Data</a>
+        <button type="button" data-modal="download-data-modal" class="btn-secondary" <?= $downloadModuleReady ? '' : 'disabled'; ?>>Download Data</button>
     </div>
+    <?php if (!$downloadModuleReady): ?>
+        <p class="hint">Download Manager must have at least one Level 1 field before downloads can run.</p>
+    <?php endif; ?>
     <?php if ($canModifyAssets && !$isUnderMeView && !$showAddInfoButton): ?>
         <p class="hint">This segment currently has only fixed common-row categories. New manual rows are blocked here.</p>
     <?php endif; ?>
@@ -1472,9 +1475,7 @@ if (is_superadmin()) {
             <input type="hidden" name="action" value="asset_import_save">
             <input type="hidden" name="segment_id" value="<?= e((string)$activeSegmentId); ?>">
             <div class="modal-actions">
-                <?php if ($hasManualAddCategory): ?>
-                    <button type="button" id="import-review-add-row">+Add Row</button>
-                <?php endif; ?>
+                <button type="button" id="import-review-add-row">+Add Row</button>
                 <button type="submit">Save Validated Rows</button>
             </div>
             <p class="import-review-summary" id="import-review-summary">Number of Rows need attention - 0</p>
@@ -1505,7 +1506,6 @@ if (is_superadmin()) {
                                 <td>
                                     <?= e((string)$row['row_number']); ?>
                                     <input type="hidden" name="rows[<?= $rowIndex; ?>][row_number]" value="<?= e((string)$row['row_number']); ?>">
-                                    <input type="hidden" name="rows[<?= $rowIndex; ?>][target_asset_id]" value="<?= e((string)($row['target_asset_id'] ?? 0)); ?>">
                                 </td>
                                 <?php if ($categorySelectionEnabled): ?>
                                 <td class="<?= !empty($row['errors']['category_id']) ? 'cell-error' : 'cell-valid'; ?>">

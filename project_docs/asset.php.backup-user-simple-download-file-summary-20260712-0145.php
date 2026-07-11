@@ -11732,6 +11732,9 @@ function asset_user_simple_download_columns(int $segmentId, string $viewScope = 
         if ((int)($field['active_status'] ?? 0) !== 1 || (int)($field['is_displayed'] ?? 0) !== 1) {
             continue;
         }
+        if ((string)($field['data_type'] ?? '') === 'file') {
+            continue;
+        }
         $rawLabel = trim((string)($field['label'] ?? ''));
         $parts = preg_split('/\s*\/\s*/u', $rawLabel);
         $label = trim((string)($parts[0] ?? $rawLabel));
@@ -11745,9 +11748,6 @@ function asset_user_simple_download_columns(int $segmentId, string $viewScope = 
 
 function asset_user_simple_download_row_value(array $asset, string $key): string
 {
-    if (isset($asset['files'][$key])) {
-        return asset_download_file_summary($asset, $key);
-    }
     return match ($key) {
         'category' => (string)($asset['category_name'] ?? ''),
         'subcategory' => (string)($asset['subcategory_name'] ?? ''),
@@ -11786,7 +11786,7 @@ function output_asset_user_simple_scope_excel_download(array $user, string $view
             $user,
             false,
             [
-                'include_files' => true,
+                'include_files' => false,
                 'include_timestamps' => false,
                 'include_office_labels' => true,
             ]
@@ -13898,7 +13898,7 @@ function asset_template_columns(?int $segmentId = null): array
 
 function asset_import_expected_keys(?int $segmentId = null): array
 {
-    return array_column(asset_template_input_column_definitions($segmentId), 'key');
+    return array_column(asset_template_core_columns($segmentId), 'key');
 }
 
 function validate_uploaded_asset_template(string $tmpName, ?int $segmentId = null): array
@@ -15294,7 +15294,7 @@ function stage_asset_import_row(array $input, int $rowNumber, ?int $segmentId = 
         'category_id' => $categoryId,
         'subcategory_id' => $subcategoryId,
         'fields' => $fieldInputs,
-    ], $targetAsset ? (int)($targetAsset['id'] ?? 0) : null, [], true);
+    ], $targetAsset, [], true);
 
     return [
         'row_number' => $rowNumber,
@@ -15355,13 +15355,12 @@ function commit_asset_import_review(array $user): array
             $errors[] = 'Row ' . $row['row_number'] . ' still has validation errors.';
             continue;
         }
-        $targetAssetId = (int)($restagedRow['target_asset_id'] ?? 0);
         $validated = validate_asset_payload([
             'segment_id' => $segmentId,
             'category_id' => (int)$restagedRow['category_id'],
             'subcategory_id' => (int)$restagedRow['subcategory_id'],
             'fields' => $restagedRow['fields'] ?? [],
-        ], $targetAssetId > 0 ? $targetAssetId : null, [], true);
+        ], null, [], true);
         if (!empty($validated['errors'])) {
             $restagedRow['errors'] = $validated['errors'];
             $invalidRows[] = $restagedRow;
@@ -15380,8 +15379,9 @@ function commit_asset_import_review(array $user): array
     }
 
     if ($validRows) {
-        foreach ($validRows as $item) {
-            try {
+        db()->beginTransaction();
+        try {
+            foreach ($validRows as $item) {
                 $targetAssetId = (int)($item['row']['target_asset_id'] ?? 0);
                 if ($targetAssetId > 0) {
                     $targetAsset = asset_import_target_asset($targetAssetId, $segmentId);
@@ -15393,15 +15393,24 @@ function commit_asset_import_review(array $user): array
                     persist_asset_record($item['payload'], $user);
                 }
                 $saved++;
-            } catch (Throwable $e) {
+            }
+            db()->prepare('UPDATE asset_import_batches SET imported_count = ?, skipped_count = ?, updated_at = NOW() WHERE id = ?')->execute([$saved, count($invalidRows), $batchId]);
+            db()->commit();
+        } catch (Throwable $e) {
+            if (db()->inTransaction()) {
+                db()->rollBack();
+            }
+            foreach ($validRows as $item) {
                 $failedRow = $item['row'];
                 $failedRow['errors'] = ['_db' => 'Database save failed for this row.'];
                 $invalidRows[] = $failedRow;
-                $errors[] = 'Database save failed for row ' . (int)($item['row']['row_number'] ?? 0) . '. ' . $e->getMessage();
             }
+            $saved = 0;
+            $errors[] = 'Database save failed. No rows were imported. ' . $e->getMessage();
         }
+    } else {
+        db()->prepare('UPDATE asset_import_batches SET imported_count = ?, skipped_count = ?, updated_at = NOW() WHERE id = ?')->execute([$saved, count($invalidRows), $batchId]);
     }
-    db()->prepare('UPDATE asset_import_batches SET imported_count = ?, skipped_count = ?, updated_at = NOW() WHERE id = ?')->execute([$saved, count($invalidRows), $batchId]);
 
     if ($invalidRows) {
         $_SESSION['asset_import_review']['rows'] = $invalidRows;

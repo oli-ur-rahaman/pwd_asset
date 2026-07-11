@@ -1472,9 +1472,7 @@ if (is_superadmin()) {
             <input type="hidden" name="action" value="asset_import_save">
             <input type="hidden" name="segment_id" value="<?= e((string)$activeSegmentId); ?>">
             <div class="modal-actions">
-                <?php if ($hasManualAddCategory): ?>
-                    <button type="button" id="import-review-add-row">+Add Row</button>
-                <?php endif; ?>
+                <button type="button" id="import-review-add-row">+Add Row</button>
                 <button type="submit">Save Validated Rows</button>
             </div>
             <p class="import-review-summary" id="import-review-summary">Number of Rows need attention - 0</p>
@@ -1505,7 +1503,6 @@ if (is_superadmin()) {
                                 <td>
                                     <?= e((string)$row['row_number']); ?>
                                     <input type="hidden" name="rows[<?= $rowIndex; ?>][row_number]" value="<?= e((string)$row['row_number']); ?>">
-                                    <input type="hidden" name="rows[<?= $rowIndex; ?>][target_asset_id]" value="<?= e((string)($row['target_asset_id'] ?? 0)); ?>">
                                 </td>
                                 <?php if ($categorySelectionEnabled): ?>
                                 <td class="<?= !empty($row['errors']['category_id']) ? 'cell-error' : 'cell-valid'; ?>">

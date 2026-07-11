@@ -11702,170 +11702,6 @@ function asset_download_append_excel_rows(\PhpOffice\PhpSpreadsheet\Worksheet\Wo
     return $rowNum;
 }
 
-function asset_user_simple_download_filename(string $viewScope): string
-{
-    $prefix = $viewScope === 'office_under_me' ? 'office_under_me' : 'my_office';
-    return $prefix . '_' . date('Y-m-d') . '.xlsx';
-}
-
-function asset_user_simple_download_columns(int $segmentId, string $viewScope = 'my_office'): array
-{
-    $columns = [
-        ['key' => 'serial', 'label' => 'SL No'],
-    ];
-    if (asset_category_selection_enabled($segmentId)) {
-        $columns[] = ['key' => 'category', 'label' => 'Category'];
-    }
-    if (asset_subcategory_enabled($segmentId)) {
-        $columns[] = ['key' => 'subcategory', 'label' => 'Sub-category'];
-    }
-    if (asset_number_visible_to_users($segmentId)) {
-        $columns[] = ['key' => 'asset_number', 'label' => 'Asset Number'];
-    }
-    if ($viewScope === 'office_under_me') {
-        $columns[] = ['key' => 'office_name', 'label' => 'Office'];
-    }
-    if (asset_data_provider_visible($segmentId)) {
-        $columns[] = ['key' => 'data_provider', 'label' => 'Data Provider'];
-    }
-    foreach (get_asset_fields(false, $segmentId) as $field) {
-        if ((int)($field['active_status'] ?? 0) !== 1 || (int)($field['is_displayed'] ?? 0) !== 1) {
-            continue;
-        }
-        $rawLabel = trim((string)($field['label'] ?? ''));
-        $parts = preg_split('/\s*\/\s*/u', $rawLabel);
-        $label = trim((string)($parts[0] ?? $rawLabel));
-        $columns[] = ['key' => (string)$field['field_key'], 'label' => $label !== '' ? $label : (string)$field['field_key']];
-        if ((string)($field['data_type'] ?? '') === 'bimh') {
-            $columns[] = ['key' => (string)$field['field_key'] . '__est_name', 'label' => 'Est Name'];
-        }
-    }
-    return $columns;
-}
-
-function asset_user_simple_download_row_value(array $asset, string $key): string
-{
-    if (isset($asset['files'][$key])) {
-        return asset_download_file_summary($asset, $key);
-    }
-    return match ($key) {
-        'category' => (string)($asset['category_name'] ?? ''),
-        'subcategory' => (string)($asset['subcategory_name'] ?? ''),
-        'asset_number' => (string)($asset['asset_number'] ?? ''),
-        'office_name' => trim((string)($asset['office_type_label'] ?? '') . ' - ' . (string)($asset['office_name'] ?? '')),
-        'data_provider' => (string)(strtok((string)($asset['created_by_email'] ?? ''), '@') ?: ''),
-        default => (string)($asset['values'][$key] ?? ''),
-    };
-}
-
-function output_asset_user_simple_scope_excel_download(array $user, string $viewScope = 'my_office'): void
-{
-    ensure_library('PhpOffice\\PhpSpreadsheet\\Spreadsheet', 'PhpSpreadsheet is not installed.');
-    $book = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
-    export_apply_spreadsheet_font($book);
-    \PhpOffice\PhpSpreadsheet\Settings::setLocale('en');
-
-    $takenSheetNames = [];
-    $sheetIndex = 0;
-    foreach (get_asset_segments(false) as $segment) {
-        $segmentId = (int)($segment['id'] ?? 0);
-        if ($segmentId <= 0) {
-            continue;
-        }
-        $sheet = $sheetIndex === 0 ? $book->getActiveSheet() : $book->createSheet($sheetIndex);
-        $sheetTitle = asset_template_safe_sheet_name((string)($segment['segment_name'] ?? ('Segment ' . ($sheetIndex + 1))), $takenSheetNames);
-        $takenSheetNames[] = $sheetTitle;
-        $sheet->setTitle($sheetTitle);
-
-        $columns = asset_user_simple_download_columns($segmentId, $viewScope);
-        $assets = get_assets(
-            [
-                'segment_id' => $segmentId,
-                'office_view_scope' => $viewScope,
-            ],
-            $user,
-            false,
-            [
-                'include_files' => true,
-                'include_timestamps' => false,
-                'include_office_labels' => true,
-            ]
-        );
-
-        $colIndex = 1;
-        foreach ($columns as $column) {
-            $sheet->setCellValue([$colIndex, 1], (string)($column['label'] ?? ''));
-            $colIndex++;
-        }
-
-        $rowIndex = 2;
-        foreach ($assets as $rowNumber => $asset) {
-            $colIndex = 1;
-            foreach ($columns as $column) {
-                $key = (string)($column['key'] ?? '');
-                $value = $key === 'serial'
-                    ? (string)($rowNumber + 1)
-                    : asset_user_simple_download_row_value($asset, $key);
-                $sheet->setCellValueExplicit([$colIndex, $rowIndex], $value, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
-                $colIndex++;
-            }
-            $rowIndex++;
-        }
-
-        $lastColumnLetter = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex(max(1, count($columns)));
-        $lastRow = max(1, $rowIndex - 1);
-        $sheet->getStyle('A1:' . $lastColumnLetter . '1')->applyFromArray([
-            'font' => ['bold' => true],
-            'alignment' => [
-                'vertical' => \PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_CENTER,
-                'horizontal' => \PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER,
-                'wrapText' => true,
-            ],
-            'fill' => [
-                'fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
-                'startColor' => ['rgb' => 'EAF1F8'],
-            ],
-            'borders' => [
-                'allBorders' => [
-                    'borderStyle' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN,
-                    'color' => ['rgb' => 'C4CBD3'],
-                ],
-            ],
-        ]);
-        $sheet->getStyle('A1:' . $lastColumnLetter . $lastRow)->applyFromArray([
-            'borders' => [
-                'allBorders' => [
-                    'borderStyle' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN,
-                    'color' => ['rgb' => 'D0D4D9'],
-                ],
-            ],
-            'alignment' => [
-                'vertical' => \PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_TOP,
-                'wrapText' => true,
-            ],
-        ]);
-        for ($i = 1; $i <= count($columns); $i++) {
-            $sheet->getColumnDimensionByColumn($i)->setAutoSize(true);
-        }
-        $sheet->freezePane('A2');
-        $sheetIndex++;
-    }
-
-    if ($sheetIndex === 0) {
-        $book->getActiveSheet()->setTitle('Data');
-        $book->getActiveSheet()->setCellValue('A1', 'No data');
-    }
-
-    $book->setActiveSheetIndex(0);
-    header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    header('Content-Disposition: attachment; filename="' . asset_user_simple_download_filename($viewScope) . '"');
-    header('Cache-Control: max-age=0');
-    $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($book);
-    $writer->setPreCalculateFormulas(false);
-    $writer->save('php://output');
-    exit;
-}
-
 function asset_download_export_excel(array $request, array $user, ?string $destinationPath = null): ?array
 {
     ensure_library('PhpOffice\\PhpSpreadsheet\\Spreadsheet', 'PhpSpreadsheet is not installed.');
@@ -13898,7 +13734,7 @@ function asset_template_columns(?int $segmentId = null): array
 
 function asset_import_expected_keys(?int $segmentId = null): array
 {
-    return array_column(asset_template_input_column_definitions($segmentId), 'key');
+    return array_column(asset_template_core_columns($segmentId), 'key');
 }
 
 function validate_uploaded_asset_template(string $tmpName, ?int $segmentId = null): array
@@ -15294,7 +15130,7 @@ function stage_asset_import_row(array $input, int $rowNumber, ?int $segmentId = 
         'category_id' => $categoryId,
         'subcategory_id' => $subcategoryId,
         'fields' => $fieldInputs,
-    ], $targetAsset ? (int)($targetAsset['id'] ?? 0) : null, [], true);
+    ], $targetAsset, [], true);
 
     return [
         'row_number' => $rowNumber,
@@ -15355,13 +15191,12 @@ function commit_asset_import_review(array $user): array
             $errors[] = 'Row ' . $row['row_number'] . ' still has validation errors.';
             continue;
         }
-        $targetAssetId = (int)($restagedRow['target_asset_id'] ?? 0);
         $validated = validate_asset_payload([
             'segment_id' => $segmentId,
             'category_id' => (int)$restagedRow['category_id'],
             'subcategory_id' => (int)$restagedRow['subcategory_id'],
             'fields' => $restagedRow['fields'] ?? [],
-        ], $targetAssetId > 0 ? $targetAssetId : null, [], true);
+        ], null, [], true);
         if (!empty($validated['errors'])) {
             $restagedRow['errors'] = $validated['errors'];
             $invalidRows[] = $restagedRow;
@@ -15380,8 +15215,9 @@ function commit_asset_import_review(array $user): array
     }
 
     if ($validRows) {
-        foreach ($validRows as $item) {
-            try {
+        db()->beginTransaction();
+        try {
+            foreach ($validRows as $item) {
                 $targetAssetId = (int)($item['row']['target_asset_id'] ?? 0);
                 if ($targetAssetId > 0) {
                     $targetAsset = asset_import_target_asset($targetAssetId, $segmentId);
@@ -15393,15 +15229,24 @@ function commit_asset_import_review(array $user): array
                     persist_asset_record($item['payload'], $user);
                 }
                 $saved++;
-            } catch (Throwable $e) {
+            }
+            db()->prepare('UPDATE asset_import_batches SET imported_count = ?, skipped_count = ?, updated_at = NOW() WHERE id = ?')->execute([$saved, count($invalidRows), $batchId]);
+            db()->commit();
+        } catch (Throwable $e) {
+            if (db()->inTransaction()) {
+                db()->rollBack();
+            }
+            foreach ($validRows as $item) {
                 $failedRow = $item['row'];
                 $failedRow['errors'] = ['_db' => 'Database save failed for this row.'];
                 $invalidRows[] = $failedRow;
-                $errors[] = 'Database save failed for row ' . (int)($item['row']['row_number'] ?? 0) . '. ' . $e->getMessage();
             }
+            $saved = 0;
+            $errors[] = 'Database save failed. No rows were imported. ' . $e->getMessage();
         }
+    } else {
+        db()->prepare('UPDATE asset_import_batches SET imported_count = ?, skipped_count = ?, updated_at = NOW() WHERE id = ?')->execute([$saved, count($invalidRows), $batchId]);
     }
-    db()->prepare('UPDATE asset_import_batches SET imported_count = ?, skipped_count = ?, updated_at = NOW() WHERE id = ?')->execute([$saved, count($invalidRows), $batchId]);
 
     if ($invalidRows) {
         $_SESSION['asset_import_review']['rows'] = $invalidRows;

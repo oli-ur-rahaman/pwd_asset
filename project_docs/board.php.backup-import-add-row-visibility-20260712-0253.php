@@ -1472,9 +1472,7 @@ if (is_superadmin()) {
             <input type="hidden" name="action" value="asset_import_save">
             <input type="hidden" name="segment_id" value="<?= e((string)$activeSegmentId); ?>">
             <div class="modal-actions">
-                <?php if ($hasManualAddCategory): ?>
-                    <button type="button" id="import-review-add-row">+Add Row</button>
-                <?php endif; ?>
+                <button type="button" id="import-review-add-row">+Add Row</button>
                 <button type="submit">Save Validated Rows</button>
             </div>
             <p class="import-review-summary" id="import-review-summary">Number of Rows need attention - 0</p>
