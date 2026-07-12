@@ -1157,7 +1157,7 @@ function asset_common_source_type_superadmin_defined(): string
 
 function asset_common_supported_field_data_types(): array
 {
-    return ['text', 'number', 'date', 'dropdown', 'yes_no', 'conditional', 'bimh'];
+    return ['text', 'number', 'date', 'dropdown', 'yes_no', 'bimh'];
 }
 
 function asset_common_row_config_input_present(array $input): bool
@@ -1352,116 +1352,6 @@ function asset_common_profile_child_field_keys(int $profileId): array
     return array_keys($keys);
 }
 
-function asset_common_resolve_binding_field(int $fieldId, ?int $segmentId = null): ?array
-{
-    $field = get_asset_field($fieldId, $segmentId);
-    if (!$field) {
-        return null;
-    }
-    if (asset_is_conditional_secondary($field)) {
-        $parentId = (int)($field['secondary_of_field_id'] ?? 0);
-        if ($parentId > 0) {
-            $parentField = get_asset_field($parentId, $segmentId);
-            if ($parentField) {
-                return $parentField;
-            }
-        }
-    }
-    return $field;
-}
-
-function asset_common_conditional_pair(array $field, ?int $segmentId = null): array
-{
-    $primary = asset_common_resolve_binding_field((int)($field['id'] ?? 0), $segmentId);
-    if (!$primary) {
-        return ['primary' => null, 'secondary' => null];
-    }
-    $secondary = asset_is_conditional_primary($primary)
-        ? get_asset_conditional_child_field((int)$primary['id'], true, $segmentId)
-        : null;
-    return ['primary' => $primary, 'secondary' => $secondary];
-}
-
-function asset_common_delete_profile_binding_by_child_field(int $childFieldId, ?int $actingUserId = null): int
-{
-    $binding = get_asset_common_profile_field_binding_by_child_field($childFieldId);
-    if (!$binding) {
-        db()->prepare('UPDATE asset_fields SET is_common_row_field = 0, updated_at = NOW() WHERE id = ?')->execute([$childFieldId]);
-        return 0;
-    }
-    $profileId = (int)($binding['profile_id'] ?? 0);
-    db()->prepare('DELETE FROM asset_common_profile_fields WHERE child_field_id = ?')->execute([$childFieldId]);
-    db()->prepare('UPDATE asset_fields SET is_common_row_field = 0, updated_at = NOW() WHERE id = ?')->execute([$childFieldId]);
-    asset_delete_common_profile_if_empty($profileId, $actingUserId);
-    return $profileId;
-}
-
-function asset_common_upsert_profile_binding_row(int $profileId, int $childFieldId, ?int $parentFieldId, int $sortOrder): void
-{
-    $bindingExists = db()->prepare('SELECT id FROM asset_common_profile_fields WHERE child_field_id = ? LIMIT 1');
-    $bindingExists->execute([$childFieldId]);
-    $bindingId = (int)($bindingExists->fetchColumn() ?: 0);
-    if ($bindingId > 0) {
-        db()->prepare('UPDATE asset_common_profile_fields SET profile_id = ?, parent_field_id = ?, sort_order = ?, updated_at = NOW() WHERE id = ?')->execute([
-            $profileId,
-            $parentFieldId > 0 ? $parentFieldId : null,
-            $sortOrder,
-            $bindingId,
-        ]);
-    } else {
-        db()->prepare('INSERT INTO asset_common_profile_fields (profile_id, child_field_id, parent_field_id, sort_order, created_at) VALUES (?, ?, ?, ?, NOW())')->execute([
-            $profileId,
-            $childFieldId,
-            $parentFieldId > 0 ? $parentFieldId : null,
-            $sortOrder,
-        ]);
-    }
-    db()->prepare('UPDATE asset_fields SET is_common_row_field = 1, updated_at = NOW() WHERE id = ?')->execute([$childFieldId]);
-}
-
-function asset_common_validate_conditional_pair_values(array &$valuesByFieldId, array $fieldMetaById): array
-{
-    $errors = [];
-    foreach ($fieldMetaById as $fieldId => $fieldMeta) {
-        if (!asset_is_conditional_secondary($fieldMeta)) {
-            continue;
-        }
-        $parentFieldId = (int)($fieldMeta['secondary_of_field_id'] ?? 0);
-        $parentField = $parentFieldId > 0 ? ($fieldMetaById[$parentFieldId] ?? get_asset_field($parentFieldId, (int)($fieldMeta['segment_id'] ?? 0))) : null;
-        if (!$parentField || !asset_is_conditional_primary($parentField)) {
-            continue;
-        }
-        $parentValue = trim((string)($valuesByFieldId[$parentFieldId] ?? ''));
-        $childValue = trim((string)($valuesByFieldId[$fieldId] ?? ''));
-        $parentLabel = (string)($parentField['label'] ?? 'Primary field');
-        $childLabel = (string)($fieldMeta['label'] ?? 'Secondary field');
-        if ($parentValue === '') {
-            if ($childValue !== '') {
-                $errors[] = $childLabel . ' requires ' . $parentLabel . '.';
-            }
-            $valuesByFieldId[$fieldId] = '';
-            continue;
-        }
-        $resolvedParent = asset_resolve_conditional_primary_value($parentField, $parentValue);
-        if ($resolvedParent === null) {
-            $errors[] = $parentLabel . ' has an invalid option.';
-            continue;
-        }
-        $valuesByFieldId[$parentFieldId] = $resolvedParent;
-        if ($childValue === '') {
-            $errors[] = $childLabel . ' is required when ' . $parentLabel . ' is selected.';
-            continue;
-        }
-        $resolvedChild = asset_resolve_conditional_child_value($parentField, $resolvedParent, $childValue);
-        if ($resolvedChild === null) {
-            $errors[] = $childLabel . ' must match the selected ' . $parentLabel . '.';
-            continue;
-        }
-        $valuesByFieldId[$fieldId] = $resolvedChild;
-    }
-    return $errors;
-}
-
 function asset_common_asset_is_generated(array $asset): bool
 {
     return (int)($asset['common_profile_id'] ?? 0) > 0
@@ -1624,23 +1514,15 @@ function asset_upsert_common_profile_binding(int $childFieldId, array $payload):
         return ['old_profile_id' => 0, 'new_profile_id' => 0];
     }
 
-    $segmentId = asset_normalize_segment_id((int)($payload['segment_id'] ?? 0));
-    $baseField = asset_common_resolve_binding_field($childFieldId, $segmentId);
-    if (!$baseField) {
-        return ['old_profile_id' => 0, 'new_profile_id' => 0];
-    }
-    $childFieldId = (int)($baseField['id'] ?? $childFieldId);
-    $conditionalSecondary = asset_is_conditional_primary($baseField)
-        ? get_asset_conditional_child_field($childFieldId, true, $segmentId)
-        : null;
     $existingBinding = get_asset_common_profile_field_binding_by_child_field($childFieldId);
     $oldProfileId = (int)($existingBinding['profile_id'] ?? 0);
     $enabled = !empty($payload['is_common_row_field']);
     if (!$enabled) {
-        if ($conditionalSecondary) {
-            asset_common_delete_profile_binding_by_child_field((int)$conditionalSecondary['id'], (int)($payload['acting_user_id'] ?? 0));
+        if ($existingBinding) {
+            db()->prepare('DELETE FROM asset_common_profile_fields WHERE child_field_id = ?')->execute([$childFieldId]);
+            asset_delete_common_profile_if_empty((int)$existingBinding['profile_id'], (int)($payload['acting_user_id'] ?? 0));
         }
-        asset_common_delete_profile_binding_by_child_field($childFieldId, (int)($payload['acting_user_id'] ?? 0));
+        db()->prepare('UPDATE asset_fields SET is_common_row_field = 0, updated_at = NOW() WHERE id = ?')->execute([$childFieldId]);
         return ['old_profile_id' => $oldProfileId, 'new_profile_id' => 0];
     }
 
@@ -1657,6 +1539,7 @@ function asset_upsert_common_profile_binding(int $childFieldId, array $payload):
         ? (int)($payload['common_parent_field_id'] ?? 0)
         : null;
 
+    $segmentId = asset_normalize_segment_id((int)($payload['segment_id'] ?? 0));
     $profile = get_asset_common_profile_by_category($profileCategoryId, $segmentId, true);
     if (!$profile) {
         $stmt = db()->prepare('
@@ -1689,30 +1572,31 @@ function asset_upsert_common_profile_binding(int $childFieldId, array $payload):
     }
 
     if ($existingBinding && (int)$existingBinding['profile_id'] !== $profileId) {
-        asset_common_delete_profile_binding_by_child_field($childFieldId, (int)($payload['acting_user_id'] ?? 0));
-        $existingBinding = null;
+        db()->prepare('DELETE FROM asset_common_profile_fields WHERE child_field_id = ?')->execute([$childFieldId]);
+        asset_delete_common_profile_if_empty((int)$existingBinding['profile_id'], (int)($payload['acting_user_id'] ?? 0));
     }
 
     $sortOrder = (int)($payload['sort_order'] ?? 0);
-    asset_common_upsert_profile_binding_row(
-        $profileId,
-        $childFieldId,
-        $parentFieldId > 0 ? $parentFieldId : null,
-        $sortOrder
-    );
-    if ($conditionalSecondary) {
-        $secondaryParentFieldId = null;
-        if ($definitionMode === asset_common_definition_mode_user_defined() && $parentFieldId > 0) {
-            $parentSecondary = get_asset_conditional_child_field($parentFieldId, true, $parentSegmentId);
-            $secondaryParentFieldId = (int)($parentSecondary['id'] ?? 0) ?: null;
-        }
-        asset_common_upsert_profile_binding_row(
+    $bindingExists = db()->prepare('SELECT id FROM asset_common_profile_fields WHERE child_field_id = ? LIMIT 1');
+    $bindingExists->execute([$childFieldId]);
+    $bindingId = (int)($bindingExists->fetchColumn() ?: 0);
+    if ($bindingId > 0) {
+        db()->prepare('UPDATE asset_common_profile_fields SET profile_id = ?, parent_field_id = ?, sort_order = ?, updated_at = NOW() WHERE id = ?')->execute([
             $profileId,
-            (int)$conditionalSecondary['id'],
-            $secondaryParentFieldId,
-            $sortOrder + 1
-        );
+            $parentFieldId > 0 ? $parentFieldId : null,
+            $sortOrder,
+            $bindingId,
+        ]);
+    } else {
+        db()->prepare('INSERT INTO asset_common_profile_fields (profile_id, child_field_id, parent_field_id, sort_order, created_at) VALUES (?, ?, ?, ?, NOW())')->execute([
+            $profileId,
+            $childFieldId,
+            $parentFieldId > 0 ? $parentFieldId : null,
+            $sortOrder,
+        ]);
     }
+
+    db()->prepare('UPDATE asset_fields SET is_common_row_field = 1, updated_at = NOW() WHERE id = ?')->execute([$childFieldId]);
     return ['old_profile_id' => $oldProfileId, 'new_profile_id' => $profileId];
 }
 
@@ -2229,10 +2113,6 @@ function save_asset_common_admin_row(int $profileId, array $input, ?int $rowId =
         }
         $values[$childFieldId] = (string)($normalized['display'] ?? '');
     }
-    $pairErrors = asset_common_validate_conditional_pair_values($values, $segmentFieldMapById);
-    if ($pairErrors !== []) {
-        throw new RuntimeException(implode(' ', $pairErrors));
-    }
 
     db()->beginTransaction();
     try {
@@ -2316,11 +2196,6 @@ function asset_common_admin_template_column_definitions(int $profileId): array
         'options' => array_values(asset_common_scope_options()),
     ]];
     $segmentId = (int)($profile['segment_id'] ?? 0);
-    $segmentFields = get_asset_fields(true, $segmentId);
-    $segmentFieldById = [];
-    foreach ($segmentFields as $segmentField) {
-        $segmentFieldById[(int)($segmentField['id'] ?? 0)] = $segmentField;
-    }
     foreach (get_asset_common_profile_fields($profileId) as $profileField) {
         $childFieldId = (int)($profileField['child_field_id'] ?? 0);
         $field = $childFieldId > 0 ? get_asset_field($childFieldId, $segmentId) : null;
@@ -2333,20 +2208,10 @@ function asset_common_admin_template_column_definitions(int $profileId): array
             'yes_no' => 'yes_no',
             'date' => 'date',
             'number' => 'number',
-            'conditional' => 'conditional_primary',
             default => 'text',
         };
-        $parentId = (int)($field['secondary_of_field_id'] ?? 0);
-        if ($type === 'dropdown' && $parentId > 0 && isset($segmentFieldById[$parentId]) && asset_is_conditional_primary($segmentFieldById[$parentId])) {
-            $validationKind = 'conditional_secondary';
-        }
         $options = [];
         if ($validationKind === 'dropdown') {
-            $options = array_map(
-                static fn(array $option): string => (string)($option['option_value'] ?? ''),
-                get_asset_field_options($childFieldId, true)
-            );
-        } elseif ($validationKind === 'conditional_primary') {
             $options = array_map(
                 static fn(array $option): string => (string)($option['option_value'] ?? ''),
                 get_asset_field_options($childFieldId, true)
@@ -2354,7 +2219,7 @@ function asset_common_admin_template_column_definitions(int $profileId): array
         } elseif ($validationKind === 'yes_no') {
             $options = ['Yes', 'No'];
         }
-        $column = [
+        $columns[] = [
             'key' => 'field_' . $childFieldId,
             'field_id' => $childFieldId,
             'label' => (string)($profileField['child_field_label'] ?? 'Field'),
@@ -2367,12 +2232,6 @@ function asset_common_admin_template_column_definitions(int $profileId): array
             'number_format_rule' => (string)($field['number_format_rule'] ?? ''),
             'text_max_length' => (int)($field['text_max_length'] ?? 0),
         ];
-        if ($validationKind === 'conditional_primary') {
-            $column['conditional_map'] = asset_decode_conditional_map($field);
-        } elseif ($validationKind === 'conditional_secondary' && $parentId > 0 && isset($segmentFieldById[$parentId])) {
-            $column['parent_key'] = 'field_' . $parentId;
-        }
-        $columns[] = $column;
     }
     return $columns;
 }
@@ -2420,10 +2279,7 @@ function build_asset_common_admin_template_workbook(int $profileId): \PhpOffice\
     $sheet->setShowGridlines(false);
     $sheet->freezePane('A2');
 
-    $dropdownSheet->setCellValue('A1', 'COMMON_EMPTY');
-    $dropdownSheet->setCellValue('A2', '');
-    $spreadsheet->addNamedRange(new \PhpOffice\PhpSpreadsheet\NamedRange('COMMON_EMPTY', $dropdownSheet, '$A$2:$A$2'));
-    $helperColumnIndex = 2;
+    $helperColumnIndex = 1;
     $definedRanges = [];
     $writeListRange = static function (\PhpOffice\PhpSpreadsheet\Spreadsheet $book, \PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $listSheet, string $rangeName, array $values, int &$columnIndex) use (&$definedRanges): string {
         $values = array_values(array_unique(array_values(array_filter(array_map(static fn($value): string => trim((string)$value), $values), static fn(string $value): bool => $value !== ''))));
@@ -2463,24 +2319,6 @@ function build_asset_common_admin_template_workbook(int $profileId): \PhpOffice\
                 $column['options'] ?? ['Yes', 'No'],
                 $helperColumnIndex
             );
-        } elseif (($column['validation_kind'] ?? '') === 'conditional_primary') {
-            $fieldToken = asset_template_named_token((string)$column['key']);
-            $column['range_name'] = $writeListRange(
-                $spreadsheet,
-                $dropdownSheet,
-                'COMMON_COND_' . $fieldToken . '_LIST',
-                $column['options'] ?? [],
-                $helperColumnIndex
-            );
-            foreach (($column['conditional_map'] ?? []) as $primaryValue => $children) {
-                $writeListRange(
-                    $spreadsheet,
-                    $dropdownSheet,
-                    'COMMON_COND_' . $fieldToken . '_' . asset_template_named_token((string)$primaryValue),
-                    is_array($children) ? $children : [],
-                    $helperColumnIndex
-                );
-            }
         }
     }
     unset($column);
@@ -2618,21 +2456,6 @@ function build_asset_common_admin_template_workbook(int $profileId): \PhpOffice\
                     $validation->setFormula1('=' . (string)($column['range_name'] ?? ''));
                     $validation->setError('Choose from dropdown.');
                     break;
-                case 'conditional_primary':
-                    $validation->setType(\PhpOffice\PhpSpreadsheet\Cell\DataValidation::TYPE_LIST);
-                    $validation->setShowDropDown(true);
-                    $validation->setFormula1('=' . (string)($column['range_name'] ?? ''));
-                    $validation->setError('Choose from dropdown.');
-                    break;
-                case 'conditional_secondary':
-                    $parentRef = ($columnLetters[(string)($column['parent_key'] ?? '')] ?? 'B') . $row;
-                    $fieldToken = asset_template_named_token((string)($column['parent_key'] ?? ''));
-                    $validation->setType(\PhpOffice\PhpSpreadsheet\Cell\DataValidation::TYPE_LIST);
-                    $validation->setShowDropDown(true);
-                    $validation->setAllowBlank(false);
-                    $validation->setFormula1('=IF(' . $parentRef . '="",COMMON_EMPTY,INDIRECT("COMMON_COND_' . $fieldToken . '_"&' . asset_template_formula_named_token_expr($parentRef) . '))');
-                    $validation->setError('Choose valid item from dropdown.');
-                    break;
                 case 'date':
                     $validation->setType(\PhpOffice\PhpSpreadsheet\Cell\DataValidation::TYPE_CUSTOM);
                     $validation->setFormula1(asset_template_date_validation_formula($cellRef));
@@ -2752,10 +2575,6 @@ function import_asset_common_admin_rows_from_template(int $profileId, array $fil
                 throw new RuntimeException('Row ' . ($index + 1) . ': ' . implode(' ', array_values($errors)));
             }
             $values[$childFieldId] = (string)($normalized['display'] ?? '');
-        }
-        $pairErrors = asset_common_validate_conditional_pair_values($values, $fieldMetaById);
-        if ($pairErrors !== []) {
-            throw new RuntimeException('Row ' . ($index + 1) . ': ' . implode(' ', $pairErrors));
         }
         $parsedRows[] = [
             'scope_office_type' => (int)$scope['office_type'],
@@ -7415,7 +7234,7 @@ function validate_asset_field_definition(array $input, array $fileInput = [], ?i
 
     if ($commonRowConfigPresent && $isCommonRowField === 1) {
         if (!in_array($dataType, asset_common_supported_field_data_types(), true)) {
-            $errors[] = 'Common row fields currently support text, number, date, dropdown, yes-no, conditional, and BIMH only.';
+            $errors[] = 'Common row fields currently support text, number, date, dropdown, yes-no, and BIMH only.';
         }
 
         $segmentCategories = get_asset_categories(true, $segmentId);
@@ -7486,13 +7305,6 @@ function validate_asset_field_definition(array $input, array $fileInput = [], ?i
                 $errors[] = 'Parent field is required for user-defined common rows.';
             } elseif (!in_array((string)($parentField['data_type'] ?? ''), asset_common_supported_field_data_types(), true)) {
                 $errors[] = 'Parent field type is not supported for common row mapping.';
-            } elseif ($dataType === 'conditional' && !asset_is_conditional_primary($parentField)) {
-                $errors[] = 'Conditional common fields must map to a conditional parent field.';
-            } elseif ($dataType === 'conditional') {
-                $parentChild = get_asset_conditional_child_field((int)($parentField['id'] ?? 0), true, $commonParentSegmentId);
-                if (!$parentChild) {
-                    $errors[] = 'The selected parent conditional field has no secondary field.';
-                }
             }
         }
     }
@@ -15010,14 +14822,6 @@ function asset_template_prefill_rows(?int $segmentId = null, ?array $user = null
     if ($segmentId <= 0 || !$ctx) {
         return [];
     }
-    $commonProfiles = get_asset_common_profiles_for_segment($segmentId, true);
-    $hideUserAddedRows = false;
-    foreach ($commonProfiles as $profile) {
-        if (asset_common_profile_allows_manual_rows($profile)) {
-            $hideUserAddedRows = true;
-            break;
-        }
-    }
 
     asset_sync_common_rows_for_segment_office(
         $segmentId,
@@ -15036,12 +14840,11 @@ function asset_template_prefill_rows(?int $segmentId = null, ?array $user = null
            AND a.office_id = ?
            AND a.common_profile_id IS NOT NULL
            AND a.common_profile_id > 0
-           AND (? = 0 OR a.is_user_added_row = 0)
            AND a.deleted_at IS NULL
            AND a.active_status = 1
          ORDER BY a.category_id ASC, a.is_user_added_row ASC, a.id DESC'
     );
-    $stmt->execute([$segmentId, (int)$ctx['office_type'], (int)$ctx['office_id'], $hideUserAddedRows ? 1 : 0]);
+    $stmt->execute([$segmentId, (int)$ctx['office_type'], (int)$ctx['office_id']]);
     $assets = $stmt->fetchAll();
     if (!$assets) {
         return [];

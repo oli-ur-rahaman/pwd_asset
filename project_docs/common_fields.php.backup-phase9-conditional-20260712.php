@@ -34,7 +34,7 @@ $activeProfileId = (int)($activeProfile['id'] ?? 0);
 $previewScopeLabel = (string)($previewScopeOptions[$previewScope] ?? reset($previewScopeOptions) ?: 'All Offices (Global View)');
 
 if (!function_exists('render_common_admin_row_input')) {
-    function render_common_admin_row_input(string $formId, array $fieldMeta, int $childFieldId, string $value, array $rowValues = []): string
+    function render_common_admin_row_input(string $formId, array $fieldMeta, int $childFieldId, string $value): string
     {
         $fieldName = 'common_row_values[' . $childFieldId . ']';
         $class = 'inline-edit';
@@ -50,46 +50,11 @@ if (!function_exists('render_common_admin_row_input')) {
             return $html;
         }
         if ($dataType === 'dropdown') {
-            $parentFieldId = (int)($fieldMeta['secondary_of_field_id'] ?? 0);
-            if ($parentFieldId > 0) {
-                $parentField = get_asset_field($parentFieldId, (int)($fieldMeta['segment_id'] ?? 0));
-                if ($parentField && asset_is_conditional_primary($parentField)) {
-                    $parentValue = trim((string)($rowValues[$parentFieldId] ?? ''));
-                    $resolvedParent = $parentValue !== '' ? (asset_resolve_conditional_primary_value($parentField, $parentValue) ?? $parentValue) : '';
-                    $allowed = $resolvedParent !== '' ? asset_conditional_child_options($parentField, $resolvedParent) : [];
-                    $resolvedValue = $value !== '' ? (asset_resolve_conditional_child_value($parentField, $resolvedParent, $value) ?? $value) : '';
-                    $html = '<select form="' . e($formId) . '" class="' . e($class) . '" name="' . e($fieldName) . '" data-field-key="' . e((string)($fieldMeta['field_key'] ?? '')) . '" data-conditional-secondary="' . e((string)($parentField['field_key'] ?? '')) . '">';
-                    $html .= '<option value=""></option>';
-                    foreach ($allowed as $optionValue) {
-                        $selected = asset_option_values_match((string)$resolvedValue, (string)$optionValue) ? ' selected' : '';
-                        $html .= '<option value="' . e((string)$optionValue) . '"' . $selected . '>' . e((string)$optionValue) . '</option>';
-                    }
-                    if ($resolvedValue !== '' && !in_array($resolvedValue, $allowed, true)) {
-                        $html .= '<option value="' . e($resolvedValue) . '" selected>' . e($resolvedValue) . '</option>';
-                    }
-                    $html .= '</select>';
-                    return $html;
-                }
-            }
             $html = '<select form="' . e($formId) . '" class="' . e($class) . '" name="' . e($fieldName) . '">';
             $html .= '<option value=""></option>';
             foreach (get_asset_field_options((int)($fieldMeta['id'] ?? 0), true) as $option) {
                 $optionValue = (string)($option['option_value'] ?? '');
                 $selected = $optionValue === $value ? ' selected' : '';
-                $html .= '<option value="' . e($optionValue) . '"' . $selected . '>' . e($optionValue) . '</option>';
-            }
-            $html .= '</select>';
-            return $html;
-        }
-        if ($dataType === 'conditional') {
-            $conditionalMap = asset_decode_conditional_map($fieldMeta);
-            $childField = get_asset_conditional_child_field((int)($fieldMeta['id'] ?? 0), true, (int)($fieldMeta['segment_id'] ?? 0));
-            $resolvedValue = $value !== '' ? (asset_resolve_conditional_primary_value($fieldMeta, $value) ?? $value) : '';
-            $html = '<select form="' . e($formId) . '" class="' . e($class) . '" name="' . e($fieldName) . '" data-field-key="' . e((string)($fieldMeta['field_key'] ?? '')) . '" data-conditional-primary="1" data-conditional-map="' . e(json_encode($conditionalMap, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)) . '"' . ($childField ? ' data-conditional-child="' . e((string)($childField['field_key'] ?? '')) . '"' : '') . '>';
-            $html .= '<option value=""></option>';
-            foreach (get_asset_field_options((int)($fieldMeta['id'] ?? 0), true) as $option) {
-                $optionValue = (string)($option['option_value'] ?? '');
-                $selected = asset_option_values_match((string)$resolvedValue, $optionValue) ? ' selected' : '';
                 $html .= '<option value="' . e($optionValue) . '"' . $selected . '>' . e($optionValue) . '</option>';
             }
             $html .= '</select>';
@@ -181,7 +146,7 @@ $renderProfileSection = static function (array $profile) use (
                             <td><input form="<?= e($rowFormId); ?>" class="inline-edit" type="number" name="sort_order" min="1" step="1" value="<?= e((string)($adminRow['sort_order'] ?? 10)); ?>" required></td>
                             <?php foreach ($profileFields as $profileField): ?>
                                 <?php $childFieldId = (int)($profileField['child_field_id'] ?? 0); ?>
-                                <td><?= render_common_admin_row_input($rowFormId, $fieldMetaById[$childFieldId] ?? [], $childFieldId, (string)($adminRow['values'][$childFieldId] ?? ''), (array)($adminRow['values'] ?? [])); ?></td>
+                                <td><?= render_common_admin_row_input($rowFormId, $fieldMetaById[$childFieldId] ?? [], $childFieldId, (string)($adminRow['values'][$childFieldId] ?? '')); ?></td>
                             <?php endforeach; ?>
                             <td>
                                 <div class="action-row">
@@ -223,7 +188,7 @@ $renderProfileSection = static function (array $profile) use (
                         <td><input form="<?= e($newRowFormId); ?>" class="inline-edit" type="number" name="sort_order" min="1" step="1" value="<?= e((string)((count($adminRows) + 1) * 10)); ?>" required></td>
                         <?php foreach ($profileFields as $profileField): ?>
                             <?php $childFieldId = (int)($profileField['child_field_id'] ?? 0); ?>
-                            <td><?= render_common_admin_row_input($newRowFormId, $fieldMetaById[$childFieldId] ?? [], $childFieldId, '', []); ?></td>
+                            <td><?= render_common_admin_row_input($newRowFormId, $fieldMetaById[$childFieldId] ?? [], $childFieldId, ''); ?></td>
                         <?php endforeach; ?>
                         <td>
                             <form method="post" action="index.php" id="<?= e($newRowFormId); ?>" class="inline-form">
@@ -383,74 +348,6 @@ $renderProfileSection = static function (array $profile) use (
 
 <script>
 (function () {
-    function normalizeConditionalOptionValue(value) {
-        return String(value || '')
-            .trim()
-            .replace(/_/g, ' ')
-            .replace(/\s+/g, ' ')
-            .toLowerCase();
-    }
-
-    function resolveConditionalMapKey(map, value) {
-        var normalized = normalizeConditionalOptionValue(value);
-        var keys = Object.keys(map || {});
-        for (var i = 0; i < keys.length; i += 1) {
-            if (normalizeConditionalOptionValue(keys[i]) === normalized) {
-                return keys[i];
-            }
-        }
-        return '';
-    }
-
-    function resolveConditionalOptionValue(options, value) {
-        var normalized = normalizeConditionalOptionValue(value);
-        for (var i = 0; i < (options || []).length; i += 1) {
-            if (normalizeConditionalOptionValue(options[i]) === normalized) {
-                return options[i];
-            }
-        }
-        return '';
-    }
-
-    function syncCommonConditionalSelects(container) {
-        Array.prototype.slice.call(container.querySelectorAll('[data-conditional-primary="1"]')).forEach(function (primarySelect) {
-            var childKey = primarySelect.getAttribute('data-conditional-child') || '';
-            if (!childKey) {
-                return;
-            }
-            var childSelect = container.querySelector('[data-field-key="' + childKey + '"][data-conditional-secondary]');
-            if (!childSelect) {
-                return;
-            }
-            var map = {};
-            try {
-                map = JSON.parse(primarySelect.getAttribute('data-conditional-map') || '{}');
-            } catch (error) {
-                map = {};
-            }
-            var previousValue = childSelect.value || '';
-            var mapKey = resolveConditionalMapKey(map, primarySelect.value);
-            var allowed = mapKey && Array.isArray(map[mapKey]) ? map[mapKey] : [];
-            childSelect.innerHTML = '<option value=""></option>';
-            allowed.forEach(function (optionValue) {
-                var option = document.createElement('option');
-                option.value = optionValue;
-                option.textContent = optionValue;
-                childSelect.appendChild(option);
-            });
-            childSelect.value = resolveConditionalOptionValue(allowed, previousValue);
-        });
-    }
-
-    Array.prototype.slice.call(document.querySelectorAll('.table-wrap table tbody tr')).forEach(function (row) {
-        syncCommonConditionalSelects(row);
-        Array.prototype.slice.call(row.querySelectorAll('[data-conditional-primary="1"]')).forEach(function (primarySelect) {
-            primarySelect.addEventListener('change', function () {
-                syncCommonConditionalSelects(row);
-            });
-        });
-    });
-
     var pickers = Array.prototype.slice.call(document.querySelectorAll('[data-common-preview-picker]'));
     if (!pickers.length) {
         return;

@@ -2925,9 +2925,6 @@ window.initializeDownloadModalUi = function () {
             }
             input.checked = checked;
             input.indeterminate = false;
-            if (isOfficeTreeCheckbox(input)) {
-                input.setAttribute('data-office-explicit', checked ? '1' : '0');
-            }
         });
         syncHierarchyTrees();
     };

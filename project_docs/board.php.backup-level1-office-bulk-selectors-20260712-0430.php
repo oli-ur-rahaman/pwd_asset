@@ -1688,29 +1688,11 @@ if (is_superadmin()) {
                         echo '<p class="muted">No options available.</p>';
                         return;
                     }
-                    echo '<div class="download-office-bulk-controls download-choice-grid">';
-                    echo '<label class="inline-check download-inline-check">';
-                    echo '<input type="checkbox" data-office-bulk-toggle="zone">';
-                    echo '<span>all zones</span>';
-                    echo '</label>';
-                    echo '<label class="inline-check download-inline-check">';
-                    echo '<input type="checkbox" data-office-bulk-toggle="circle">';
-                    echo '<span>all circles</span>';
-                    echo '</label>';
-                    echo '<label class="inline-check download-inline-check">';
-                    echo '<input type="checkbox" data-office-bulk-toggle="division">';
-                    echo '<span>all divisions</span>';
-                    echo '</label>';
-                    echo '<label class="inline-check download-inline-check">';
-                    echo '<input type="checkbox" data-office-bulk-toggle="subdivision">';
-                    echo '<span>all sub-divisions</span>';
-                    echo '</label>';
-                    echo '</div>';
                     echo '<div class="download-filter-tree download-office-tree">';
                     foreach ($zones as $zoneId => $zoneMeta) {
                         echo '<div class="download-filter-tree-node depth-1">';
                         echo '<label class="download-tree-check">';
-                        echo '<input type="checkbox" data-office-level="zone" name="' . e($inputBase . '[zone_ids][]') . '" value="' . e((string)$zoneId) . '">';
+                        echo '<input type="checkbox" name="' . e($inputBase . '[zone_ids][]') . '" value="' . e((string)$zoneId) . '">';
                         echo '<span>' . e((string)($zoneMeta['name'] ?? '')) . '</span>';
                         echo '</label>';
                         $zoneHasChild = false;
@@ -1724,7 +1706,7 @@ if (is_superadmin()) {
                             }
                             echo '<div class="download-filter-tree-node depth-2">';
                             echo '<label class="download-tree-check">';
-                            echo '<input type="checkbox" data-office-level="circle" name="' . e($inputBase . '[circle_ids][]') . '" value="' . e((string)$circleId) . '">';
+                            echo '<input type="checkbox" name="' . e($inputBase . '[circle_ids][]') . '" value="' . e((string)$circleId) . '">';
                             echo '<span>' . e((string)($circleMeta['name'] ?? '')) . '</span>';
                             echo '</label>';
                             $circleHasChild = false;
@@ -1738,7 +1720,7 @@ if (is_superadmin()) {
                                 }
                                 echo '<div class="download-filter-tree-node depth-3">';
                                 echo '<label class="download-tree-check">';
-                                echo '<input type="checkbox" data-office-level="division" name="' . e($inputBase . '[division_ids][]') . '" value="' . e((string)$divisionId) . '">';
+                                echo '<input type="checkbox" name="' . e($inputBase . '[division_ids][]') . '" value="' . e((string)$divisionId) . '">';
                                 echo '<span>' . e((string)($divisionMeta['name'] ?? '')) . '</span>';
                                 echo '</label>';
                                 $divisionHasChild = false;
@@ -1752,7 +1734,7 @@ if (is_superadmin()) {
                                     }
                                     echo '<div class="download-filter-tree-node depth-4">';
                                     echo '<label class="download-tree-check">';
-                                    echo '<input type="checkbox" data-office-level="subdivision" name="' . e($inputBase . '[subdivision_ids][]') . '" value="' . e((string)$subdivisionId) . '">';
+                                    echo '<input type="checkbox" name="' . e($inputBase . '[subdivision_ids][]') . '" value="' . e((string)$subdivisionId) . '">';
                                     echo '<span>' . e((string)($subdivisionMeta['name'] ?? '')) . '</span>';
                                     echo '</label>';
                                     echo '</div>';
@@ -2830,9 +2812,6 @@ window.initializeDownloadModalUi = function () {
         }
         return node ? node.querySelector('.download-tree-check input[type="checkbox"]') : null;
     };
-    var isOfficeTreeCheckbox = function (checkbox) {
-        return !!(checkbox && checkbox.hasAttribute('data-office-level'));
-    };
     var getTreeChildNodes = function (node) {
         if (!node) {
             return [];
@@ -2851,9 +2830,6 @@ window.initializeDownloadModalUi = function () {
             if (checkbox) {
                 checkbox.checked = checked;
                 checkbox.indeterminate = false;
-                if (isOfficeTreeCheckbox(checkbox)) {
-                    checkbox.setAttribute('data-office-explicit', checked ? '1' : '0');
-                }
             }
             setTreeDescendantsChecked(childNode, checked);
         });
@@ -2865,14 +2841,6 @@ window.initializeDownloadModalUi = function () {
             return checkbox ? { checked: checkbox.checked, indeterminate: false } : { checked: false, indeterminate: false };
         }
         var childStates = childNodes.map(syncTreeNodeState);
-        if (isOfficeTreeCheckbox(checkbox)) {
-            var explicitChecked = checkbox.getAttribute('data-office-explicit');
-            explicitChecked = explicitChecked === null ? checkbox.checked : explicitChecked === '1';
-            var anyChildSelected = childStates.some(function (state) { return state.checked || state.indeterminate; });
-            checkbox.checked = explicitChecked;
-            checkbox.indeterminate = !explicitChecked && anyChildSelected;
-            return { checked: explicitChecked || anyChildSelected, indeterminate: checkbox.indeterminate };
-        }
         var allChecked = childStates.every(function (state) { return state.checked && !state.indeterminate; });
         var anyChecked = childStates.some(function (state) { return state.checked || state.indeterminate; });
         checkbox.checked = allChecked || anyChecked;
@@ -2885,27 +2853,6 @@ window.initializeDownloadModalUi = function () {
                 if (child.classList && child.classList.contains('download-filter-tree-node')) {
                     syncTreeNodeState(child);
                 }
-            });
-        });
-        document.querySelectorAll('.download-office-tree').forEach(function (tree) {
-            ['zone', 'circle', 'division', 'subdivision'].forEach(function (level) {
-                var inputs = Array.from(tree.querySelectorAll('input[type="checkbox"][data-office-level="' + level + '"]'));
-                var bulkToggle = tree.parentElement ? tree.parentElement.querySelector('input[type="checkbox"][data-office-bulk-toggle="' + level + '"]') : null;
-                if (!bulkToggle) {
-                    return;
-                }
-                if (!inputs.length) {
-                    bulkToggle.checked = false;
-                    bulkToggle.indeterminate = false;
-                    bulkToggle.disabled = true;
-                    return;
-                }
-                bulkToggle.disabled = false;
-                var checkedCount = inputs.filter(function (input) {
-                    return input.getAttribute('data-office-explicit') === '1';
-                }).length;
-                bulkToggle.checked = checkedCount === inputs.length;
-                bulkToggle.indeterminate = checkedCount > 0 && checkedCount < inputs.length;
             });
         });
     };
@@ -2925,9 +2872,6 @@ window.initializeDownloadModalUi = function () {
             }
             input.checked = checked;
             input.indeterminate = false;
-            if (isOfficeTreeCheckbox(input)) {
-                input.setAttribute('data-office-explicit', checked ? '1' : '0');
-            }
         });
         syncHierarchyTrees();
     };
@@ -3078,23 +3022,6 @@ window.initializeDownloadModalUi = function () {
     });
     document.addEventListener('change', function (event) {
         var target = event.target;
-        if (target instanceof HTMLInputElement && target.type === 'checkbox' && target.hasAttribute('data-office-bulk-toggle')) {
-            var officeTree = target.closest('[data-common-filter-panel], .download-filter-control, .download-filter-group, .download-common-filter-async-body');
-            officeTree = officeTree ? officeTree.querySelector('.download-office-tree') : null;
-            if (!officeTree) {
-                return;
-            }
-            officeTree.querySelectorAll('input[type="checkbox"][data-office-level="' + target.getAttribute('data-office-bulk-toggle') + '"]').forEach(function (input) {
-                if (input.disabled) {
-                    return;
-                }
-                input.checked = target.checked;
-                input.indeterminate = false;
-                input.setAttribute('data-office-explicit', target.checked ? '1' : '0');
-            });
-            syncHierarchyTrees();
-            return;
-        }
         if (!(target instanceof HTMLInputElement) || target.type !== 'checkbox') {
             return;
         }
@@ -3103,9 +3030,6 @@ window.initializeDownloadModalUi = function () {
             return;
         }
         target.indeterminate = false;
-        if (isOfficeTreeCheckbox(target)) {
-            target.setAttribute('data-office-explicit', target.checked ? '1' : '0');
-        }
         setTreeDescendantsChecked(treeNode, target.checked);
         syncHierarchyTrees();
     });

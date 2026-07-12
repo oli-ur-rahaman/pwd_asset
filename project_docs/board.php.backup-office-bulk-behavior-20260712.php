@@ -2830,9 +2830,6 @@ window.initializeDownloadModalUi = function () {
         }
         return node ? node.querySelector('.download-tree-check input[type="checkbox"]') : null;
     };
-    var isOfficeTreeCheckbox = function (checkbox) {
-        return !!(checkbox && checkbox.hasAttribute('data-office-level'));
-    };
     var getTreeChildNodes = function (node) {
         if (!node) {
             return [];
@@ -2851,9 +2848,6 @@ window.initializeDownloadModalUi = function () {
             if (checkbox) {
                 checkbox.checked = checked;
                 checkbox.indeterminate = false;
-                if (isOfficeTreeCheckbox(checkbox)) {
-                    checkbox.setAttribute('data-office-explicit', checked ? '1' : '0');
-                }
             }
             setTreeDescendantsChecked(childNode, checked);
         });
@@ -2865,14 +2859,6 @@ window.initializeDownloadModalUi = function () {
             return checkbox ? { checked: checkbox.checked, indeterminate: false } : { checked: false, indeterminate: false };
         }
         var childStates = childNodes.map(syncTreeNodeState);
-        if (isOfficeTreeCheckbox(checkbox)) {
-            var explicitChecked = checkbox.getAttribute('data-office-explicit');
-            explicitChecked = explicitChecked === null ? checkbox.checked : explicitChecked === '1';
-            var anyChildSelected = childStates.some(function (state) { return state.checked || state.indeterminate; });
-            checkbox.checked = explicitChecked;
-            checkbox.indeterminate = !explicitChecked && anyChildSelected;
-            return { checked: explicitChecked || anyChildSelected, indeterminate: checkbox.indeterminate };
-        }
         var allChecked = childStates.every(function (state) { return state.checked && !state.indeterminate; });
         var anyChecked = childStates.some(function (state) { return state.checked || state.indeterminate; });
         checkbox.checked = allChecked || anyChecked;
@@ -2901,9 +2887,7 @@ window.initializeDownloadModalUi = function () {
                     return;
                 }
                 bulkToggle.disabled = false;
-                var checkedCount = inputs.filter(function (input) {
-                    return input.getAttribute('data-office-explicit') === '1';
-                }).length;
+                var checkedCount = inputs.filter(function (input) { return input.checked; }).length;
                 bulkToggle.checked = checkedCount === inputs.length;
                 bulkToggle.indeterminate = checkedCount > 0 && checkedCount < inputs.length;
             });
@@ -2925,9 +2909,6 @@ window.initializeDownloadModalUi = function () {
             }
             input.checked = checked;
             input.indeterminate = false;
-            if (isOfficeTreeCheckbox(input)) {
-                input.setAttribute('data-office-explicit', checked ? '1' : '0');
-            }
         });
         syncHierarchyTrees();
     };
@@ -3079,7 +3060,7 @@ window.initializeDownloadModalUi = function () {
     document.addEventListener('change', function (event) {
         var target = event.target;
         if (target instanceof HTMLInputElement && target.type === 'checkbox' && target.hasAttribute('data-office-bulk-toggle')) {
-            var officeTree = target.closest('[data-common-filter-panel], .download-filter-control, .download-filter-group, .download-common-filter-async-body');
+            var officeTree = target.closest('[data-common-filter-panel], .download-filter-body, .download-common-filter-async-body, section, div');
             officeTree = officeTree ? officeTree.querySelector('.download-office-tree') : null;
             if (!officeTree) {
                 return;
@@ -3090,7 +3071,6 @@ window.initializeDownloadModalUi = function () {
                 }
                 input.checked = target.checked;
                 input.indeterminate = false;
-                input.setAttribute('data-office-explicit', target.checked ? '1' : '0');
             });
             syncHierarchyTrees();
             return;
@@ -3103,9 +3083,6 @@ window.initializeDownloadModalUi = function () {
             return;
         }
         target.indeterminate = false;
-        if (isOfficeTreeCheckbox(target)) {
-            target.setAttribute('data-office-explicit', target.checked ? '1' : '0');
-        }
         setTreeDescendantsChecked(treeNode, target.checked);
         syncHierarchyTrees();
     });

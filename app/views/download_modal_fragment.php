@@ -65,11 +65,29 @@ if ($downloadMode === 'level3') {
                 echo '<p class="muted">No options available.</p>';
                 return;
             }
+            echo '<div class="download-office-bulk-controls download-choice-grid">';
+            echo '<label class="inline-check download-inline-check">';
+            echo '<input type="checkbox" data-office-bulk-toggle="zone">';
+            echo '<span>all zones</span>';
+            echo '</label>';
+            echo '<label class="inline-check download-inline-check">';
+            echo '<input type="checkbox" data-office-bulk-toggle="circle">';
+            echo '<span>all circles</span>';
+            echo '</label>';
+            echo '<label class="inline-check download-inline-check">';
+            echo '<input type="checkbox" data-office-bulk-toggle="division">';
+            echo '<span>all divisions</span>';
+            echo '</label>';
+            echo '<label class="inline-check download-inline-check">';
+            echo '<input type="checkbox" data-office-bulk-toggle="subdivision">';
+            echo '<span>all sub-divisions</span>';
+            echo '</label>';
+            echo '</div>';
             echo '<div class="download-filter-tree download-office-tree">';
             foreach ($zones as $zoneId => $zoneMeta) {
                 echo '<div class="download-filter-tree-node depth-1">';
                 echo '<label class="download-tree-check">';
-                    echo '<input type="checkbox" name="' . e($inputBase . '[zone_ids][]') . '" value="' . e((string)$zoneId) . '"' . ($mode === 'common' ? ' checked' : '') . $formAttr . '>';
+                    echo '<input type="checkbox" data-office-level="zone" name="' . e($inputBase . '[zone_ids][]') . '" value="' . e((string)$zoneId) . '"' . ($mode === 'common' ? ' checked' : '') . $formAttr . '>';
                 echo '<span>' . e((string)($zoneMeta['name'] ?? '')) . '</span>';
                 echo '</label>';
                 $zoneHasChild = false;
@@ -83,7 +101,7 @@ if ($downloadMode === 'level3') {
                     }
                     echo '<div class="download-filter-tree-node depth-2">';
                     echo '<label class="download-tree-check">';
-                    echo '<input type="checkbox" name="' . e($inputBase . '[circle_ids][]') . '" value="' . e((string)$circleId) . '"' . ($mode === 'common' ? ' checked' : '') . $formAttr . '>';
+                    echo '<input type="checkbox" data-office-level="circle" name="' . e($inputBase . '[circle_ids][]') . '" value="' . e((string)$circleId) . '"' . ($mode === 'common' ? ' checked' : '') . $formAttr . '>';
                     echo '<span>' . e((string)($circleMeta['name'] ?? '')) . '</span>';
                     echo '</label>';
                     $circleHasChild = false;
@@ -97,7 +115,7 @@ if ($downloadMode === 'level3') {
                         }
                         echo '<div class="download-filter-tree-node depth-3">';
                         echo '<label class="download-tree-check">';
-                        echo '<input type="checkbox" name="' . e($inputBase . '[division_ids][]') . '" value="' . e((string)$divisionId) . '"' . ($mode === 'common' ? ' checked' : '') . $formAttr . '>';
+                        echo '<input type="checkbox" data-office-level="division" name="' . e($inputBase . '[division_ids][]') . '" value="' . e((string)$divisionId) . '"' . ($mode === 'common' ? ' checked' : '') . $formAttr . '>';
                         echo '<span>' . e((string)($divisionMeta['name'] ?? '')) . '</span>';
                         echo '</label>';
                         $divisionHasChild = false;
@@ -108,13 +126,13 @@ if ($downloadMode === 'level3') {
                             if (!$divisionHasChild) {
                                 echo '<div class="download-filter-tree-children">';
                                 $divisionHasChild = true;
-                            }
-                            echo '<div class="download-filter-tree-node depth-4">';
-                            echo '<label class="download-tree-check">';
-                            echo '<input type="checkbox" name="' . e($inputBase . '[subdivision_ids][]') . '" value="' . e((string)$subdivisionId) . '"' . ($mode === 'common' ? ' checked' : '') . $formAttr . '>';
-                            echo '<span>' . e((string)($subdivisionMeta['name'] ?? '')) . '</span>';
-                            echo '</label>';
-                            echo '</div>';
+                                }
+                                echo '<div class="download-filter-tree-node depth-4">';
+                                echo '<label class="download-tree-check">';
+                                echo '<input type="checkbox" data-office-level="subdivision" name="' . e($inputBase . '[subdivision_ids][]') . '" value="' . e((string)$subdivisionId) . '"' . ($mode === 'common' ? ' checked' : '') . $formAttr . '>';
+                                echo '<span>' . e((string)($subdivisionMeta['name'] ?? '')) . '</span>';
+                                echo '</label>';
+                                echo '</div>';
                         }
                         if ($divisionHasChild) {
                             echo '</div>';
