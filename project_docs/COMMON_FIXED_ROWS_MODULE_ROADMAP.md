@@ -1156,9 +1156,10 @@ Acceptance:
 
 Status:
 
-- partially completed on 2026-07-12
-- active entry paths now validate conditional pairs safely
-- full legacy-retired option surfacing still depends on a dedicated legacy-display pass if old retired conditional values already exist in saved common-row data
+- completed on 2026-07-13
+- active entry paths validate conditional pairs safely
+- common-field renderers and template builders resolve options with `includeInactive = true` where legacy saved values must still be displayed
+- new entry paths remain constrained to valid dependent options for the selected primary value
 
 Tasks:
 
@@ -1181,13 +1182,22 @@ Acceptance:
 
 Status:
 
-- partially completed on 2026-07-12
+- completed on 2026-07-13
 - PHP syntax checks passed for:
   - `app/lib/asset.php`
   - `app/views/common_fields.php`
   - `app/views/admin.php`
-- regression probe passed for existing non-conditional superadmin common-field template build
-- manual UI verification is still needed for a real conditional common-field profile because the current local DB does not yet contain one
+- backend verification passed for real local common-field profiles:
+  - conditional primary bindings auto-repair missing secondary bindings on read
+  - template column definitions include conditional child columns after repair
+- browser verification passed against the actual local app:
+  - superadmin login
+  - Common Fields page render
+  - conditional child columns visible in the real row editor
+  - dependent secondary dropdown options populated from the selected primary value
+  - add/save of a real conditional common row succeeded
+  - generated user-side board rows rendered both primary and secondary conditional values
+- temporary browser-created test row was removed after verification
 
 Tasks:
 
@@ -1210,6 +1220,23 @@ Tasks:
 Acceptance:
 
 - conditional support lands as an additive extension without breaking the already-tested module behavior
+
+#### 2026-07-13 (Phase 9 Completion Slice)
+
+- closed the remaining conditional common-field integrity gap:
+  - old saved profiles created before the same-request child-field lookup fix could contain only the primary field binding
+  - added automatic repair in `get_asset_common_profile_fields()` so any missing conditional child binding is inserted once, safely, using the existing profile/field tables
+- verified on the running local app with a real conditional profile:
+  - Common Fields page now renders:
+    - primary conditional columns
+    - secondary conditional columns
+  - dependent secondary dropdowns react correctly to primary selection
+  - saving a conditional common row succeeds end-to-end
+  - board rows materialized from that saved common row show both primary and secondary values
+- verified backend/template side:
+  - repaired profile-field bindings are returned consistently
+  - common admin template column definitions now include secondary conditional columns for affected profiles
+- Phase 9 is now implementation-complete for the conditional common-field extension.
 
 ## Progress Entry Policy
 

@@ -1215,6 +1215,7 @@ function get_asset_common_profile_by_category(int $categoryId, ?int $segmentId =
 
 function get_asset_common_profile_fields(int $profileId): array
 {
+    asset_common_repair_conditional_profile_bindings($profileId);
     $stmt = db()->prepare('
         SELECT pf.*, f.field_key AS child_field_key, f.label AS child_field_label,
                parent.field_key AS parent_field_key, parent.label AS parent_field_label
@@ -1226,6 +1227,63 @@ function get_asset_common_profile_fields(int $profileId): array
     ');
     $stmt->execute([$profileId]);
     return $stmt->fetchAll();
+}
+
+function asset_common_repair_conditional_profile_bindings(int $profileId): void
+{
+    static $repaired = [];
+    if (isset($repaired[$profileId])) {
+        return;
+    }
+    $repaired[$profileId] = true;
+
+    $stmt = db()->prepare('
+        SELECT pf.id, pf.child_field_id, pf.sort_order, f.data_type, f.segment_id
+        FROM asset_common_profile_fields pf
+        JOIN asset_fields f ON f.id = pf.child_field_id
+        WHERE pf.profile_id = ?
+        ORDER BY pf.sort_order ASC, pf.id ASC
+    ');
+    $stmt->execute([$profileId]);
+    $rows = $stmt->fetchAll();
+    if (!$rows) {
+        return;
+    }
+
+    $existingChildIds = [];
+    foreach ($rows as $row) {
+        $existingChildIds[(int)$row['child_field_id']] = true;
+    }
+
+    foreach ($rows as $row) {
+        if (($row['data_type'] ?? '') !== 'conditional') {
+            continue;
+        }
+        $primaryFieldId = (int)$row['child_field_id'];
+        $segmentId = (int)($row['segment_id'] ?? 0);
+        if ($primaryFieldId <= 0 || $segmentId <= 0) {
+            continue;
+        }
+        $secondaryField = get_asset_conditional_child_field($primaryFieldId, true, $segmentId);
+        if (!$secondaryField) {
+            continue;
+        }
+        $secondaryFieldId = (int)($secondaryField['id'] ?? 0);
+        if ($secondaryFieldId <= 0 || isset($existingChildIds[$secondaryFieldId])) {
+            continue;
+        }
+
+        db()->prepare('
+            INSERT INTO asset_common_profile_fields (profile_id, child_field_id, parent_field_id, sort_order, created_at, updated_at)
+            VALUES (?, ?, ?, ?, NOW(), NOW())
+        ')->execute([
+            $profileId,
+            $secondaryFieldId,
+            $primaryFieldId,
+            (int)($row['sort_order'] ?? 0),
+        ]);
+        $existingChildIds[$secondaryFieldId] = true;
+    }
 }
 
 function get_asset_common_profile_field_binding_by_child_field(int $childFieldId): ?array
@@ -3755,6 +3813,19 @@ function get_asset_conditional_child_field(int $parentFieldId, bool $includeInac
     $normalizedSegmentId = asset_normalize_segment_id($segmentId);
     $cacheKey = $parentFieldId . ':' . ($includeInactive ? '1' : '0') . ':' . $normalizedSegmentId;
     if (array_key_exists($cacheKey, $cache)) {
+        return $cache[$cacheKey];
+    }
+    $sql = 'SELECT * FROM asset_fields WHERE secondary_of_field_id = ? AND segment_id = ? AND deleted_at IS NULL';
+    $params = [$parentFieldId, $normalizedSegmentId];
+    if (!$includeInactive) {
+        $sql .= ' AND active_status = 1';
+    }
+    $sql .= ' ORDER BY sort_order ASC, id ASC LIMIT 1';
+    $stmt = db()->prepare($sql);
+    $stmt->execute($params);
+    $row = $stmt->fetch();
+    if ($row) {
+        $cache[$cacheKey] = $row;
         return $cache[$cacheKey];
     }
     foreach (get_asset_fields($includeInactive, $normalizedSegmentId) as $field) {
