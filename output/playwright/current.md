@@ -1,0 +1,53 @@
+- generic [ref=e2]:
+  - heading "Survey Soft" [level=1] [ref=e7]
+  - generic [ref=e8]:
+    - generic [ref=e10]:
+      - generic [ref=e11]: Login
+      - generic [ref=e12]: Email
+      - textbox "Enter PWD Official email" [ref=e13]
+      - generic [ref=e14]: Password
+      - generic [ref=e15]:
+        - textbox "The Password" [ref=e16]
+        - button "Show password" [ref=e17] [cursor=pointer]: Show
+      - generic [ref=e18]:
+        - button "Sign in" [ref=e19] [cursor=pointer]
+        - link "Forget Password" [ref=e21] [cursor=pointer]:
+          - /url: "#"
+    - generic [ref=e24]:
+      - heading "Purpose & Instructions" [level=2] [ref=e25]
+      - generic [ref=e26]:
+        - generic [ref=e27]: Purpose
+        - paragraph [ref=e28]: A centralized platform for assessing infrastructure, existing facilities, and demands of Upazila Health Complexes.
+      - generic [ref=e29]:
+        - generic [ref=e30]: Helpdesk
+        - list [ref=e31]:
+          - listitem [ref=e32]:
+            - generic [ref=e33]: 1. (For Rangpur, Rajshahi, Mymensingh Zone)
+            - generic [ref=e34]: Sheikh Mohammad Sadekul Islam
+            - generic [ref=e35]: — Executive Engineer (PPC), PWD
+            - link "01821-296403" [ref=e37] [cursor=pointer]:
+              - /url: tel:+8801821296403
+          - listitem [ref=e38]:
+            - generic [ref=e39]: 2. (For Khulna, Barishal, Sylhet, Chattogram Zone)
+            - generic [ref=e40]: Bina Das
+            - generic [ref=e41]: — Executive Engineer (PPC), PWD
+            - link "01718-614871" [ref=e43] [cursor=pointer]:
+              - /url: tel:+8801718614871
+          - listitem [ref=e44]:
+            - generic [ref=e45]: 3. (For Dhaka, Dhaka Metro, Gopalganj Zone)
+            - generic [ref=e46]: Munim Islam
+            - generic [ref=e47]: — Sub-divisional Engineer (PPC), PWD
+            - link "01726-625280" [ref=e49] [cursor=pointer]:
+              - /url: tel:+8801726625280
+          - listitem [ref=e50]:
+            - generic [ref=e51]: 4. (For EM Items Specially)
+            - generic [ref=e52]: Md. Shariful Islam
+            - generic [ref=e53]: — Sub-divisional Engineer, EM Planning, PWD
+            - link "01760-625760" [ref=e55] [cursor=pointer]:
+              - /url: tel:+8801760625760
+          - listitem [ref=e56]:
+            - generic [ref=e57]: 5. (For Login issue or Technical Support)
+            - generic [ref=e58]: Md. Oli-ur-rahman
+            - generic [ref=e59]: — Assistant Engineer, R&D Unit, PWD
+            - link "01716-248828" [ref=e61] [cursor=pointer]:
+              - /url: tel:+8801716248828

@@ -56,9 +56,7 @@ if ($renderEmptyState && !$assets):
         <?php endif; ?>
         <?php foreach ($fields as $field): ?>
             <?php if ((int)$field['is_displayed'] === 1 && (int)$field['active_status'] === 1 && !empty($visibleColumnKeys[$field['field_key']])): ?>
-                <?php $fieldFillColor = asset_normalize_field_fill_color((string)($field['fill_color'] ?? '')); ?>
-                <?php $fieldCellStyle = $fieldFillColor !== '' ? ' style="background:' . e($fieldFillColor) . ';"' : ''; ?>
-                <td<?= $fieldCellStyle; ?>>
+                <td>
                     <?php if ($field['data_type'] === 'file'): ?>
                         <?php $assetFiles = $asset['files'][$field['field_key']] ?? []; ?>
                         <?php
@@ -113,7 +111,7 @@ if ($renderEmptyState && !$assets):
                     <?php endif; ?>
                 </td>
                 <?php if ((string)($field['data_type'] ?? '') === 'bimh' && !empty($visibleColumnKeys[$field['field_key'] . '__est_name'])): ?>
-                    <td<?= $fieldCellStyle; ?>>
+                    <td>
                         <?php $estName = trim((string)($asset['values'][$field['field_key'] . '__est_name'] ?? '')); ?>
                         <?php if ($estName === 'BIMH ID is not in the Database.'): ?>
                             <span class="bimh-est-name-box bimh-est-name-inline is-not-found"><?= e($estName); ?></span>

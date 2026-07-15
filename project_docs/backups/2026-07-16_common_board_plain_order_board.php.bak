@@ -249,9 +249,6 @@ if ($scopeAccessAvailable && ($assetBoardFiltersOnly || $showFilterCard || $plai
             'skip_sort' => true,
         ]
     );
-    if ($plainBoardState && $baseScopeAssets !== []) {
-        $baseScopeAssets = asset_apply_superadmin_common_default_order($baseScopeAssets);
-    }
     asset_board_perf_mark('board.base_scope_loaded', ['assets' => count($baseScopeAssets)]);
 }
 if ($showFilterCard) {
@@ -280,9 +277,6 @@ if ($scopeAccessAvailable) {
                 'skip_sort' => true,
             ]
         );
-        if ($filteredBoardAssets !== []) {
-            $filteredBoardAssets = asset_apply_superadmin_common_default_order($filteredBoardAssets);
-        }
     } else {
         $filteredBoardAssets = get_assets(
             $filters,
@@ -664,9 +658,6 @@ if (is_superadmin()) {
             ?>
             <a href="index.php?<?= e(http_build_query($segmentParams)); ?>" class="button-link<?= $activeSegmentId === (int)$segment['id'] ? ' is-active' : ''; ?>">
                 <?= e((string)$segment['segment_name']); ?>
-                <?php if (asset_segment_is_new_batch($segment)): ?>
-                    <span class="segment-new-badge">New</span>
-                <?php endif; ?>
             </a>
         <?php endforeach; ?>
     </div>
@@ -1105,16 +1096,14 @@ if (is_superadmin()) {
                                 <?php foreach ($fields as $field): ?>
                                     <?php if ((int)$field['is_displayed'] === 1 && (int)$field['active_status'] === 1 && !empty($visibleColumnKeys[$field['field_key']])): ?>
                                         <?php $fieldSortKey = (string)$field['field_key']; ?>
-                                        <?php $fieldFillColor = asset_normalize_field_fill_color((string)($field['fill_color'] ?? '')); ?>
-                                        <?php $fieldHeaderStyle = $fieldFillColor !== '' ? ' style="background:' . e($fieldFillColor) . ';"' : ''; ?>
-                                        <th class="<?= $headerCellClass($fieldSortKey); ?>"<?= $fieldHeaderStyle; ?>>
+                                        <th class="<?= $headerCellClass($fieldSortKey); ?>">
                                             <div class="field-head-row">
                                                 <a href="<?= e($headerSortUrl($fieldSortKey)); ?>" class="<?= trim($sortClass($fieldSortKey)); ?>"><?= e((string)($uiFieldLabels[$field['field_key']] ?? $field['label'])); ?><?= $fieldMandatoryMarker($field); ?><?= e($sortIndicator($fieldSortKey)); ?><?= e($timeFilterIndicator($fieldSortKey)); ?></a>
                                                 <?php $renderFieldHelpButton($fieldHelpMeta[$field['field_key']] ?? null, 'field-help-button field-help-table', 'Field information'); ?>
                                             </div>
                                         </th>
                                         <?php if ((string)($field['data_type'] ?? '') === 'bimh' && !empty($visibleColumnKeys[$field['field_key'] . '__est_name'])): ?>
-                                            <th class="<?= $headerCellClass($fieldSortKey . '__est_name'); ?>"<?= $fieldHeaderStyle; ?>>
+                                            <th class="<?= $headerCellClass($fieldSortKey . '__est_name'); ?>">
                                                 <a href="<?= e($headerSortUrl($fieldSortKey . '__est_name')); ?>" class="<?= trim($sortClass($fieldSortKey . '__est_name')); ?>">Est Name<?= e($sortIndicator($fieldSortKey . '__est_name')); ?></a>
                                             </th>
                                         <?php endif; ?>

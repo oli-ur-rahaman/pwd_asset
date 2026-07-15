@@ -92,26 +92,9 @@ button:disabled { opacity: .6; cursor: not-allowed; }
   background: #e3e8ef;
   color: var(--theme-primary);
 }
-.scope-switch-row .button-link .segment-new-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  margin-left: 8px;
-  padding: 2px 7px;
-  border-radius: 999px;
-  background: #fff7d6;
-  color: #8a5b00;
-  font-size: 11px;
-  font-weight: 700;
-  line-height: 1;
-}
 .scope-switch-row .button-link.is-active {
   background: var(--theme-primary);
   color: #fff;
-}
-.scope-switch-row .button-link.is-active .segment-new-badge {
-  background: rgba(255, 247, 214, 0.95);
-  color: #7a5100;
 }
 .segment-switch-card {
   background: transparent;

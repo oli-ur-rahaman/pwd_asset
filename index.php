@@ -170,7 +170,7 @@ if ($action === 'create_asset_segment') {
         exit('Not allowed.');
     }
     try {
-        $segmentId = create_asset_segment(input_str('segment_name'), max(0, input_int('sort_order')));
+        $segmentId = create_asset_segment(input_str('segment_name'), max(0, input_int('sort_order')), input_int('new_batch_days'));
         flash('success', 'Segment created.');
         redirect('index.php?' . http_build_query(['page' => 'admin', 'segment_id' => $segmentId]));
     } catch (Throwable $e) {
@@ -186,7 +186,7 @@ if ($action === 'update_asset_segment') {
     }
     try {
         $segmentId = input_int('segment_id');
-        update_asset_segment($segmentId, input_str('segment_name'), max(0, input_int('sort_order')));
+        update_asset_segment($segmentId, input_str('segment_name'), max(0, input_int('sort_order')), input_int('new_batch_days'));
         flash('success', 'Segment updated.');
     } catch (Throwable $e) {
         flash('error', $e->getMessage());

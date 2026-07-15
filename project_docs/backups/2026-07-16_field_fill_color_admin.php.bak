@@ -115,31 +115,19 @@ if (!function_exists('render_common_admin_row_input')) {
         <?= csrf_input(); ?>
         <input type="hidden" name="action" value="create_asset_segment">
         <input type="text" name="segment_name" placeholder="New segment name" required>
-        <select name="new_batch_days">
-            <?php foreach (asset_segment_new_batch_options() as $batchValue => $batchLabel): ?>
-                <option value="<?= e((string)$batchValue); ?>" <?= (int)$batchValue === 0 ? 'selected' : ''; ?>><?= e((string)$batchLabel); ?></option>
-            <?php endforeach; ?>
-        </select>
         <input type="number" name="sort_order" min="1" step="1" placeholder="Order (optional)">
         <button type="submit">Add Segment</button>
     </form>
     <div class="table-wrap">
         <table>
             <thead>
-                <tr><th>Name</th><th>New Batch</th><th>Order</th><th>Status</th><th>Action</th></tr>
+                <tr><th>Name</th><th>Order</th><th>Status</th><th>Action</th></tr>
             </thead>
             <tbody>
                 <?php foreach ($segments as $segment): ?>
                     <?php $segmentFormId = 'segment-' . (int)$segment['id']; $segmentActive = (int)($segment['active_status'] ?? 0) === 1; ?>
                     <tr>
                         <td><input form="<?= e($segmentFormId); ?>" class="inline-edit" type="text" name="segment_name" value="<?= e((string)$segment['segment_name']); ?>" required></td>
-                        <td>
-                            <select form="<?= e($segmentFormId); ?>" class="inline-edit" name="new_batch_days">
-                                <?php foreach (asset_segment_new_batch_options() as $batchValue => $batchLabel): ?>
-                                    <option value="<?= e((string)$batchValue); ?>" <?= asset_normalize_segment_new_batch_days($segment['new_batch_days'] ?? 0) === (int)$batchValue ? 'selected' : ''; ?>><?= e((string)$batchLabel); ?></option>
-                                <?php endforeach; ?>
-                            </select>
-                        </td>
                         <td><input form="<?= e($segmentFormId); ?>" class="inline-edit" type="number" name="sort_order" min="1" step="1" value="<?= e((string)($segment['sort_order'] ?? 0)); ?>" required></td>
                         <td><span class="<?= $segmentActive ? 'status-active' : 'status-inactive'; ?>"><?= $segmentActive ? 'Active' : 'Disabled'; ?></span></td>
                         <td>
@@ -475,13 +463,6 @@ if (!function_exists('render_common_admin_row_input')) {
         <label>Tutorial URL
             <input type="url" name="video_tutorial_url" placeholder="https://www.youtube.com/watch?v=...">
         </label>
-        <label>Column Fill Color
-            <select name="fill_color">
-                <?php foreach (asset_field_fill_color_palette() as $fillColorValue => $fillColorLabel): ?>
-                    <option value="<?= e((string)$fillColorValue); ?>"><?= e((string)$fillColorLabel); ?></option>
-                <?php endforeach; ?>
-            </select>
-        </label>
         <label>Hosted Tutorial Video (MP4 up to 500 MB)
             <input type="file" name="tutorial_video_file" accept="video/mp4">
             <span class="hint">UI upload supports MP4 up to 500 MB. Larger files upload by FileZilla to <code><?= e(asset_tutorial_video_manual_path_note()); ?></code> and register the filename below.</span>
@@ -530,15 +511,6 @@ if (!function_exists('render_common_admin_row_input')) {
         <div class="field-config-group" data-field-config="conditional">
             <label>Secondary Tutorial URL
                 <input type="url" name="secondary_video_tutorial_url" placeholder="https://www.youtube.com/watch?v=...">
-            </label>
-        </div>
-        <div class="field-config-group" data-field-config="conditional">
-            <label>Secondary Column Fill Color
-                <select name="secondary_fill_color">
-                    <?php foreach (asset_field_fill_color_palette() as $fillColorValue => $fillColorLabel): ?>
-                        <option value="<?= e((string)$fillColorValue); ?>"><?= e((string)$fillColorLabel); ?></option>
-                    <?php endforeach; ?>
-                </select>
             </label>
         </div>
         <div class="field-config-group" data-field-config="conditional">
@@ -610,7 +582,7 @@ if (!function_exists('render_common_admin_row_input')) {
             </select>
         </label>
         <div class="field-config-group field-common-row-wrap" data-common-row-toggle-wrap>
-            <label><input type="checkbox" name="is_common_row_field" value="1" data-common-row-toggle data-common-row-existing="0" data-common-row-segment-supported="<?= $commonRowsSupported ? '1' : '0'; ?>" <?= $commonRowsSupported ? '' : 'disabled'; ?>> Common fixed-row field</label>
+            <label><input type="checkbox" name="is_common_row_field" value="1" data-common-row-toggle <?= $commonRowsSupported ? '' : 'disabled'; ?>> Common fixed-row field</label>
             <span class="hint">
                 Supported types only: <?= e(implode(', ', $commonSupportedTypes)); ?>.
                 <?php if (!$commonRowsSupported): ?>
@@ -681,8 +653,6 @@ if (!function_exists('render_common_admin_row_input')) {
                         $isActive = (int)$field['active_status'] === 1;
                         $commonBinding = $commonBindingsByFieldId[(int)$field['id']] ?? null;
                         $fieldSupportsCommonRows = isset($commonSupportedTypeLookup[(string)($field['data_type'] ?? '')]);
-                        $fieldIsCommonRow = $commonBinding || (int)($field['is_common_row_field'] ?? 0) === 1;
-                        $commonRowCheckboxDisabled = !$fieldSupportsCommonRows || (!$commonRowsSupported && !$fieldIsCommonRow);
                         $optionLines = [];
                         $fileRule = get_asset_field_file_rule((int)$field['id']);
                         $conditionalChild = asset_is_conditional_primary($field) ? get_asset_conditional_child_field((int)$field['id'], true) : null;
@@ -717,13 +687,6 @@ if (!function_exists('render_common_admin_row_input')) {
                                 </label>
                                 <label>Tutorial URL
                                     <input form="<?= e($formId); ?>" class="inline-edit" type="url" name="video_tutorial_url" value="<?= e((string)($field['video_tutorial_url'] ?? '')); ?>" placeholder="https://www.youtube.com/watch?v=...">
-                                </label>
-                                <label>Column Fill Color
-                                    <select form="<?= e($formId); ?>" class="inline-edit" name="fill_color">
-                                        <?php foreach (asset_field_fill_color_palette() as $fillColorValue => $fillColorLabel): ?>
-                                            <option value="<?= e((string)$fillColorValue); ?>" <?= asset_normalize_field_fill_color((string)($field['fill_color'] ?? '')) === (string)$fillColorValue ? 'selected' : ''; ?>><?= e((string)$fillColorLabel); ?></option>
-                                        <?php endforeach; ?>
-                                    </select>
                                 </label>
                                 <label>Hosted Tutorial Video (MP4 up to 500 MB)
                                     <input form="<?= e($formId); ?>" class="inline-edit" type="file" name="tutorial_video_file" accept="video/mp4">
@@ -767,13 +730,6 @@ if (!function_exists('render_common_admin_row_input')) {
                                 </label>
                                 <label>Secondary Tutorial URL
                                     <input form="<?= e($formId); ?>" class="inline-edit" type="url" name="secondary_video_tutorial_url" value="<?= e((string)($conditionalChild['video_tutorial_url'] ?? '')); ?>" placeholder="https://www.youtube.com/watch?v=...">
-                                </label>
-                                <label>Secondary Column Fill Color
-                                    <select form="<?= e($formId); ?>" class="inline-edit" name="secondary_fill_color">
-                                        <?php foreach (asset_field_fill_color_palette() as $fillColorValue => $fillColorLabel): ?>
-                                            <option value="<?= e((string)$fillColorValue); ?>" <?= asset_normalize_field_fill_color((string)($conditionalChild['fill_color'] ?? '')) === (string)$fillColorValue ? 'selected' : ''; ?>><?= e((string)$fillColorLabel); ?></option>
-                                        <?php endforeach; ?>
-                                    </select>
                                 </label>
                                 <label>Secondary Hosted Tutorial Video (MP4 up to 500 MB)
                                     <input form="<?= e($formId); ?>" class="inline-edit" type="file" name="secondary_tutorial_video_file" accept="video/mp4">
@@ -841,10 +797,10 @@ if (!function_exists('render_common_admin_row_input')) {
                                         </select>
                                     </label>
                                     <label class="inline-check" data-common-row-toggle-wrap>
-                                        <input form="<?= e($formId); ?>" type="checkbox" name="is_common_row_field" value="1" data-common-row-toggle data-common-row-existing="<?= $fieldIsCommonRow ? '1' : '0'; ?>" data-common-row-segment-supported="<?= $commonRowsSupported ? '1' : '0'; ?>" <?= $fieldIsCommonRow ? 'checked' : ''; ?> <?= $commonRowCheckboxDisabled ? 'disabled' : ''; ?>>
+                                        <input form="<?= e($formId); ?>" type="checkbox" name="is_common_row_field" value="1" data-common-row-toggle <?= $commonBinding ? 'checked' : ''; ?> <?= ($fieldSupportsCommonRows && $commonRowsSupported) ? '' : 'disabled'; ?>>
                                         Common row
                                     </label>
-                                    <div class="grid compact-grid field-common-row-settings<?= $fieldIsCommonRow ? '' : ' hidden'; ?>" data-common-row-section>
+                                    <div class="grid compact-grid field-common-row-settings<?= $commonBinding ? '' : ' hidden'; ?>" data-common-row-section>
                                         <label>Definition Mode
                                             <select form="<?= e($formId); ?>" class="inline-edit" name="common_definition_mode" data-common-definition-mode>
                                                 <?php foreach ($commonDefinitionModeOptions as $modeValue => $modeLabel): ?>
@@ -892,7 +848,7 @@ if (!function_exists('render_common_admin_row_input')) {
                                         </label>
                                         <div class="hint hidden" data-common-superadmin-note>For `superadmin_defined`, save the field here, then manage row content from the <a href="index.php?page=common_fields">Common Fields</a> page.</div>
                                     </div>
-                                    <?php if (!$fieldSupportsCommonRows || $commonRowCheckboxDisabled): ?><div class="hint">Common rows support only: <?= e(implode(', ', $commonSupportedTypes)); ?>, and only in segments with zero or one category.</div><?php endif; ?>
+                                    <?php if (!$fieldSupportsCommonRows || !$commonRowsSupported): ?><div class="hint">Common rows support only: <?= e(implode(', ', $commonSupportedTypes)); ?>, and only in segments with zero or one category.</div><?php endif; ?>
                                     <button type="submit" class="btn-small office-save-button">Save</button>
                                 </form>
                                 <form method="post" action="index.php" class="inline-form">

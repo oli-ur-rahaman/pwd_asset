@@ -21,10 +21,6 @@ $previewOfficeId = (int)($previewScopeParts['office_id'] ?? 0);
 $commonScopeOptions = asset_common_scope_options();
 $previewScopeOptions = asset_common_scope_options();
 $commonRowPolicyOptions = asset_common_row_policy_options();
-$commonSortCol = trim((string)request_str('common_sort_col', 'order'));
-$commonSortDir = strtolower(trim((string)request_str('common_sort_dir', 'asc'))) === 'desc' ? 'desc' : 'asc';
-$previewSortCol = trim((string)request_str('preview_sort_col', ''));
-$previewSortDir = strtolower(trim((string)request_str('preview_sort_dir', 'asc'))) === 'desc' ? 'desc' : 'asc';
 $commonRowsSupported = $activeSegmentId > 0 ? asset_segment_common_rows_supported($activeSegmentId) : true;
 $profilesByCategory = $activeSegmentId > 0 ? asset_common_superadmin_profiles_by_category($activeSegmentId) : [];
 $activeProfile = null;
@@ -117,105 +113,12 @@ if (!function_exists('render_common_admin_row_input')) {
     }
 }
 
-if (!function_exists('asset_common_row_sort_value')) {
-    function asset_common_row_sort_value(array $row, string $sortColumn): mixed
-    {
-        if ($sortColumn === 'office_name') {
-            $scopeOfficeType = (int)($row['scope_office_type'] ?? 0);
-            $scopeOfficeId = (int)($row['scope_office_id'] ?? 0);
-            if ($scopeOfficeId === 0) {
-                $scopeRank = match ($scopeOfficeType) {
-                    0 => 0,
-                    2 => 1,
-                    3 => 2,
-                    4 => 3,
-                    5 => 4,
-                    default => 5,
-                };
-                return [$scopeRank, '', $scopeOfficeType, $scopeOfficeId];
-            }
-            $officeName = trim((string)office_name_from_type_id($scopeOfficeType, $scopeOfficeId));
-            return [5, mb_strtolower($officeName), $scopeOfficeType, $scopeOfficeId];
-        }
-        if ($sortColumn === 'order') {
-            return (int)($row['sort_order'] ?? 0);
-        }
-        if (strpos($sortColumn, 'field_') === 0) {
-            $childFieldId = (int)substr($sortColumn, 6);
-            return mb_strtolower(trim((string)($row['values'][$childFieldId] ?? '')));
-        }
-        return null;
-    }
-}
-
-if (!function_exists('asset_common_sort_rows')) {
-    function asset_common_sort_rows(array $rows, string $sortColumn, string $sortDir): array
-    {
-        if ($rows === []) {
-            return $rows;
-        }
-        $direction = $sortDir === 'desc' ? -1 : 1;
-        usort($rows, static function (array $left, array $right) use ($sortColumn, $direction): int {
-            $leftValue = asset_common_row_sort_value($left, $sortColumn);
-            $rightValue = asset_common_row_sort_value($right, $sortColumn);
-            if (is_array($leftValue) || is_array($rightValue)) {
-                $compare = ($leftValue <=> $rightValue);
-            } elseif (is_int($leftValue) || is_float($leftValue) || is_int($rightValue) || is_float($rightValue)) {
-                $compare = ((float)$leftValue) <=> ((float)$rightValue);
-            } else {
-                $compare = strnatcasecmp((string)$leftValue, (string)$rightValue);
-            }
-            if ($compare !== 0) {
-                return $compare * $direction;
-            }
-            $fallback = ((int)($left['sort_order'] ?? 0)) <=> ((int)($right['sort_order'] ?? 0));
-            if ($fallback !== 0) {
-                return $fallback;
-            }
-            return ((int)($left['id'] ?? 0)) <=> ((int)($right['id'] ?? 0));
-        });
-        return $rows;
-    }
-}
-
-if (!function_exists('asset_common_sort_link')) {
-    function asset_common_sort_link(array $params, string $key, string $label, string $currentCol, string $currentDir, string $colParam, string $dirParam): string
-    {
-        $nextDir = ($currentCol === $key && $currentDir === 'asc') ? 'desc' : 'asc';
-        $indicator = '';
-        if ($currentCol === $key) {
-            $indicator = $currentDir === 'asc' ? ' ↑' : ' ↓';
-        }
-        $params[$colParam] = $key;
-        $params[$dirParam] = $nextDir;
-        return '<a href="index.php?' . e(http_build_query($params)) . '">' . e($label) . $indicator . '</a>';
-    }
-}
-
-if (!function_exists('asset_common_sort_link_safe')) {
-    function asset_common_sort_link_safe(array $params, string $key, string $label, string $currentCol, string $currentDir, string $colParam, string $dirParam): string
-    {
-        $nextDir = ($currentCol === $key && $currentDir === 'asc') ? 'desc' : 'asc';
-        $indicator = '';
-        if ($currentCol === $key) {
-            $indicator = $currentDir === 'asc' ? ' [asc]' : ' [desc]';
-        }
-        $params[$colParam] = $key;
-        $params[$dirParam] = $nextDir;
-        return '<a href="index.php?' . e(http_build_query($params)) . '">' . e($label) . $indicator . '</a>';
-    }
-}
-
 $renderProfileSection = static function (array $profile) use (
     $commonScopeOptions,
     $previewOfficeType,
     $previewOfficeId,
     $previewScope,
-    $previewScopeOptions,
-    $commonSortCol,
-    $commonSortDir,
-    $previewSortCol,
-    $previewSortDir
+    $previewScopeOptions
 ): void {
     $activeSegmentId = (int)($profile['segment_id'] ?? 0);
     $profilesByCategory = asset_common_superadmin_profiles_by_category($activeSegmentId);
@@ -243,26 +146,6 @@ $renderProfileSection = static function (array $profile) use (
     }
     $adminRows = get_asset_common_admin_rows_detailed($profileId);
     $previewRows = asset_common_fetch_admin_rows($profileId, $previewOfficeType, $previewOfficeId);
-    $adminRows = asset_common_sort_rows($adminRows, $commonSortCol, $commonSortDir);
-    if ($previewSortCol !== '') {
-        $previewRows = asset_common_sort_rows($previewRows, $previewSortCol, $previewSortDir);
-    }
-    $commonSortParams = [
-        'page' => 'common_fields',
-        'segment_id' => $activeSegmentId,
-        'common_category' => (string)($category['id'] ?? ''),
-        'preview_scope' => $previewScope,
-        'preview_sort_col' => $previewSortCol,
-        'preview_sort_dir' => $previewSortDir,
-    ];
-    $previewSortParams = [
-        'page' => 'common_fields',
-        'segment_id' => $activeSegmentId,
-        'common_category' => (string)($category['id'] ?? ''),
-        'preview_scope' => $previewScope,
-        'common_sort_col' => $commonSortCol,
-        'common_sort_dir' => $commonSortDir,
-    ];
     ?>
     <section class="card">
         <div class="card-head">
@@ -270,29 +153,16 @@ $renderProfileSection = static function (array $profile) use (
                 <h2><?= e((string)($category['name'] ?? 'Category')); ?></h2>
                 <p class="hint">Only fields declared as `superadmin_defined` common fields are editable here.</p>
             </div>
-            <div class="action-row">
-                <a class="btn-small button-link" href="index.php?<?= e(http_build_query([
-                    'page' => 'common_fields',
-                    'segment_id' => $activeSegmentId,
-                    'common_category' => (string)($category['id'] ?? ''),
-                    'preview_scope' => $previewScope,
-                    'common_sort_col' => 'order',
-                    'common_sort_dir' => 'asc',
-                    'preview_sort_col' => $previewSortCol,
-                    'preview_sort_dir' => $previewSortDir,
-                ])); ?>">Refresh</a>
-            </div>
         </div>
 
         <div class="table-wrap">
             <table>
                 <thead>
                     <tr>
-                        <th><?= asset_common_sort_link_safe($commonSortParams, 'office_name', 'Office Name', $commonSortCol, $commonSortDir, 'common_sort_col', 'common_sort_dir'); ?></th>
-                        <th><?= asset_common_sort_link_safe($commonSortParams, 'order', 'Order', $commonSortCol, $commonSortDir, 'common_sort_col', 'common_sort_dir'); ?></th>
+                        <th>Office Name</th>
+                        <th>Order</th>
                         <?php foreach ($profileFields as $profileField): ?>
-                            <?php $sortKey = 'field_' . (int)($profileField['child_field_id'] ?? 0); ?>
-                            <th><?= asset_common_sort_link_safe($commonSortParams, $sortKey, (string)($profileField['child_field_label'] ?? 'Field'), $commonSortCol, $commonSortDir, 'common_sort_col', 'common_sort_dir'); ?></th>
+                            <th><?= e((string)($profileField['child_field_label'] ?? 'Field')); ?></th>
                         <?php endforeach; ?>
                         <th>Action</th>
                     </tr>
@@ -324,10 +194,6 @@ $renderProfileSection = static function (array $profile) use (
                                         <input type="hidden" name="redirect_page" value="common_fields">
                                         <input type="hidden" name="common_category" value="<?= e((string)($category['id'] ?? '')); ?>">
                                         <input type="hidden" name="preview_scope" value="<?= e($previewScope); ?>">
-                                        <input type="hidden" name="common_sort_col" value="<?= e($commonSortCol); ?>">
-                                        <input type="hidden" name="common_sort_dir" value="<?= e($commonSortDir); ?>">
-                                        <input type="hidden" name="preview_sort_col" value="<?= e($previewSortCol); ?>">
-                                        <input type="hidden" name="preview_sort_dir" value="<?= e($previewSortDir); ?>">
                                         <button type="submit" class="btn-small office-save-button">Save</button>
                                     </form>
                                     <form method="post" action="index.php" class="inline-form">
@@ -339,10 +205,6 @@ $renderProfileSection = static function (array $profile) use (
                                         <input type="hidden" name="redirect_page" value="common_fields">
                                         <input type="hidden" name="common_category" value="<?= e((string)($category['id'] ?? '')); ?>">
                                         <input type="hidden" name="preview_scope" value="<?= e($previewScope); ?>">
-                                        <input type="hidden" name="common_sort_col" value="<?= e($commonSortCol); ?>">
-                                        <input type="hidden" name="common_sort_dir" value="<?= e($commonSortDir); ?>">
-                                        <input type="hidden" name="preview_sort_col" value="<?= e($previewSortCol); ?>">
-                                        <input type="hidden" name="preview_sort_dir" value="<?= e($previewSortDir); ?>">
                                         <button type="submit" class="btn-small btn-danger">Delete</button>
                                     </form>
                                 </div>
@@ -372,10 +234,6 @@ $renderProfileSection = static function (array $profile) use (
                                 <input type="hidden" name="redirect_page" value="common_fields">
                                 <input type="hidden" name="common_category" value="<?= e((string)($category['id'] ?? '')); ?>">
                                 <input type="hidden" name="preview_scope" value="<?= e($previewScope); ?>">
-                                <input type="hidden" name="common_sort_col" value="<?= e($commonSortCol); ?>">
-                                <input type="hidden" name="common_sort_dir" value="<?= e($commonSortDir); ?>">
-                                <input type="hidden" name="preview_sort_col" value="<?= e($previewSortCol); ?>">
-                                <input type="hidden" name="preview_sort_dir" value="<?= e($previewSortDir); ?>">
                                 <button type="submit">Add Row</button>
                             </form>
                         </td>
@@ -390,27 +248,11 @@ $renderProfileSection = static function (array $profile) use (
                     <h3>User UI Preview</h3>
                     <p class="hint">Select an office to see the common rows that office would receive.</p>
                 </div>
-                <div class="action-row">
-                    <a class="btn-small button-link" href="index.php?<?= e(http_build_query([
-                        'page' => 'common_fields',
-                        'segment_id' => $activeSegmentId,
-                        'common_category' => (string)($category['id'] ?? ''),
-                        'preview_scope' => $previewScope,
-                        'common_sort_col' => $commonSortCol,
-                        'common_sort_dir' => $commonSortDir,
-                        'preview_sort_col' => '',
-                        'preview_sort_dir' => 'asc',
-                    ])); ?>">Refresh</a>
-                </div>
             </div>
             <form method="get" action="index.php" class="inline-form">
                 <input type="hidden" name="page" value="common_fields">
                 <input type="hidden" name="segment_id" value="<?= e((string)$activeSegmentId); ?>">
                 <input type="hidden" name="common_category" value="<?= e((string)($category['id'] ?? '')); ?>">
-                <input type="hidden" name="common_sort_col" value="<?= e($commonSortCol); ?>">
-                <input type="hidden" name="common_sort_dir" value="<?= e($commonSortDir); ?>">
-                <input type="hidden" name="preview_sort_col" value="<?= e($previewSortCol); ?>">
-                <input type="hidden" name="preview_sort_dir" value="<?= e($previewSortDir); ?>">
                 <label>Preview Office
                     <div class="filter-picker common-preview-scope-picker" data-common-preview-picker>
                         <input type="hidden" name="preview_scope" value="<?= e($previewScope); ?>" data-filter-picker-value>
@@ -434,8 +276,7 @@ $renderProfileSection = static function (array $profile) use (
                     <thead>
                         <tr>
                             <?php foreach ($profileFields as $profileField): ?>
-                                <?php $sortKey = 'field_' . (int)($profileField['child_field_id'] ?? 0); ?>
-                                <th><?= asset_common_sort_link_safe($previewSortParams, $sortKey, (string)($profileField['child_field_label'] ?? 'Field'), $previewSortCol, $previewSortDir, 'preview_sort_col', 'preview_sort_dir'); ?></th>
+                                <th><?= e((string)($profileField['child_field_label'] ?? 'Field')); ?></th>
                             <?php endforeach; ?>
                         </tr>
                     </thead>
@@ -475,15 +316,7 @@ $renderProfileSection = static function (array $profile) use (
         <div class="toolbar-row scope-switch-row">
             <?php foreach ($segments as $segment): ?>
                 <?php $segmentId = (int)($segment['id'] ?? 0); ?>
-                <a class="button-link<?= $segmentId === $activeSegmentId ? ' is-active' : ''; ?>" href="index.php?<?= e(http_build_query([
-                    'page' => 'common_fields',
-                    'segment_id' => $segmentId,
-                    'preview_scope' => $previewScope,
-                    'common_sort_col' => $commonSortCol,
-                    'common_sort_dir' => $commonSortDir,
-                    'preview_sort_col' => $previewSortCol,
-                    'preview_sort_dir' => $previewSortDir,
-                ])); ?>"><?= e((string)($segment['segment_name'] ?? 'Segment')); ?></a>
+                <a class="button-link<?= $segmentId === $activeSegmentId ? ' is-active' : ''; ?>" href="index.php?<?= e(http_build_query(['page' => 'common_fields', 'segment_id' => $segmentId, 'preview_scope' => $previewScope])); ?>"><?= e((string)($segment['segment_name'] ?? 'Segment')); ?></a>
             <?php endforeach; ?>
         </div>
     </section>
@@ -509,10 +342,6 @@ $renderProfileSection = static function (array $profile) use (
                 <input type="hidden" name="segment_id" value="<?= e((string)$activeSegmentId); ?>">
                 <input type="hidden" name="common_category" value="<?= e((string)$activeCategoryKey); ?>">
                 <input type="hidden" name="preview_scope" value="<?= e($previewScope); ?>">
-                <input type="hidden" name="common_sort_col" value="<?= e($commonSortCol); ?>">
-                <input type="hidden" name="common_sort_dir" value="<?= e($commonSortDir); ?>">
-                <input type="hidden" name="preview_sort_col" value="<?= e($previewSortCol); ?>">
-                <input type="hidden" name="preview_sort_dir" value="<?= e($previewSortDir); ?>">
                 <label>Category Type
                     <select name="common_row_policy">
                         <?php foreach ($commonRowPolicyOptions as $policyValue => $policyLabel): ?>
@@ -527,16 +356,7 @@ $renderProfileSection = static function (array $profile) use (
             <h2>Excel Template</h2>
             <form method="post" action="index.php" class="grid common-fields-template-grid" enctype="multipart/form-data">
                 <div>
-                    <a class="button-link" href="index.php?<?= e(http_build_query([
-                        'page' => 'download_asset_common_admin_template',
-                        'segment_id' => $activeSegmentId,
-                        'common_category' => $activeCategoryKey,
-                        'preview_scope' => $previewScope,
-                        'common_sort_col' => $commonSortCol,
-                        'common_sort_dir' => $commonSortDir,
-                        'preview_sort_col' => $previewSortCol,
-                        'preview_sort_dir' => $previewSortDir,
-                    ])); ?>">Download Excel Template</a>
+                    <a class="button-link" href="index.php?<?= e(http_build_query(['page' => 'download_asset_common_admin_template', 'segment_id' => $activeSegmentId, 'common_category' => $activeCategoryKey])); ?>">Download Excel Template</a>
                 </div>
                 <div>
                     <input type="file" name="template_file" accept=".xlsx,.xls" required>
@@ -549,10 +369,6 @@ $renderProfileSection = static function (array $profile) use (
                     <input type="hidden" name="redirect_page" value="common_fields">
                     <input type="hidden" name="common_category" value="<?= e((string)$activeCategoryKey); ?>">
                     <input type="hidden" name="preview_scope" value="<?= e($previewScope); ?>">
-                    <input type="hidden" name="common_sort_col" value="<?= e($commonSortCol); ?>">
-                    <input type="hidden" name="common_sort_dir" value="<?= e($commonSortDir); ?>">
-                    <input type="hidden" name="preview_sort_col" value="<?= e($previewSortCol); ?>">
-                    <input type="hidden" name="preview_sort_dir" value="<?= e($previewSortDir); ?>">
                     <button type="submit" class="btn-small">Upload Filled Up Excel Sheet</button>
                 </div>
             </form>

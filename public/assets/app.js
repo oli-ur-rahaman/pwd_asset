@@ -803,7 +803,10 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     const parseCommonSupportedTypes = (container) => {
-        const raw = container?.getAttribute('data-common-supported-types') || '[]';
+        const source = container?.hasAttribute('data-common-supported-types')
+            ? container
+            : (container?.closest?.('[data-common-supported-types]') || document.querySelector('[data-asset-field-form][data-common-supported-types]'));
+        const raw = source?.getAttribute('data-common-supported-types') || '[]';
         try {
             const parsed = JSON.parse(raw);
             return Array.isArray(parsed) ? parsed.map((value) => String(value)) : [];
@@ -844,10 +847,15 @@ document.addEventListener('DOMContentLoaded', () => {
         const supportedTypes = parseCommonSupportedTypes(container);
         const fieldType = String(typeSelect.value || '');
         const supportsCommonRows = supportedTypes.includes(fieldType);
+        const existingCommonRow = String(toggle.getAttribute('data-common-row-existing') || '0') === '1';
+        const segmentSupportsCommonRows = String(toggle.getAttribute('data-common-row-segment-supported') || '1') === '1';
         if (!supportsCommonRows) {
             toggle.checked = false;
         }
-        toggle.disabled = !supportsCommonRows;
+        if (existingCommonRow && supportsCommonRows) {
+            toggle.checked = true;
+        }
+        toggle.disabled = !(supportsCommonRows && (segmentSupportsCommonRows || existingCommonRow));
         const showSection = supportsCommonRows && toggle.checked;
         section.classList.toggle('hidden', !showSection);
         section.querySelectorAll('input, select, textarea').forEach((input) => {
