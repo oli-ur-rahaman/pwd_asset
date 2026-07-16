@@ -15314,37 +15314,35 @@ function asset_template_prefill_rows(?int $segmentId = null, ?array $user = null
         (int)($user['id'] ?? 0)
     );
 
-    $assets = get_assets([
-        'segment_id' => $segmentId,
-        'office_view_scope' => 'my_office',
-    ], $user, false, [
-        'include_files' => false,
-        'include_timestamps' => false,
-        'include_office_labels' => false,
-    ]);
-    if ($assets === []) {
+    $stmt = db()->prepare(
+        'SELECT a.*, c.name AS category_name, s.name AS subcategory_name
+         FROM assets a
+         LEFT JOIN asset_categories c ON c.id = a.category_id AND c.segment_id = a.segment_id
+         LEFT JOIN asset_subcategories s ON s.id = a.subcategory_id AND s.segment_id = a.segment_id
+         WHERE a.segment_id = ?
+           AND a.office_type = ?
+           AND a.office_id = ?
+           AND a.common_profile_id IS NOT NULL
+           AND a.common_profile_id > 0
+           AND (? = 0 OR a.is_user_added_row = 0)
+           AND a.deleted_at IS NULL
+           AND a.active_status = 1
+         ORDER BY a.category_id ASC, a.is_user_added_row ASC, a.id DESC'
+    );
+    $stmt->execute([$segmentId, (int)$ctx['office_type'], (int)$ctx['office_id'], $hideUserAddedRows ? 1 : 0]);
+    $assets = $stmt->fetchAll();
+    if (!$assets) {
         return [];
     }
 
-    $assets = array_values(array_filter($assets, static function (array $asset) use ($hideUserAddedRows): bool {
-        if ((int)($asset['common_profile_id'] ?? 0) <= 0) {
-            return false;
-        }
-        if ($hideUserAddedRows && (int)($asset['is_user_added_row'] ?? 1) === 1) {
-            return false;
-        }
-        return true;
-    }));
-    if ($assets === []) {
-        return [];
-    }
-
+    $valuesByAsset = get_asset_values_for_assets(array_map(static fn(array $row): int => (int)$row['id'], $assets));
     $rows = [];
     foreach ($assets as $asset) {
         $assetId = (int)($asset['id'] ?? 0);
         if ($assetId <= 0) {
             continue;
         }
+        $asset['values'] = $valuesByAsset[$assetId] ?? [];
         $values = [];
         if (asset_category_selection_enabled($segmentId)) {
             $values['category'] = (string)($asset['category_name'] ?? '');
