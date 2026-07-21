@@ -1,7 +1,7 @@
 <?php
 require __DIR__ . '/header.php';
 $canManageSuperadmin = can_manage_superadmin_scope();
-$activeSegmentId = asset_active_segment_id((int)request_str('segment_id', '0'), true);
+$activeSegmentId = asset_active_segment_id((int)request_str('segment_id', '0'));
 $activeSegment = asset_active_segment($activeSegmentId, true);
 $segments = get_asset_segments(true);
 $categories = get_asset_categories(true, $activeSegmentId);
@@ -47,48 +47,6 @@ $commonParentCategoriesBySegment = [];
 foreach ($segments as $segment) {
     $commonParentCategoriesBySegment[(int)$segment['id']] = get_asset_categories(true, (int)$segment['id']);
 }
-$commonParentFieldsById = [];
-foreach ($commonParentFieldCandidatesBySegment as $parentSegmentId => $parentFields) {
-    foreach ($parentFields as $parentField) {
-        $commonParentFieldsById[(int)$parentField['id']] = $parentField + ['segment_id' => (int)$parentSegmentId];
-    }
-}
-$userDefinedCommonDeclarations = [];
-foreach ($fields as $field) {
-    $binding = $commonBindingsByFieldId[(int)($field['id'] ?? 0)] ?? null;
-    if (!$binding || (string)($binding['definition_mode'] ?? '') !== asset_common_definition_mode_user_defined()) {
-        continue;
-    }
-    if (asset_is_conditional_secondary($field)) {
-        continue;
-    }
-    $parentField = $commonParentFieldsById[(int)($binding['parent_field_id'] ?? 0)] ?? null;
-    $parentSegment = $segmentsById[(int)($binding['parent_segment_id'] ?? 0)] ?? null;
-    $parentCategory = $categoriesById[(int)($binding['parent_category_id'] ?? 0)] ?? null;
-    if (!$parentCategory && isset($commonParentCategoriesBySegment[(int)($binding['parent_segment_id'] ?? 0)])) {
-        foreach ($commonParentCategoriesBySegment[(int)($binding['parent_segment_id'] ?? 0)] as $candidateCategory) {
-            if ((int)($candidateCategory['id'] ?? 0) === (int)($binding['parent_category_id'] ?? 0)) {
-                $parentCategory = $candidateCategory;
-                break;
-            }
-        }
-    }
-    $userDefinedCommonDeclarations[] = [
-        'child_field' => $field,
-        'binding' => $binding,
-        'parent_field' => $parentField,
-        'parent_segment' => $parentSegment,
-        'parent_category' => $parentCategory,
-    ];
-}
-usort($userDefinedCommonDeclarations, static function (array $left, array $right): int {
-    $leftOrder = (int)($left['binding']['sort_order'] ?? 0);
-    $rightOrder = (int)($right['binding']['sort_order'] ?? 0);
-    if ($leftOrder !== $rightOrder) {
-        return $leftOrder <=> $rightOrder;
-    }
-    return strcasecmp((string)($left['child_field']['label'] ?? ''), (string)($right['child_field']['label'] ?? ''));
-});
 
 if (!function_exists('render_common_admin_row_input')) {
     function render_common_admin_row_input(string $formId, array $fieldMeta, int $childFieldId, string $value): string
@@ -365,92 +323,8 @@ if (!function_exists('render_common_admin_row_input')) {
 </section>
 
 <section class="card">
-    <h2>Declare User Defined Common Fields</h2>
-    <p class="hint">Use a parent segment field here as an inherited common field in this segment. Labels, types, rules, options, colors, and tutorials come automatically from the parent field. For `conditional`, the primary and secondary pair is created together. Manage `superadmin_defined` row content from the dedicated <a href="index.php?page=common_fields">Common Fields</a> page.</p>
-    <?php if (!$commonRowsSupported): ?>
-        <p class="hint">This segment cannot use common fields because it currently has more than one category.</p>
-    <?php else: ?>
-        <form method="post" action="index.php" class="grid compact-grid" data-user-common-declare>
-            <?= csrf_input(); ?>
-            <input type="hidden" name="action" value="create_user_defined_common_field_declaration">
-            <input type="hidden" name="segment_id" value="<?= e((string)$activeSegmentId); ?>">
-            <label>Parent Segment
-                <select name="user_common_parent_segment_id" data-user-common-parent-segment required>
-                    <option value="">Select segment</option>
-                    <?php foreach ($segments as $segment): ?>
-                        <?php if ((int)$segment['id'] === $activeSegmentId): continue; endif; ?>
-                        <?php if (!asset_segment_common_rows_supported((int)$segment['id'])): continue; endif; ?>
-                        <?php if (empty($commonParentFieldCandidatesBySegment[(int)$segment['id']])): continue; endif; ?>
-                        <option value="<?= e((string)$segment['id']); ?>"><?= e((string)$segment['segment_name']); ?></option>
-                    <?php endforeach; ?>
-                </select>
-            </label>
-            <label>Parent Field
-                <select name="user_common_parent_field_id" data-user-common-parent-field required>
-                    <option value="">Select field</option>
-                    <?php foreach ($commonParentFieldCandidatesBySegment as $parentSegmentId => $parentFields): ?>
-                        <?php if ((int)$parentSegmentId === $activeSegmentId): continue; endif; ?>
-                        <?php foreach ($parentFields as $parentField): ?>
-                            <option value="<?= e((string)$parentField['id']); ?>" data-parent-segment="<?= e((string)$parentSegmentId); ?>">
-                                <?= e((string)$parentField['label']); ?> (<?= e((string)$parentField['data_type']); ?>)
-                            </option>
-                        <?php endforeach; ?>
-                    <?php endforeach; ?>
-                </select>
-            </label>
-            <label>Row Policy
-                <select name="user_common_row_policy" required>
-                    <?php foreach ($commonRowPolicyOptions as $policyValue => $policyLabel): ?>
-                        <option value="<?= e((string)$policyValue); ?>" <?= (string)$policyValue === asset_common_row_policy_fixed() ? 'selected' : ''; ?>><?= e((string)$policyLabel); ?></option>
-                    <?php endforeach; ?>
-                </select>
-            </label>
-            <label>Sequence
-                <input type="number" name="user_common_sort_order" min="1" step="1" value="<?= e((string)(count($userDefinedCommonDeclarations) + 1)); ?>" required>
-            </label>
-            <div class="toolbar-row">
-                <button type="submit">Declare Field</button>
-            </div>
-        </form>
-    <?php endif; ?>
-    <?php if ($userDefinedCommonDeclarations !== []): ?>
-        <div class="table-wrap">
-            <table>
-                <thead>
-                    <tr><th>Sequence</th><th>Parent Segment</th><th>Parent Category</th><th>Parent Field</th><th>Inherited Field</th><th>Type</th><th>Row Policy</th><th>Action</th></tr>
-                </thead>
-                <tbody>
-                    <?php foreach ($userDefinedCommonDeclarations as $declaration): ?>
-                        <?php
-                            $childField = $declaration['child_field'];
-                            $binding = $declaration['binding'];
-                            $parentField = $declaration['parent_field'];
-                            $parentSegment = $declaration['parent_segment'];
-                            $parentCategory = $declaration['parent_category'];
-                        ?>
-                        <tr>
-                            <td><?= e((string)((int)($binding['sort_order'] ?? 0))); ?></td>
-                            <td><?= e((string)($parentSegment['segment_name'] ?? 'Unknown')); ?></td>
-                            <td><?= e((string)($parentCategory['name'] ?? 'Default')); ?></td>
-                            <td><?= e((string)($parentField['label'] ?? 'Unknown')); ?></td>
-                            <td><?= e((string)($childField['label'] ?? '')); ?></td>
-                            <td><?= e((string)($childField['data_type'] ?? '')); ?></td>
-                            <td><?= e((string)($commonRowPolicyOptions[(string)($binding['row_policy'] ?? '')] ?? ($binding['row_policy'] ?? ''))); ?></td>
-                            <td>
-                                <form method="post" action="index.php" class="inline-form">
-                                    <?= csrf_input(); ?>
-                                    <input type="hidden" name="action" value="delete_user_defined_common_field_declaration">
-                                    <input type="hidden" name="segment_id" value="<?= e((string)$activeSegmentId); ?>">
-                                    <input type="hidden" name="field_id" value="<?= e((string)$childField['id']); ?>">
-                                    <button type="submit" class="btn-small btn-danger">Delete</button>
-                                </form>
-                            </td>
-                        </tr>
-                    <?php endforeach; ?>
-                </tbody>
-            </table>
-        </div>
-    <?php endif; ?>
+    <h2>Common Field Binding</h2>
+    <p class="hint">Declare whether a field is `user_defined` or `superadmin_defined` here. Manage `superadmin_defined` row content from the dedicated <a href="index.php?page=common_fields">Common Fields</a> page.</p>
 </section>
 
 <section class="card">
@@ -738,17 +612,60 @@ if (!function_exists('render_common_admin_row_input')) {
         <div class="field-config-group field-common-row-wrap" data-common-row-toggle-wrap>
             <label><input type="checkbox" name="is_common_row_field" value="1" data-common-row-toggle data-common-row-existing="0" data-common-row-segment-supported="<?= $commonRowsSupported ? '1' : '0'; ?>" <?= $commonRowsSupported ? '' : 'disabled'; ?>> Common fixed-row field</label>
             <span class="hint">
-                This checkbox is for `superadmin_defined` common fields only.
+                Supported types only: <?= e(implode(', ', $commonSupportedTypes)); ?>.
                 <?php if (!$commonRowsSupported): ?>
                     Common fields are allowed only when this segment has zero or one category.
                 <?php endif; ?>
             </span>
         </div>
         <div class="grid compact-grid field-common-row-settings hidden" data-common-row-section>
-            <input type="hidden" name="common_row_config_present" value="1">
-            <input type="hidden" name="common_definition_mode" value="<?= e(asset_common_definition_mode_superadmin_defined()); ?>">
-            <input type="hidden" name="common_row_policy" value="<?= e(asset_common_row_policy_fixed()); ?>">
-            <div class="hint field-common-row-hint">This field will be handled as a `superadmin_defined` common field. After saving it here, manage rows from the <a href="index.php?page=common_fields">Common Fields</a> page.</div>
+            <label>Definition Mode
+                <select name="common_definition_mode" data-common-definition-mode>
+                    <?php foreach ($commonDefinitionModeOptions as $modeValue => $modeLabel): ?>
+                        <option value="<?= e((string)$modeValue); ?>"><?= e((string)$modeLabel); ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </label>
+            <label data-common-userdefined-control>Row Policy
+                <select name="common_row_policy">
+                    <?php foreach ($commonRowPolicyOptions as $policyValue => $policyLabel): ?>
+                        <option value="<?= e((string)$policyValue); ?>"><?= e((string)$policyLabel); ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </label>
+            <label data-common-parent-control>
+                Parent Segment
+                <select name="common_parent_segment_id" data-common-parent-segment>
+                    <option value="">Select segment</option>
+                    <?php foreach ($segments as $segment): ?>
+                        <option value="<?= e((string)$segment['id']); ?>"><?= e((string)$segment['segment_name']); ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </label>
+            <label data-common-parent-control>
+                Parent Category
+                <select name="common_parent_category_id" data-common-parent-category>
+                    <option value="">Select category</option>
+                    <?php foreach ($commonParentCategoriesBySegment as $parentSegmentId => $parentCategories): ?>
+                        <?php foreach ($parentCategories as $parentCategory): ?>
+                            <option value="<?= e((string)$parentCategory['id']); ?>" data-parent-segment="<?= e((string)$parentSegmentId); ?>"><?= e((string)$parentCategory['name']); ?></option>
+                        <?php endforeach; ?>
+                    <?php endforeach; ?>
+                </select>
+            </label>
+            <label data-common-parent-control>
+                Parent Field
+                <select name="common_parent_field_id" data-common-parent-field>
+                    <option value="">Select field</option>
+                    <?php foreach ($commonParentFieldCandidatesBySegment as $parentSegmentId => $parentFields): ?>
+                        <?php foreach ($parentFields as $parentField): ?>
+                            <option value="<?= e((string)$parentField['id']); ?>" data-parent-segment="<?= e((string)$parentSegmentId); ?>"><?= e((string)$parentField['label']); ?> (<?= e((string)$parentField['data_type']); ?>)</option>
+                        <?php endforeach; ?>
+                    <?php endforeach; ?>
+                </select>
+            </label>
+            <div class="hint field-common-row-hint" data-common-parent-control>For `user_defined`, parent segment, category, and field are required.</div>
+            <div class="hint field-common-row-hint hidden" data-common-superadmin-note>For `superadmin_defined`, save the field here, then manage row content from the <a href="index.php?page=common_fields">Common Fields</a> page.</div>
         </div>
         <button type="submit">Add Field</button>
     </form>
@@ -764,10 +681,8 @@ if (!function_exists('render_common_admin_row_input')) {
                         $isActive = (int)$field['active_status'] === 1;
                         $commonBinding = $commonBindingsByFieldId[(int)$field['id']] ?? null;
                         $fieldSupportsCommonRows = isset($commonSupportedTypeLookup[(string)($field['data_type'] ?? '')]);
-                        $fieldIsInheritedUserDefined = $commonBinding && (string)($commonBinding['definition_mode'] ?? '') === asset_common_definition_mode_user_defined();
                         $fieldIsCommonRow = $commonBinding || (int)($field['is_common_row_field'] ?? 0) === 1;
-                        $fieldIsSuperadminCommonRow = $fieldIsCommonRow && !$fieldIsInheritedUserDefined;
-                        $commonRowCheckboxDisabled = $fieldIsInheritedUserDefined || !$fieldSupportsCommonRows || (!$commonRowsSupported && !$fieldIsCommonRow);
+                        $commonRowCheckboxDisabled = !$fieldSupportsCommonRows || (!$commonRowsSupported && !$fieldIsCommonRow);
                         $optionLines = [];
                         $fileRule = get_asset_field_file_rule((int)$field['id']);
                         $conditionalChild = asset_is_conditional_primary($field) ? get_asset_conditional_child_field((int)$field['id'], true) : null;
@@ -926,22 +841,58 @@ if (!function_exists('render_common_admin_row_input')) {
                                         </select>
                                     </label>
                                     <label class="inline-check" data-common-row-toggle-wrap>
-                                        <input form="<?= e($formId); ?>" type="checkbox" name="is_common_row_field" value="1" data-common-row-toggle data-common-row-existing="<?= $fieldIsSuperadminCommonRow ? '1' : '0'; ?>" data-common-row-segment-supported="<?= $commonRowsSupported ? '1' : '0'; ?>" <?= $fieldIsSuperadminCommonRow ? 'checked' : ''; ?> <?= $commonRowCheckboxDisabled ? 'disabled' : ''; ?>>
+                                        <input form="<?= e($formId); ?>" type="checkbox" name="is_common_row_field" value="1" data-common-row-toggle data-common-row-existing="<?= $fieldIsCommonRow ? '1' : '0'; ?>" data-common-row-segment-supported="<?= $commonRowsSupported ? '1' : '0'; ?>" <?= $fieldIsCommonRow ? 'checked' : ''; ?> <?= $commonRowCheckboxDisabled ? 'disabled' : ''; ?>>
                                         Common row
                                     </label>
-                                    <div class="grid compact-grid field-common-row-settings<?= $fieldIsSuperadminCommonRow ? '' : ' hidden'; ?>" data-common-row-section>
-                                        <input form="<?= e($formId); ?>" type="hidden" name="common_row_config_present" value="1">
-                                        <input form="<?= e($formId); ?>" type="hidden" name="common_definition_mode" value="<?= e(asset_common_definition_mode_superadmin_defined()); ?>">
-                                        <input form="<?= e($formId); ?>" type="hidden" name="common_row_policy" value="<?= e((string)($commonBinding['row_policy'] ?? asset_common_row_policy_fixed())); ?>">
-                                        <div class="hint">
-                                            <?php if ($fieldIsInheritedUserDefined): ?>
-                                                This is an inherited `user_defined` field. Manage it from the “Declare User Defined Common Fields” card above.
-                                            <?php else: ?>
-                                                This field is handled as `superadmin_defined`. Manage row content from the <a href="index.php?page=common_fields">Common Fields</a> page.
-                                            <?php endif; ?>
-                                        </div>
+                                    <div class="grid compact-grid field-common-row-settings<?= $fieldIsCommonRow ? '' : ' hidden'; ?>" data-common-row-section>
+                                        <label>Definition Mode
+                                            <select form="<?= e($formId); ?>" class="inline-edit" name="common_definition_mode" data-common-definition-mode>
+                                                <?php foreach ($commonDefinitionModeOptions as $modeValue => $modeLabel): ?>
+                                                    <option value="<?= e((string)$modeValue); ?>" <?= (string)($commonBinding['definition_mode'] ?? asset_common_definition_mode_user_defined()) === (string)$modeValue ? 'selected' : ''; ?>><?= e((string)$modeLabel); ?></option>
+                                                <?php endforeach; ?>
+                                            </select>
+                                        </label>
+                                        <label data-common-userdefined-control>Row Policy
+                                            <select form="<?= e($formId); ?>" class="inline-edit" name="common_row_policy">
+                                                <?php foreach ($commonRowPolicyOptions as $policyValue => $policyLabel): ?>
+                                                    <option value="<?= e((string)$policyValue); ?>" <?= (string)($commonBinding['row_policy'] ?? asset_common_row_policy_fixed()) === (string)$policyValue ? 'selected' : ''; ?>><?= e((string)$policyLabel); ?></option>
+                                                <?php endforeach; ?>
+                                            </select>
+                                        </label>
+                                        <label data-common-parent-control>
+                                            Parent Segment
+                                            <select form="<?= e($formId); ?>" class="inline-edit" name="common_parent_segment_id" data-common-parent-segment>
+                                                <option value="">Select segment</option>
+                                                <?php foreach ($segments as $segment): ?>
+                                                    <option value="<?= e((string)$segment['id']); ?>" <?= (int)($commonBinding['parent_segment_id'] ?? 0) === (int)$segment['id'] ? 'selected' : ''; ?>><?= e((string)$segment['segment_name']); ?></option>
+                                                <?php endforeach; ?>
+                                            </select>
+                                        </label>
+                                        <label data-common-parent-control>
+                                            Parent Category
+                                            <select form="<?= e($formId); ?>" class="inline-edit" name="common_parent_category_id" data-common-parent-category>
+                                                <option value="">Select category</option>
+                                                <?php foreach ($commonParentCategoriesBySegment as $parentSegmentId => $parentCategories): ?>
+                                                    <?php foreach ($parentCategories as $parentCategory): ?>
+                                                        <option value="<?= e((string)$parentCategory['id']); ?>" data-parent-segment="<?= e((string)$parentSegmentId); ?>" <?= (int)($commonBinding['parent_category_id'] ?? 0) === (int)$parentCategory['id'] ? 'selected' : ''; ?>><?= e((string)$parentCategory['name']); ?></option>
+                                                    <?php endforeach; ?>
+                                                <?php endforeach; ?>
+                                            </select>
+                                        </label>
+                                        <label data-common-parent-control>
+                                            Parent Field
+                                            <select form="<?= e($formId); ?>" class="inline-edit" name="common_parent_field_id" data-common-parent-field>
+                                                <option value="">Select field</option>
+                                                <?php foreach ($commonParentFieldCandidatesBySegment as $parentSegmentId => $parentFields): ?>
+                                                    <?php foreach ($parentFields as $parentField): ?>
+                                                        <option value="<?= e((string)$parentField['id']); ?>" data-parent-segment="<?= e((string)$parentSegmentId); ?>" <?= (int)($commonBinding['parent_field_id'] ?? 0) === (int)$parentField['id'] ? 'selected' : ''; ?>><?= e((string)$parentField['label']); ?> (<?= e((string)$parentField['data_type']); ?>)</option>
+                                                    <?php endforeach; ?>
+                                                <?php endforeach; ?>
+                                            </select>
+                                        </label>
+                                        <div class="hint hidden" data-common-superadmin-note>For `superadmin_defined`, save the field here, then manage row content from the <a href="index.php?page=common_fields">Common Fields</a> page.</div>
                                     </div>
-                                    <?php if (!$fieldSupportsCommonRows || (!$commonRowsSupported && !$fieldIsCommonRow)): ?><div class="hint">Common rows support only: <?= e(implode(', ', $commonSupportedTypes)); ?>, and only in segments with zero or one category.</div><?php endif; ?>
+                                    <?php if (!$fieldSupportsCommonRows || $commonRowCheckboxDisabled): ?><div class="hint">Common rows support only: <?= e(implode(', ', $commonSupportedTypes)); ?>, and only in segments with zero or one category.</div><?php endif; ?>
                                     <button type="submit" class="btn-small office-save-button">Save</button>
                                 </form>
                                 <form method="post" action="index.php" class="inline-form">

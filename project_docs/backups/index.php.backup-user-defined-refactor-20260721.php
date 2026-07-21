@@ -489,53 +489,12 @@ if ($action === 'create_asset_field' || $action === 'update_asset_field') {
         flash('error', implode(' ', $validation['errors']));
         $adminRedirect();
     }
-    try {
-        if ($action === 'create_asset_field') {
-            create_asset_field($validation['payload']);
-            flash('success', 'Field created.');
-        } else {
-            update_asset_field($fieldId, $validation['payload']);
-            flash('success', 'Field updated.');
-        }
-    } catch (Throwable $e) {
-        flash('error', $e->getMessage());
-    }
-    $adminRedirect();
-}
-
-if ($action === 'create_user_defined_common_field_declaration') {
-    if (!can_manage_superadmin_scope()) {
-        http_response_code(403);
-        exit('Not allowed.');
-    }
-    try {
-        create_user_defined_common_field_declaration(
-            input_int('segment_id'),
-            input_int('user_common_parent_segment_id'),
-            input_int('user_common_parent_field_id'),
-            request_str('user_common_row_policy', asset_common_row_policy_fixed()),
-            input_int('user_common_sort_order')
-        );
-        flash('success', 'Inherited user-defined common field declared.');
-    } catch (Throwable $e) {
-        flash('error', $e->getMessage());
-    }
-    $adminRedirect();
-}
-
-if ($action === 'delete_user_defined_common_field_declaration') {
-    if (!can_manage_superadmin_scope()) {
-        http_response_code(403);
-        exit('Not allowed.');
-    }
-    try {
-        if (!delete_user_defined_common_field_declaration(input_int('field_id'), input_int('segment_id'))) {
-            flash('error', 'Inherited user-defined common field was not found.');
-        } else {
-            flash('success', 'Inherited user-defined common field removed.');
-        }
-    } catch (Throwable $e) {
-        flash('error', $e->getMessage());
+    if ($action === 'create_asset_field') {
+        create_asset_field($validation['payload']);
+        flash('success', 'Field created.');
+    } else {
+        update_asset_field($fieldId, $validation['payload']);
+        flash('success', 'Field updated.');
     }
     $adminRedirect();
 }

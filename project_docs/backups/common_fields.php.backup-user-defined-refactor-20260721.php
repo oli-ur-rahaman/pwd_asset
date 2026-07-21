@@ -1,0 +1,722 @@
+<?php
+require __DIR__ . '/header.php';
+
+$segments = asset_common_superadmin_segments();
+$requestedSegmentId = asset_active_segment_id((int)request_str('segment_id', '0'));
+$activeSegment = null;
+foreach ($segments as $segmentRow) {
+    if ((int)($segmentRow['id'] ?? 0) === $requestedSegmentId) {
+        $activeSegment = $segmentRow;
+        break;
+    }
+}
+if (!$activeSegment) {
+    $activeSegment = $segments[0] ?? null;
+}
+$activeSegmentId = (int)($activeSegment['id'] ?? 0);
+$previewScope = request_str('preview_scope', '0:0');
+$previewScopeParts = asset_common_parse_scope_token($previewScope);
+$previewOfficeType = (int)($previewScopeParts['office_type'] ?? 0);
+$previewOfficeId = (int)($previewScopeParts['office_id'] ?? 0);
+$commonScopeOptions = asset_common_scope_options();
+$previewScopeOptions = asset_common_scope_options();
+$commonRowPolicyOptions = asset_common_row_policy_options();
+$commonSortCol = trim((string)request_str('common_sort_col', 'order'));
+$commonSortDir = strtolower(trim((string)request_str('common_sort_dir', 'asc'))) === 'desc' ? 'desc' : 'asc';
+$previewSortCol = trim((string)request_str('preview_sort_col', ''));
+$previewSortDir = strtolower(trim((string)request_str('preview_sort_dir', 'asc'))) === 'desc' ? 'desc' : 'asc';
+$commonRowsSupported = $activeSegmentId > 0 ? asset_segment_common_rows_supported($activeSegmentId) : true;
+$profilesByCategory = $activeSegmentId > 0 ? asset_common_superadmin_profiles_by_category($activeSegmentId) : [];
+$activeProfile = null;
+if (isset($profilesByCategory[0])) {
+    $activeProfile = $profilesByCategory[0];
+} elseif ($profilesByCategory !== []) {
+    $activeProfile = reset($profilesByCategory) ?: null;
+}
+$activeCategoryKey = $activeProfile ? (string)((int)($activeProfile['category_id'] ?? 0)) : '';
+$activeProfileId = (int)($activeProfile['id'] ?? 0);
+$previewScopeLabel = (string)($previewScopeOptions[$previewScope] ?? reset($previewScopeOptions) ?: 'All Offices (Global View)');
+
+if (!function_exists('render_common_admin_row_input')) {
+    function render_common_admin_row_input(string $formId, array $fieldMeta, int $childFieldId, string $value, array $rowValues = []): string
+    {
+        $fieldName = 'common_row_values[' . $childFieldId . ']';
+        $class = 'inline-edit';
+        $dataType = (string)($fieldMeta['data_type'] ?? 'text');
+        if ($dataType === 'yes_no') {
+            $html = '<select form="' . e($formId) . '" class="' . e($class) . '" name="' . e($fieldName) . '">';
+            $html .= '<option value=""></option>';
+            foreach (['Yes', 'No'] as $option) {
+                $selected = strcasecmp($value, $option) === 0 ? ' selected' : '';
+                $html .= '<option value="' . e($option) . '"' . $selected . '>' . e($option) . '</option>';
+            }
+            $html .= '</select>';
+            return $html;
+        }
+        if ($dataType === 'dropdown') {
+            $parentFieldId = (int)($fieldMeta['secondary_of_field_id'] ?? 0);
+            if ($parentFieldId > 0) {
+                $parentField = get_asset_field($parentFieldId, (int)($fieldMeta['segment_id'] ?? 0));
+                if ($parentField && asset_is_conditional_primary($parentField)) {
+                    $parentValue = trim((string)($rowValues[$parentFieldId] ?? ''));
+                    $resolvedParent = $parentValue !== '' ? (asset_resolve_conditional_primary_value($parentField, $parentValue) ?? $parentValue) : '';
+                    $allowed = $resolvedParent !== '' ? asset_conditional_child_options($parentField, $resolvedParent) : [];
+                    $resolvedValue = $value !== '' ? (asset_resolve_conditional_child_value($parentField, $resolvedParent, $value) ?? $value) : '';
+                    $html = '<select form="' . e($formId) . '" class="' . e($class) . '" name="' . e($fieldName) . '" data-field-key="' . e((string)($fieldMeta['field_key'] ?? '')) . '" data-conditional-secondary="' . e((string)($parentField['field_key'] ?? '')) . '">';
+                    $html .= '<option value=""></option>';
+                    foreach ($allowed as $optionValue) {
+                        $selected = asset_option_values_match((string)$resolvedValue, (string)$optionValue) ? ' selected' : '';
+                        $html .= '<option value="' . e((string)$optionValue) . '"' . $selected . '>' . e((string)$optionValue) . '</option>';
+                    }
+                    if ($resolvedValue !== '' && !in_array($resolvedValue, $allowed, true)) {
+                        $html .= '<option value="' . e($resolvedValue) . '" selected>' . e($resolvedValue) . '</option>';
+                    }
+                    $html .= '</select>';
+                    return $html;
+                }
+            }
+            $html = '<select form="' . e($formId) . '" class="' . e($class) . '" name="' . e($fieldName) . '">';
+            $html .= '<option value=""></option>';
+            foreach (get_asset_field_options((int)($fieldMeta['id'] ?? 0), true) as $option) {
+                $optionValue = (string)($option['option_value'] ?? '');
+                $selected = $optionValue === $value ? ' selected' : '';
+                $html .= '<option value="' . e($optionValue) . '"' . $selected . '>' . e($optionValue) . '</option>';
+            }
+            $html .= '</select>';
+            return $html;
+        }
+        if ($dataType === 'conditional') {
+            $conditionalMap = asset_decode_conditional_map($fieldMeta);
+            $childField = get_asset_conditional_child_field((int)($fieldMeta['id'] ?? 0), true, (int)($fieldMeta['segment_id'] ?? 0));
+            $resolvedValue = $value !== '' ? (asset_resolve_conditional_primary_value($fieldMeta, $value) ?? $value) : '';
+            $html = '<select form="' . e($formId) . '" class="' . e($class) . '" name="' . e($fieldName) . '" data-field-key="' . e((string)($fieldMeta['field_key'] ?? '')) . '" data-conditional-primary="1" data-conditional-map="' . e(json_encode($conditionalMap, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)) . '"' . ($childField ? ' data-conditional-child="' . e((string)($childField['field_key'] ?? '')) . '"' : '') . '>';
+            $html .= '<option value=""></option>';
+            foreach (get_asset_field_options((int)($fieldMeta['id'] ?? 0), true) as $option) {
+                $optionValue = (string)($option['option_value'] ?? '');
+                $selected = asset_option_values_match((string)$resolvedValue, $optionValue) ? ' selected' : '';
+                $html .= '<option value="' . e($optionValue) . '"' . $selected . '>' . e($optionValue) . '</option>';
+            }
+            $html .= '</select>';
+            return $html;
+        }
+        if ($dataType === 'bimh') {
+            $estName = trim(asset_bimh_est_name_for_id($value));
+            $isMissing = $value !== '' && ($estName === '' || strcasecmp($estName, 'BIMH ID is not in the Database.') === 0);
+            $hintText = $value === '' ? '' : ($isMissing ? 'Not found' : $estName);
+            $hintClass = $isMissing ? 'hint danger-text' : 'hint';
+            $html = '<div class="common-bimh-input-wrap">';
+            $html .= '<input form="' . e($formId) . '" class="' . e($class) . '" type="text" name="' . e($fieldName) . '" value="' . e($value) . '">';
+            if ($hintText !== '') {
+                $html .= '<div class="' . e($hintClass) . '">' . e($hintText) . '</div>';
+            }
+            $html .= '</div>';
+            return $html;
+        }
+        $inputType = $dataType === 'date' ? 'date' : 'text';
+        return '<input form="' . e($formId) . '" class="' . e($class) . '" type="' . e($inputType) . '" name="' . e($fieldName) . '" value="' . e($value) . '">';
+    }
+}
+
+if (!function_exists('asset_common_row_sort_value')) {
+    function asset_common_row_sort_value(array $row, string $sortColumn): mixed
+    {
+        if ($sortColumn === 'office_name') {
+            $scopeOfficeType = (int)($row['scope_office_type'] ?? 0);
+            $scopeOfficeId = (int)($row['scope_office_id'] ?? 0);
+            if ($scopeOfficeId === 0) {
+                $scopeRank = match ($scopeOfficeType) {
+                    0 => 0,
+                    2 => 1,
+                    3 => 2,
+                    4 => 3,
+                    5 => 4,
+                    default => 5,
+                };
+                return [$scopeRank, '', $scopeOfficeType, $scopeOfficeId];
+            }
+            $officeName = trim((string)office_name_from_type_id($scopeOfficeType, $scopeOfficeId));
+            return [5, mb_strtolower($officeName), $scopeOfficeType, $scopeOfficeId];
+        }
+        if ($sortColumn === 'order') {
+            return (int)($row['sort_order'] ?? 0);
+        }
+        if (strpos($sortColumn, 'field_') === 0) {
+            $childFieldId = (int)substr($sortColumn, 6);
+            return mb_strtolower(trim((string)($row['values'][$childFieldId] ?? '')));
+        }
+        return null;
+    }
+}
+
+if (!function_exists('asset_common_sort_rows')) {
+    function asset_common_sort_rows(array $rows, string $sortColumn, string $sortDir): array
+    {
+        if ($rows === []) {
+            return $rows;
+        }
+        $direction = $sortDir === 'desc' ? -1 : 1;
+        usort($rows, static function (array $left, array $right) use ($sortColumn, $direction): int {
+            $leftValue = asset_common_row_sort_value($left, $sortColumn);
+            $rightValue = asset_common_row_sort_value($right, $sortColumn);
+            if (is_array($leftValue) || is_array($rightValue)) {
+                $compare = ($leftValue <=> $rightValue);
+            } elseif (is_int($leftValue) || is_float($leftValue) || is_int($rightValue) || is_float($rightValue)) {
+                $compare = ((float)$leftValue) <=> ((float)$rightValue);
+            } else {
+                $compare = strnatcasecmp((string)$leftValue, (string)$rightValue);
+            }
+            if ($compare !== 0) {
+                return $compare * $direction;
+            }
+            $fallback = ((int)($left['sort_order'] ?? 0)) <=> ((int)($right['sort_order'] ?? 0));
+            if ($fallback !== 0) {
+                return $fallback;
+            }
+            return ((int)($left['id'] ?? 0)) <=> ((int)($right['id'] ?? 0));
+        });
+        return $rows;
+    }
+}
+
+if (!function_exists('asset_common_sort_link')) {
+    function asset_common_sort_link(array $params, string $key, string $label, string $currentCol, string $currentDir, string $colParam, string $dirParam): string
+    {
+        $nextDir = ($currentCol === $key && $currentDir === 'asc') ? 'desc' : 'asc';
+        $indicator = '';
+        if ($currentCol === $key) {
+            $indicator = $currentDir === 'asc' ? ' ↑' : ' ↓';
+        }
+        $params[$colParam] = $key;
+        $params[$dirParam] = $nextDir;
+        return '<a href="index.php?' . e(http_build_query($params)) . '">' . e($label) . $indicator . '</a>';
+    }
+}
+
+if (!function_exists('asset_common_sort_link_safe')) {
+    function asset_common_sort_link_safe(array $params, string $key, string $label, string $currentCol, string $currentDir, string $colParam, string $dirParam): string
+    {
+        $nextDir = ($currentCol === $key && $currentDir === 'asc') ? 'desc' : 'asc';
+        $indicator = '';
+        if ($currentCol === $key) {
+            $indicator = $currentDir === 'asc' ? ' [asc]' : ' [desc]';
+        }
+        $params[$colParam] = $key;
+        $params[$dirParam] = $nextDir;
+        return '<a href="index.php?' . e(http_build_query($params)) . '">' . e($label) . $indicator . '</a>';
+    }
+}
+
+$renderProfileSection = static function (array $profile) use (
+    $commonScopeOptions,
+    $previewOfficeType,
+    $previewOfficeId,
+    $previewScope,
+    $previewScopeOptions,
+    $commonSortCol,
+    $commonSortDir,
+    $previewSortCol,
+    $previewSortDir
+): void {
+    $activeSegmentId = (int)($profile['segment_id'] ?? 0);
+    $profilesByCategory = asset_common_superadmin_profiles_by_category($activeSegmentId);
+    $categories = array_values(array_filter(
+        get_asset_categories(true, $activeSegmentId),
+        static fn(array $category): bool => isset($profilesByCategory[(int)($category['id'] ?? 0)])
+    ));
+    $categoriesById = [];
+    foreach ($categories as $category) {
+        $categoriesById[(int)$category['id']] = $category;
+    }
+    $profileId = (int)($profile['id'] ?? 0);
+    $category = $categoriesById[(int)($profile['category_id'] ?? 0)] ?? null;
+    if (!$category && (int)($profile['category_id'] ?? 0) === 0) {
+        $category = ['id' => 0, 'name' => 'Default'];
+    }
+    $profileFields = get_asset_common_profile_fields($profileId);
+    $previewScopeLabel = (string)($previewScopeOptions[$previewScope] ?? reset($previewScopeOptions) ?: 'All Offices (Global View)');
+    $fieldMetaById = [];
+    foreach ($profileFields as $profileField) {
+        $childFieldId = (int)($profileField['child_field_id'] ?? 0);
+        if ($childFieldId > 0) {
+            $fieldMetaById[$childFieldId] = get_asset_field($childFieldId, $activeSegmentId) ?: [];
+        }
+    }
+    $adminRows = get_asset_common_admin_rows_detailed($profileId);
+    $previewRows = asset_common_fetch_admin_rows($profileId, $previewOfficeType, $previewOfficeId);
+    $adminRows = asset_common_sort_rows($adminRows, $commonSortCol, $commonSortDir);
+    if ($previewSortCol !== '') {
+        $previewRows = asset_common_sort_rows($previewRows, $previewSortCol, $previewSortDir);
+    }
+    $commonSortParams = [
+        'page' => 'common_fields',
+        'segment_id' => $activeSegmentId,
+        'common_category' => (string)($category['id'] ?? ''),
+        'preview_scope' => $previewScope,
+        'preview_sort_col' => $previewSortCol,
+        'preview_sort_dir' => $previewSortDir,
+    ];
+    $previewSortParams = [
+        'page' => 'common_fields',
+        'segment_id' => $activeSegmentId,
+        'common_category' => (string)($category['id'] ?? ''),
+        'preview_scope' => $previewScope,
+        'common_sort_col' => $commonSortCol,
+        'common_sort_dir' => $commonSortDir,
+    ];
+    ?>
+    <section class="card">
+        <div class="card-head">
+            <div>
+                <h2><?= e((string)($category['name'] ?? 'Category')); ?></h2>
+                <p class="hint">Only fields declared as `superadmin_defined` common fields are editable here.</p>
+            </div>
+            <div class="action-row">
+                <a class="btn-small button-link" href="index.php?<?= e(http_build_query([
+                    'page' => 'common_fields',
+                    'segment_id' => $activeSegmentId,
+                    'common_category' => (string)($category['id'] ?? ''),
+                    'preview_scope' => $previewScope,
+                    'common_sort_col' => 'order',
+                    'common_sort_dir' => 'asc',
+                    'preview_sort_col' => $previewSortCol,
+                    'preview_sort_dir' => $previewSortDir,
+                ])); ?>">Refresh</a>
+            </div>
+        </div>
+
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th><?= asset_common_sort_link_safe($commonSortParams, 'office_name', 'Office Name', $commonSortCol, $commonSortDir, 'common_sort_col', 'common_sort_dir'); ?></th>
+                        <th><?= asset_common_sort_link_safe($commonSortParams, 'order', 'Order', $commonSortCol, $commonSortDir, 'common_sort_col', 'common_sort_dir'); ?></th>
+                        <?php foreach ($profileFields as $profileField): ?>
+                            <?php $sortKey = 'field_' . (int)($profileField['child_field_id'] ?? 0); ?>
+                            <th><?= asset_common_sort_link_safe($commonSortParams, $sortKey, (string)($profileField['child_field_label'] ?? 'Field'), $commonSortCol, $commonSortDir, 'common_sort_col', 'common_sort_dir'); ?></th>
+                        <?php endforeach; ?>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($adminRows as $adminRow): ?>
+                        <?php $rowFormId = 'common-fields-row-' . $profileId . '-' . (int)$adminRow['id']; ?>
+                        <tr>
+                            <td>
+                                <select form="<?= e($rowFormId); ?>" class="inline-edit" name="scope_token" required>
+                                    <?php foreach ($commonScopeOptions as $scopeToken => $scopeLabel): ?>
+                                        <option value="<?= e((string)$scopeToken); ?>" <?= (string)($adminRow['scope_token'] ?? '0:0') === (string)$scopeToken ? 'selected' : ''; ?>><?= e((string)$scopeLabel); ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </td>
+                            <td><input form="<?= e($rowFormId); ?>" class="inline-edit" type="number" name="sort_order" min="1" step="1" value="<?= e((string)($adminRow['sort_order'] ?? 10)); ?>" required></td>
+                            <?php foreach ($profileFields as $profileField): ?>
+                                <?php $childFieldId = (int)($profileField['child_field_id'] ?? 0); ?>
+                                <td><?= render_common_admin_row_input($rowFormId, $fieldMetaById[$childFieldId] ?? [], $childFieldId, (string)($adminRow['values'][$childFieldId] ?? ''), (array)($adminRow['values'] ?? [])); ?></td>
+                            <?php endforeach; ?>
+                            <td>
+                                <div class="action-row">
+                                    <form method="post" action="index.php" id="<?= e($rowFormId); ?>" class="inline-form">
+                                        <?= csrf_input(); ?>
+                                        <input type="hidden" name="action" value="save_asset_common_admin_row">
+                                        <input type="hidden" name="profile_id" value="<?= e((string)$profileId); ?>">
+                                        <input type="hidden" name="row_id" value="<?= e((string)$adminRow['id']); ?>">
+                                        <input type="hidden" name="segment_id" value="<?= e((string)$activeSegmentId); ?>">
+                                        <input type="hidden" name="redirect_page" value="common_fields">
+                                        <input type="hidden" name="common_category" value="<?= e((string)($category['id'] ?? '')); ?>">
+                                        <input type="hidden" name="preview_scope" value="<?= e($previewScope); ?>">
+                                        <input type="hidden" name="common_sort_col" value="<?= e($commonSortCol); ?>">
+                                        <input type="hidden" name="common_sort_dir" value="<?= e($commonSortDir); ?>">
+                                        <input type="hidden" name="preview_sort_col" value="<?= e($previewSortCol); ?>">
+                                        <input type="hidden" name="preview_sort_dir" value="<?= e($previewSortDir); ?>">
+                                        <button type="submit" class="btn-small office-save-button">Save</button>
+                                    </form>
+                                    <form method="post" action="index.php" class="inline-form">
+                                        <?= csrf_input(); ?>
+                                        <input type="hidden" name="action" value="delete_asset_common_admin_row">
+                                        <input type="hidden" name="profile_id" value="<?= e((string)$profileId); ?>">
+                                        <input type="hidden" name="row_id" value="<?= e((string)$adminRow['id']); ?>">
+                                        <input type="hidden" name="segment_id" value="<?= e((string)$activeSegmentId); ?>">
+                                        <input type="hidden" name="redirect_page" value="common_fields">
+                                        <input type="hidden" name="common_category" value="<?= e((string)($category['id'] ?? '')); ?>">
+                                        <input type="hidden" name="preview_scope" value="<?= e($previewScope); ?>">
+                                        <input type="hidden" name="common_sort_col" value="<?= e($commonSortCol); ?>">
+                                        <input type="hidden" name="common_sort_dir" value="<?= e($commonSortDir); ?>">
+                                        <input type="hidden" name="preview_sort_col" value="<?= e($previewSortCol); ?>">
+                                        <input type="hidden" name="preview_sort_dir" value="<?= e($previewSortDir); ?>">
+                                        <button type="submit" class="btn-small btn-danger">Delete</button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                    <?php $newRowFormId = 'common-fields-row-new-' . $profileId; ?>
+                    <tr>
+                        <td>
+                            <select form="<?= e($newRowFormId); ?>" class="inline-edit" name="scope_token" required>
+                                <?php foreach ($commonScopeOptions as $scopeToken => $scopeLabel): ?>
+                                    <option value="<?= e((string)$scopeToken); ?>" <?= (string)$scopeToken === '0:0' ? 'selected' : ''; ?>><?= e((string)$scopeLabel); ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </td>
+                        <td><input form="<?= e($newRowFormId); ?>" class="inline-edit" type="number" name="sort_order" min="1" step="1" value="<?= e((string)((count($adminRows) + 1) * 10)); ?>" required></td>
+                        <?php foreach ($profileFields as $profileField): ?>
+                            <?php $childFieldId = (int)($profileField['child_field_id'] ?? 0); ?>
+                            <td><?= render_common_admin_row_input($newRowFormId, $fieldMetaById[$childFieldId] ?? [], $childFieldId, '', []); ?></td>
+                        <?php endforeach; ?>
+                        <td>
+                            <form method="post" action="index.php" id="<?= e($newRowFormId); ?>" class="inline-form">
+                                <?= csrf_input(); ?>
+                                <input type="hidden" name="action" value="save_asset_common_admin_row">
+                                <input type="hidden" name="profile_id" value="<?= e((string)$profileId); ?>">
+                                <input type="hidden" name="segment_id" value="<?= e((string)$activeSegmentId); ?>">
+                                <input type="hidden" name="redirect_page" value="common_fields">
+                                <input type="hidden" name="common_category" value="<?= e((string)($category['id'] ?? '')); ?>">
+                                <input type="hidden" name="preview_scope" value="<?= e($previewScope); ?>">
+                                <input type="hidden" name="common_sort_col" value="<?= e($commonSortCol); ?>">
+                                <input type="hidden" name="common_sort_dir" value="<?= e($commonSortDir); ?>">
+                                <input type="hidden" name="preview_sort_col" value="<?= e($previewSortCol); ?>">
+                                <input type="hidden" name="preview_sort_dir" value="<?= e($previewSortDir); ?>">
+                                <button type="submit">Add Row</button>
+                            </form>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="sub-card">
+            <div class="card-head">
+                <div>
+                    <h3>User UI Preview</h3>
+                    <p class="hint">Select an office to see the common rows that office would receive.</p>
+                </div>
+                <div class="action-row">
+                    <a class="btn-small button-link" href="index.php?<?= e(http_build_query([
+                        'page' => 'common_fields',
+                        'segment_id' => $activeSegmentId,
+                        'common_category' => (string)($category['id'] ?? ''),
+                        'preview_scope' => $previewScope,
+                        'common_sort_col' => $commonSortCol,
+                        'common_sort_dir' => $commonSortDir,
+                        'preview_sort_col' => '',
+                        'preview_sort_dir' => 'asc',
+                    ])); ?>">Refresh</a>
+                </div>
+            </div>
+            <form method="get" action="index.php" class="inline-form">
+                <input type="hidden" name="page" value="common_fields">
+                <input type="hidden" name="segment_id" value="<?= e((string)$activeSegmentId); ?>">
+                <input type="hidden" name="common_category" value="<?= e((string)($category['id'] ?? '')); ?>">
+                <input type="hidden" name="common_sort_col" value="<?= e($commonSortCol); ?>">
+                <input type="hidden" name="common_sort_dir" value="<?= e($commonSortDir); ?>">
+                <input type="hidden" name="preview_sort_col" value="<?= e($previewSortCol); ?>">
+                <input type="hidden" name="preview_sort_dir" value="<?= e($previewSortDir); ?>">
+                <label>Preview Office
+                    <div class="filter-picker common-preview-scope-picker" data-common-preview-picker>
+                        <input type="hidden" name="preview_scope" value="<?= e($previewScope); ?>" data-filter-picker-value>
+                        <input type="text" value="<?= e($previewScopeLabel); ?>" placeholder="Select office scope" autocomplete="off" data-filter-picker-input>
+                        <div class="filter-picker-menu" data-filter-picker-menu>
+                            <?php foreach ($previewScopeOptions as $scopeToken => $scopeLabel): ?>
+                                <button
+                                    type="button"
+                                    class="filter-picker-option"
+                                    data-option-value="<?= e((string)$scopeToken); ?>"
+                                    data-option-label="<?= e((string)$scopeLabel); ?>"
+                                ><?= e((string)$scopeLabel); ?></button>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+                </label>
+                <button type="submit" class="btn-small">Preview</button>
+            </form>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <?php foreach ($profileFields as $profileField): ?>
+                                <?php $sortKey = 'field_' . (int)($profileField['child_field_id'] ?? 0); ?>
+                                <th><?= asset_common_sort_link_safe($previewSortParams, $sortKey, (string)($profileField['child_field_label'] ?? 'Field'), $previewSortCol, $previewSortDir, 'preview_sort_col', 'preview_sort_dir'); ?></th>
+                            <?php endforeach; ?>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php if (!$previewRows): ?>
+                            <tr><td colspan="<?= e((string)max(1, count($profileFields))); ?>" class="muted">No common rows match this preview office yet.</td></tr>
+                        <?php else: ?>
+                            <?php foreach ($previewRows as $previewRow): ?>
+                                <tr>
+                                    <?php foreach ($profileFields as $profileField): ?>
+                                        <?php $childFieldId = (int)($profileField['child_field_id'] ?? 0); ?>
+                                        <td><?= e((string)($previewRow['values'][$childFieldId] ?? '')); ?></td>
+                                    <?php endforeach; ?>
+                                </tr>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+    <?php
+};
+?>
+
+<section class="card">
+    <h1>Common Fields</h1>
+    <p class="hint">Manage `superadmin_defined` common rows here. `user_defined` common fields stay in the Management flow for now.</p>
+</section>
+
+<?php if (!$segments): ?>
+    <section class="card">
+        <p class="muted">No segments have `superadmin_defined` common fields yet.</p>
+    </section>
+<?php else: ?>
+    <section class="card card-transparent segment-switch-card">
+        <div class="toolbar-row scope-switch-row">
+            <?php foreach ($segments as $segment): ?>
+                <?php $segmentId = (int)($segment['id'] ?? 0); ?>
+                <a class="button-link<?= $segmentId === $activeSegmentId ? ' is-active' : ''; ?>" href="index.php?<?= e(http_build_query([
+                    'page' => 'common_fields',
+                    'segment_id' => $segmentId,
+                    'preview_scope' => $previewScope,
+                    'common_sort_col' => $commonSortCol,
+                    'common_sort_dir' => $commonSortDir,
+                    'preview_sort_col' => $previewSortCol,
+                    'preview_sort_dir' => $previewSortDir,
+                ])); ?>"><?= e((string)($segment['segment_name'] ?? 'Segment')); ?></a>
+            <?php endforeach; ?>
+        </div>
+    </section>
+
+    <section class="card">
+        <h2><?= e((string)($activeSegment['segment_name'] ?? 'Segment')); ?></h2>
+        <p class="hint">Manage `superadmin_defined` common rows for this segment.</p>
+    </section>
+
+    <?php if (!$commonRowsSupported): ?>
+        <section class="card">
+            <p class="hint">This segment has more than one category, so it no longer matches the current common-fields rule. The legacy common-field data is shown here for review only. To align with the new rule, reduce the segment to zero or one category or remove the legacy common-field setup.</p>
+        </section>
+    <?php endif; ?>
+
+    <?php if ($activeProfile && $activeProfileId > 0): ?>
+        <section class="card">
+            <h2>Category Type Selection</h2>
+            <form method="post" action="index.php" class="inline-form common-fields-policy-form">
+                <?= csrf_input(); ?>
+                <input type="hidden" name="action" value="save_asset_common_profile_row_policy">
+                <input type="hidden" name="profile_id" value="<?= e((string)$activeProfileId); ?>">
+                <input type="hidden" name="segment_id" value="<?= e((string)$activeSegmentId); ?>">
+                <input type="hidden" name="common_category" value="<?= e((string)$activeCategoryKey); ?>">
+                <input type="hidden" name="preview_scope" value="<?= e($previewScope); ?>">
+                <input type="hidden" name="common_sort_col" value="<?= e($commonSortCol); ?>">
+                <input type="hidden" name="common_sort_dir" value="<?= e($commonSortDir); ?>">
+                <input type="hidden" name="preview_sort_col" value="<?= e($previewSortCol); ?>">
+                <input type="hidden" name="preview_sort_dir" value="<?= e($previewSortDir); ?>">
+                <label>Category Type
+                    <select name="common_row_policy">
+                        <?php foreach ($commonRowPolicyOptions as $policyValue => $policyLabel): ?>
+                            <option value="<?= e((string)$policyValue); ?>" <?= (string)($activeProfile['row_policy'] ?? asset_common_row_policy_fixed()) === (string)$policyValue ? 'selected' : ''; ?>><?= e((string)$policyLabel); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </label>
+                <button type="submit" class="btn-small">Save</button>
+            </form>
+        </section>
+        <section class="card">
+            <h2>Excel Template</h2>
+            <form method="post" action="index.php" class="grid common-fields-template-grid" enctype="multipart/form-data">
+                <div>
+                    <a class="button-link" href="index.php?<?= e(http_build_query([
+                        'page' => 'download_asset_common_admin_template',
+                        'segment_id' => $activeSegmentId,
+                        'common_category' => $activeCategoryKey,
+                        'preview_scope' => $previewScope,
+                        'common_sort_col' => $commonSortCol,
+                        'common_sort_dir' => $commonSortDir,
+                        'preview_sort_col' => $previewSortCol,
+                        'preview_sort_dir' => $previewSortDir,
+                    ])); ?>">Download Excel Template</a>
+                </div>
+                <div>
+                    <input type="file" name="template_file" accept=".xlsx,.xls" required>
+                </div>
+                <div>
+                    <?= csrf_input(); ?>
+                    <input type="hidden" name="action" value="upload_asset_common_admin_template">
+                    <input type="hidden" name="segment_id" value="<?= e((string)$activeSegmentId); ?>">
+                    <input type="hidden" name="profile_id" value="<?= e((string)$activeProfileId); ?>">
+                    <input type="hidden" name="redirect_page" value="common_fields">
+                    <input type="hidden" name="common_category" value="<?= e((string)$activeCategoryKey); ?>">
+                    <input type="hidden" name="preview_scope" value="<?= e($previewScope); ?>">
+                    <input type="hidden" name="common_sort_col" value="<?= e($commonSortCol); ?>">
+                    <input type="hidden" name="common_sort_dir" value="<?= e($commonSortDir); ?>">
+                    <input type="hidden" name="preview_sort_col" value="<?= e($previewSortCol); ?>">
+                    <input type="hidden" name="preview_sort_dir" value="<?= e($previewSortDir); ?>">
+                    <button type="submit" class="btn-small">Upload Filled Up Excel Sheet</button>
+                </div>
+            </form>
+        </section>
+        <?php $renderProfileSection($activeProfile); ?>
+    <?php else: ?>
+        <section class="card">
+            <p class="muted">No `superadmin_defined` profile exists for this segment.</p>
+        </section>
+    <?php endif; ?>
+<?php endif; ?>
+
+<script>
+(function () {
+    function normalizeConditionalOptionValue(value) {
+        return String(value || '')
+            .trim()
+            .replace(/_/g, ' ')
+            .replace(/\s+/g, ' ')
+            .toLowerCase();
+    }
+
+    function resolveConditionalMapKey(map, value) {
+        var normalized = normalizeConditionalOptionValue(value);
+        var keys = Object.keys(map || {});
+        for (var i = 0; i < keys.length; i += 1) {
+            if (normalizeConditionalOptionValue(keys[i]) === normalized) {
+                return keys[i];
+            }
+        }
+        return '';
+    }
+
+    function resolveConditionalOptionValue(options, value) {
+        var normalized = normalizeConditionalOptionValue(value);
+        for (var i = 0; i < (options || []).length; i += 1) {
+            if (normalizeConditionalOptionValue(options[i]) === normalized) {
+                return options[i];
+            }
+        }
+        return '';
+    }
+
+    function syncCommonConditionalSelects(container) {
+        Array.prototype.slice.call(container.querySelectorAll('[data-conditional-primary="1"]')).forEach(function (primarySelect) {
+            var childKey = primarySelect.getAttribute('data-conditional-child') || '';
+            if (!childKey) {
+                return;
+            }
+            var childSelect = container.querySelector('[data-field-key="' + childKey + '"][data-conditional-secondary]');
+            if (!childSelect) {
+                return;
+            }
+            var map = {};
+            try {
+                map = JSON.parse(primarySelect.getAttribute('data-conditional-map') || '{}');
+            } catch (error) {
+                map = {};
+            }
+            var previousValue = childSelect.value || '';
+            var mapKey = resolveConditionalMapKey(map, primarySelect.value);
+            var allowed = mapKey && Array.isArray(map[mapKey]) ? map[mapKey] : [];
+            childSelect.innerHTML = '<option value=""></option>';
+            allowed.forEach(function (optionValue) {
+                var option = document.createElement('option');
+                option.value = optionValue;
+                option.textContent = optionValue;
+                childSelect.appendChild(option);
+            });
+            childSelect.value = resolveConditionalOptionValue(allowed, previousValue);
+        });
+    }
+
+    Array.prototype.slice.call(document.querySelectorAll('.table-wrap table tbody tr')).forEach(function (row) {
+        syncCommonConditionalSelects(row);
+        Array.prototype.slice.call(row.querySelectorAll('[data-conditional-primary="1"]')).forEach(function (primarySelect) {
+            primarySelect.addEventListener('change', function () {
+                syncCommonConditionalSelects(row);
+            });
+        });
+    });
+
+    var pickers = Array.prototype.slice.call(document.querySelectorAll('[data-common-preview-picker]'));
+    if (!pickers.length) {
+        return;
+    }
+
+    function closeAll(exceptPicker) {
+        pickers.forEach(function (picker) {
+            if (picker !== exceptPicker) {
+                picker.classList.remove('is-open');
+            }
+        });
+    }
+
+    function syncSelectedState(picker) {
+        var valueInput = picker.querySelector('[data-filter-picker-value]');
+        var textInput = picker.querySelector('[data-filter-picker-input]');
+        var currentValue = valueInput ? String(valueInput.value || '') : '';
+        var matched = null;
+        Array.prototype.slice.call(picker.querySelectorAll('.filter-picker-option')).forEach(function (option) {
+            var isMatch = String(option.getAttribute('data-option-value') || '') === currentValue;
+            option.classList.toggle('is-active', isMatch);
+            if (isMatch) {
+                matched = option;
+            }
+        });
+        if (textInput && matched) {
+            textInput.value = matched.getAttribute('data-option-label') || '';
+        }
+        picker.classList.toggle('is-selected', currentValue !== '');
+    }
+
+    function filterOptions(picker, query) {
+        var normalized = String(query || '').trim().toLowerCase();
+        Array.prototype.slice.call(picker.querySelectorAll('.filter-picker-option')).forEach(function (option) {
+            var label = String(option.getAttribute('data-option-label') || '').toLowerCase();
+            option.hidden = normalized !== '' && label.indexOf(normalized) === -1;
+        });
+    }
+
+    pickers.forEach(function (picker) {
+        var valueInput = picker.querySelector('[data-filter-picker-value]');
+        var textInput = picker.querySelector('[data-filter-picker-input]');
+        if (!valueInput || !textInput) {
+            return;
+        }
+
+        syncSelectedState(picker);
+
+        textInput.addEventListener('focus', function () {
+            closeAll(picker);
+            filterOptions(picker, textInput.value);
+            picker.classList.add('is-open');
+        });
+
+        textInput.addEventListener('input', function () {
+            closeAll(picker);
+            filterOptions(picker, textInput.value);
+            picker.classList.add('is-open');
+        });
+
+        textInput.addEventListener('keydown', function (event) {
+            if (event.key === 'Escape') {
+                picker.classList.remove('is-open');
+            }
+        });
+
+        Array.prototype.slice.call(picker.querySelectorAll('.filter-picker-option')).forEach(function (option) {
+            option.addEventListener('click', function () {
+                valueInput.value = option.getAttribute('data-option-value') || '';
+                textInput.value = option.getAttribute('data-option-label') || '';
+                syncSelectedState(picker);
+                picker.classList.remove('is-open');
+            });
+        });
+    });
+
+    document.addEventListener('click', function (event) {
+        if (!event.target.closest('[data-common-preview-picker]')) {
+            closeAll(null);
+        }
+    });
+})();
+</script>
+
+<?php require __DIR__ . '/footer.php'; ?>

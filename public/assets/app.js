@@ -837,6 +837,19 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
+    document.querySelectorAll('[data-user-common-declare]').forEach((form) => {
+        const parentSegmentSelect = form.querySelector('[data-user-common-parent-segment]');
+        const parentFieldSelect = form.querySelector('[data-user-common-parent-field]');
+        if (!parentSegmentSelect || !parentFieldSelect) {
+            return;
+        }
+        const syncUserDefinedParentFieldOptions = () => {
+            filterCommonParentOptions(parentFieldSelect, String(parentSegmentSelect.value || ''));
+        };
+        syncUserDefinedParentFieldOptions();
+        parentSegmentSelect.addEventListener('change', syncUserDefinedParentFieldOptions);
+    });
+
     const syncCommonRowSections = (container) => {
         const typeSelect = container?.querySelector('[data-field-type-select]');
         const toggle = container?.querySelector('[data-common-row-toggle]');

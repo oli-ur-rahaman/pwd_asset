@@ -949,9 +949,6 @@ function asset_has_multiple_segments(bool $includeInactive = false): bool
 
 function asset_normalize_segment_id(?int $segmentId = null): int
 {
-    if ($segmentId !== null && $segmentId > 0) {
-        return asset_active_segment_id($segmentId, true);
-    }
     return asset_active_segment_id($segmentId);
 }
 
@@ -1259,138 +1256,8 @@ function get_asset_common_profile_by_category(int $categoryId, ?int $segmentId =
     return $row ?: null;
 }
 
-function asset_user_defined_common_child_field_needs_sync(array $childField, array $payload): bool
-{
-    $checks = [
-        'label',
-        'data_type',
-        'mandatory_scope',
-        'field_information',
-        'video_tutorial_url',
-        'hosted_tutorial_video_path',
-        'hosted_tutorial_video_original_name',
-        'hosted_tutorial_video_size',
-        'fill_color',
-        'number_format_rule',
-        'text_max_length',
-        'is_required',
-        'is_displayed',
-        'is_import_enabled',
-        'is_unique',
-        'filter_scope',
-    ];
-    foreach ($checks as $key) {
-        if ((string)($childField[$key] ?? '') !== (string)($payload[$key] ?? '')) {
-            return true;
-        }
-    }
-
-    if (asset_is_conditional_primary($childField)) {
-        $childConditionalMap = asset_decode_conditional_map($childField);
-        $expectedConditionalMap = (array)($payload['conditional_map'] ?? []);
-        if ($childConditionalMap !== $expectedConditionalMap) {
-            return true;
-        }
-    } else {
-        $childOptions = array_values(array_map(
-            static fn(array $option): string => (string)($option['option_value'] ?? ''),
-            get_asset_field_options((int)($childField['id'] ?? 0))
-        ));
-        $expectedOptions = array_values(array_map('strval', (array)($payload['options'] ?? [])));
-        if ($childOptions !== $expectedOptions) {
-            return true;
-        }
-    }
-
-    return false;
-}
-
-function asset_common_repair_legacy_user_defined_bindings(int $profileId): void
-{
-    static $checked = [];
-    if ($profileId <= 0 || isset($checked[$profileId])) {
-        return;
-    }
-    $checked[$profileId] = true;
-
-    $profile = get_asset_common_profile($profileId, true);
-    if (!$profile || (string)($profile['definition_mode'] ?? '') !== asset_common_definition_mode_user_defined()) {
-        return;
-    }
-
-    $stmt = db()->prepare('
-        SELECT pf.child_field_id, pf.parent_field_id, pf.sort_order, p.segment_id AS child_segment_id, p.parent_segment_id, p.row_policy
-        FROM asset_common_profile_fields pf
-        JOIN asset_common_profiles p ON p.id = pf.profile_id
-        WHERE pf.profile_id = ?
-        ORDER BY pf.sort_order ASC, pf.id ASC
-    ');
-    $stmt->execute([$profileId]);
-    $bindings = $stmt->fetchAll();
-    if (!$bindings) {
-        return;
-    }
-
-    $syncedParentIds = [];
-    $didRepair = false;
-    foreach ($bindings as $binding) {
-        $parentFieldId = (int)($binding['parent_field_id'] ?? 0);
-        $childFieldId = (int)($binding['child_field_id'] ?? 0);
-        $childSegmentId = (int)($binding['child_segment_id'] ?? 0);
-        $parentSegmentId = (int)($binding['parent_segment_id'] ?? 0);
-        if ($parentFieldId <= 0 || $childFieldId <= 0 || $childSegmentId <= 0 || $parentSegmentId <= 0) {
-            continue;
-        }
-        if (isset($syncedParentIds[$parentFieldId])) {
-            continue;
-        }
-
-        $parentField = get_asset_field($parentFieldId, $parentSegmentId);
-        $childField = get_asset_field($childFieldId, $childSegmentId);
-        if (!$parentField || !$childField) {
-            continue;
-        }
-
-        $payload = asset_build_user_defined_common_field_payload(
-            $childSegmentId,
-            $parentSegmentId,
-            $parentFieldId,
-            (string)($binding['row_policy'] ?? asset_common_row_policy_fixed()),
-            (int)($binding['sort_order'] ?? 0)
-        );
-        $payload['segment_id'] = $childSegmentId;
-        $payload['sort_order'] = (int)($binding['sort_order'] ?? 0);
-
-        $needsSync = asset_user_defined_common_child_field_needs_sync($childField, $payload);
-        if (!$needsSync && asset_is_conditional_primary($parentField)) {
-            $needsSync = get_asset_conditional_child_field((int)($childField['id'] ?? 0), true, $childSegmentId) === null;
-        }
-        if (!$needsSync) {
-            continue;
-        }
-
-        try {
-            asset_sync_user_defined_child_fields_from_parent($parentFieldId, $parentSegmentId);
-            $syncedParentIds[$parentFieldId] = true;
-            $didRepair = true;
-        } catch (Throwable $e) {
-            error_log('Legacy user_defined common-field repair skipped for parent field ' . $parentFieldId . ': ' . $e->getMessage());
-        }
-    }
-
-    if ($didRepair) {
-        try {
-            asset_common_repair_conditional_profile_bindings($profileId);
-            asset_sync_common_rows_for_profile_across_offices($profileId);
-        } catch (Throwable $e) {
-            error_log('Legacy user_defined common-row sync skipped for profile ' . $profileId . ': ' . $e->getMessage());
-        }
-    }
-}
-
 function get_asset_common_profile_fields(int $profileId): array
 {
-    asset_common_repair_legacy_user_defined_bindings($profileId);
     asset_common_repair_conditional_profile_bindings($profileId);
     $stmt = db()->prepare('
         SELECT pf.*, f.field_key AS child_field_key, f.label AS child_field_label,
@@ -1495,50 +1362,6 @@ function get_asset_common_profile_field_bindings_for_segment(int $segmentId): ar
         $map[(int)$row['child_field_id']] = $row;
     }
     return $map;
-}
-
-function get_asset_common_profile_field_bindings_by_parent_field(int $parentFieldId): array
-{
-    if ($parentFieldId <= 0) {
-        return [];
-    }
-    $stmt = db()->prepare(
-        'SELECT pf.*, p.segment_id, p.category_id, p.definition_mode, p.row_policy, p.parent_segment_id, p.parent_category_id,
-                child.field_key AS child_field_key, child.label AS child_field_label, child.segment_id AS child_segment_id,
-                parent.field_key AS parent_field_key, parent.label AS parent_field_label,
-                seg.segment_name AS child_segment_name
-         FROM asset_common_profile_fields pf
-         JOIN asset_common_profiles p ON p.id = pf.profile_id
-         JOIN asset_fields child ON child.id = pf.child_field_id
-         LEFT JOIN asset_fields parent ON parent.id = pf.parent_field_id
-         LEFT JOIN segments seg ON seg.id = child.segment_id
-         WHERE pf.parent_field_id = ?
-         ORDER BY pf.sort_order ASC, pf.id ASC'
-    );
-    $stmt->execute([$parentFieldId]);
-    return $stmt->fetchAll();
-}
-
-function asset_common_user_defined_binding_by_child_field(int $childFieldId): ?array
-{
-    $binding = get_asset_common_profile_field_binding_by_child_field($childFieldId);
-    if (!$binding || (string)($binding['definition_mode'] ?? '') !== asset_common_definition_mode_user_defined()) {
-        return null;
-    }
-    return $binding;
-}
-
-function asset_common_user_defined_bindings_by_parent_field(int $parentFieldId): array
-{
-    return array_values(array_filter(
-        get_asset_common_profile_field_bindings_by_parent_field($parentFieldId),
-        static fn(array $binding): bool => (string)($binding['definition_mode'] ?? '') === asset_common_definition_mode_user_defined()
-    ));
-}
-
-function asset_field_is_inherited_user_defined(array $field): bool
-{
-    return asset_common_user_defined_binding_by_child_field((int)($field['id'] ?? 0)) !== null;
 }
 
 function asset_common_profiles_by_category_map(int $segmentId, bool $includeInactive = true): array
@@ -1658,270 +1481,6 @@ function asset_common_conditional_pair(array $field, ?int $segmentId = null): ar
         ? get_asset_conditional_child_field((int)$primary['id'], true, $segmentId)
         : null;
     return ['primary' => $primary, 'secondary' => $secondary];
-}
-
-function asset_common_dependency_field_ids(array $field, ?int $segmentId = null): array
-{
-    $segmentId = asset_normalize_segment_id($segmentId ?? (int)($field['segment_id'] ?? 0));
-    $pair = asset_common_conditional_pair($field, $segmentId);
-    $ids = [];
-    if ($pair['primary']) {
-        $ids[] = (int)($pair['primary']['id'] ?? 0);
-    }
-    if ($pair['secondary']) {
-        $ids[] = (int)($pair['secondary']['id'] ?? 0);
-    }
-    $ids = array_values(array_filter(array_unique(array_map('intval', $ids)), static fn(int $id): bool => $id > 0));
-    if ($ids !== []) {
-        return $ids;
-    }
-    $fieldId = (int)($field['id'] ?? 0);
-    return $fieldId > 0 ? [$fieldId] : [];
-}
-
-function asset_common_user_defined_binding_has_dependent_data(int $childFieldId): bool
-{
-    $binding = asset_common_user_defined_binding_by_child_field($childFieldId);
-    if (!$binding) {
-        return false;
-    }
-    $field = get_asset_field($childFieldId, (int)($binding['segment_id'] ?? 0));
-    if (!$field) {
-        return false;
-    }
-    $fieldIds = asset_common_dependency_field_ids($field, (int)($binding['segment_id'] ?? 0));
-    if ($fieldIds === []) {
-        return false;
-    }
-    $placeholders = implode(',', array_fill(0, count($fieldIds), '?'));
-    $params = array_merge([(int)$binding['profile_id']], $fieldIds);
-    $stmt = db()->prepare(
-        "SELECT COUNT(*)
-         FROM asset_values v
-         JOIN assets a ON a.id = v.asset_id
-         WHERE a.common_profile_id = ?
-           AND a.deleted_at IS NULL
-           AND a.active_status = 1
-           AND v.field_id IN ({$placeholders})"
-    );
-    $stmt->execute($params);
-    return (int)$stmt->fetchColumn() > 0;
-}
-
-function asset_common_user_defined_parent_has_addable_manual_child_data(int $parentFieldId): bool
-{
-    foreach (asset_common_user_defined_bindings_by_parent_field($parentFieldId) as $binding) {
-        if ((string)($binding['row_policy'] ?? '') !== asset_common_row_policy_addable()) {
-            continue;
-        }
-        $childField = get_asset_field((int)($binding['child_field_id'] ?? 0), (int)($binding['child_segment_id'] ?? 0));
-        if (!$childField) {
-            continue;
-        }
-        $fieldIds = asset_common_dependency_field_ids($childField, (int)($binding['child_segment_id'] ?? 0));
-        if ($fieldIds === []) {
-            continue;
-        }
-        $placeholders = implode(',', array_fill(0, count($fieldIds), '?'));
-        $params = array_merge([(int)$binding['profile_id']], $fieldIds);
-        $stmt = db()->prepare(
-            "SELECT COUNT(*)
-             FROM asset_values v
-             JOIN assets a ON a.id = v.asset_id
-             WHERE a.common_profile_id = ?
-               AND a.is_user_added_row = 1
-               AND a.deleted_at IS NULL
-               AND a.active_status = 1
-               AND v.field_id IN ({$placeholders})"
-        );
-        $stmt->execute($params);
-        if ((int)$stmt->fetchColumn() > 0) {
-            return true;
-        }
-    }
-    return false;
-}
-
-function asset_common_user_defined_parent_dependency_labels(int $parentFieldId): array
-{
-    $labels = [];
-    foreach (asset_common_user_defined_bindings_by_parent_field($parentFieldId) as $binding) {
-        $segmentLabel = trim((string)($binding['child_segment_name'] ?? ''));
-        $fieldLabel = trim((string)($binding['child_field_label'] ?? $binding['child_field_key'] ?? ''));
-        $label = trim($segmentLabel . ($fieldLabel !== '' ? ' -> ' . $fieldLabel : ''));
-        if ($label !== '') {
-            $labels[$label] = true;
-        }
-    }
-    return array_keys($labels);
-}
-
-function asset_common_user_defined_parent_dependency_message(int $parentFieldId, string $prefix): string
-{
-    $labels = asset_common_user_defined_parent_dependency_labels($parentFieldId);
-    if ($labels === []) {
-        return $prefix;
-    }
-    return $prefix . ' Dependent child fields: ' . implode(', ', $labels) . '.';
-}
-
-function asset_build_user_defined_common_field_payload(int $segmentId, int $parentSegmentId, int $parentFieldId, string $rowPolicy, int $sortOrder): array
-{
-    $segmentId = asset_normalize_segment_id($segmentId);
-    $parentSegmentId = asset_normalize_segment_id($parentSegmentId);
-    $rowPolicy = asset_normalize_common_row_policy($rowPolicy);
-    $profileCategoryId = asset_segment_common_profile_category_id($segmentId);
-    $parentCategoryId = asset_segment_common_profile_category_id($parentSegmentId);
-    $parentField = get_asset_field($parentFieldId, $parentSegmentId);
-    if (!$parentField) {
-        throw new RuntimeException('Parent field not found.');
-    }
-    if (asset_is_conditional_secondary($parentField)) {
-        $parentField = asset_common_resolve_binding_field((int)$parentField['id'], $parentSegmentId) ?: $parentField;
-    }
-    $dataType = (string)($parentField['data_type'] ?? '');
-    if (!in_array($dataType, asset_common_supported_field_data_types(), true)) {
-        throw new RuntimeException('Parent field type is not supported for user-defined common fields.');
-    }
-
-    $primaryFieldKey = asset_next_available_field_key((string)($parentField['field_key'] ?? $parentField['label']), $segmentId);
-    $payload = [
-        'segment_id' => $segmentId,
-        'field_key' => $primaryFieldKey,
-        'label' => (string)($parentField['label'] ?? ''),
-        'data_type' => $dataType,
-        'field_information' => (string)($parentField['field_information'] ?? ''),
-        'video_tutorial_url' => (string)($parentField['video_tutorial_url'] ?? ''),
-        'fill_color' => (string)($parentField['fill_color'] ?? ''),
-        'tutorial_video_upload' => null,
-        'hosted_tutorial_video_filename' => '',
-        'remove_hosted_tutorial_video' => false,
-        'number_format_rule' => (string)($parentField['number_format_rule'] ?? ''),
-        'text_max_length' => (int)($parentField['text_max_length'] ?? 0) ?: null,
-        'mandatory_scope' => (int)($parentField['mandatory_scope'] ?? asset_mandatory_scope_optional()),
-        'is_required' => (int)($parentField['is_required'] ?? 0),
-        'is_displayed' => (int)($parentField['is_displayed'] ?? 1),
-        'is_import_enabled' => (int)($parentField['is_import_enabled'] ?? 1),
-        'is_unique' => (int)($parentField['is_unique'] ?? 0),
-        'is_filter_enabled' => (int)($parentField['is_filter_enabled'] ?? 0),
-        'filter_scope' => (int)($parentField['filter_scope'] ?? asset_filter_scope_none()),
-        'is_common_download_field' => (int)($parentField['is_common_download_field'] ?? 0),
-        'is_download_level1' => (int)($parentField['is_download_level1'] ?? 0),
-        'is_download_filter' => (int)($parentField['is_download_filter'] ?? 0),
-        'is_download_sort' => (int)($parentField['is_download_sort'] ?? 0),
-        'is_download_zip_file_selectable' => 0,
-        'is_download_token' => (int)($parentField['is_download_token'] ?? 0),
-        'common_row_config_present' => 1,
-        'is_common_row_field' => 1,
-        'common_profile_category_id' => $profileCategoryId,
-        'common_definition_mode' => asset_common_definition_mode_user_defined(),
-        'common_row_policy' => $rowPolicy,
-        'common_parent_segment_id' => $parentSegmentId,
-        'common_parent_category_id' => $parentCategoryId,
-        'common_parent_field_id' => (int)($parentField['id'] ?? 0),
-        'sort_order' => $sortOrder,
-        'options' => $dataType === 'dropdown' ? asset_field_options_payload((int)$parentField['id']) : [],
-        'file_rule' => asset_default_file_rule(),
-        'secondary_label' => '',
-        'secondary_field_information' => '',
-        'secondary_video_tutorial_url' => '',
-        'secondary_fill_color' => '',
-        'secondary_tutorial_video_upload' => null,
-        'secondary_hosted_tutorial_video_filename' => '',
-        'remove_secondary_hosted_tutorial_video' => false,
-        'secondary_field_key' => '',
-        'secondary_options' => [],
-        'conditional_map' => [],
-    ];
-
-    if ($dataType === 'conditional') {
-        $parentSecondary = get_asset_conditional_child_field((int)$parentField['id'], true, $parentSegmentId);
-        if (!$parentSecondary) {
-            throw new RuntimeException('The selected parent conditional field has no secondary field.');
-        }
-        $payload['options'] = asset_field_options_payload((int)$parentField['id']);
-        $payload['conditional_map'] = asset_decode_conditional_map($parentField);
-        $payload['secondary_label'] = (string)($parentSecondary['label'] ?? '');
-        $payload['secondary_field_information'] = (string)($parentSecondary['field_information'] ?? '');
-        $payload['secondary_video_tutorial_url'] = (string)($parentSecondary['video_tutorial_url'] ?? '');
-        $payload['secondary_fill_color'] = (string)($parentSecondary['fill_color'] ?? '');
-        $payload['secondary_options'] = asset_field_options_payload((int)$parentSecondary['id']);
-        $payload['secondary_field_key'] = asset_next_available_field_key(
-            (string)($parentSecondary['field_key'] ?? $parentSecondary['label']),
-            $segmentId,
-            [$primaryFieldKey]
-        );
-    }
-
-    return $payload;
-}
-
-function create_user_defined_common_field_declaration(int $segmentId, int $parentSegmentId, int $parentFieldId, string $rowPolicy, int $sortOrder = 0): void
-{
-    $segmentId = asset_normalize_segment_id($segmentId);
-    $parentSegmentId = asset_normalize_segment_id($parentSegmentId);
-    if ($segmentId <= 0) {
-        throw new RuntimeException('Child segment is required.');
-    }
-    if ($parentSegmentId <= 0) {
-        throw new RuntimeException('Parent segment is required.');
-    }
-    if ($segmentId === $parentSegmentId) {
-        throw new RuntimeException('Parent segment must be different from the child segment.');
-    }
-    if (!asset_segment_common_rows_supported($segmentId)) {
-        throw new RuntimeException('User-defined common fields are allowed only in segments with zero or one category.');
-    }
-    if (!asset_segment_common_rows_supported($parentSegmentId)) {
-        throw new RuntimeException('Parent segment for user-defined common fields must have zero or one category.');
-    }
-
-    $parentField = get_asset_field($parentFieldId, $parentSegmentId);
-    if (!$parentField) {
-        throw new RuntimeException('Parent field not found.');
-    }
-    if (asset_is_conditional_secondary($parentField)) {
-        throw new RuntimeException('Select the primary conditional field, not the secondary field.');
-    }
-
-    $existingProfiles = get_asset_common_profiles_for_segment($segmentId, true);
-    $existingProfile = $existingProfiles[0] ?? null;
-    $parentCategoryId = asset_segment_common_profile_category_id($parentSegmentId);
-    if ($existingProfile) {
-        if ((string)($existingProfile['definition_mode'] ?? '') !== asset_common_definition_mode_user_defined()) {
-            throw new RuntimeException('This segment already uses superadmin-defined common rows. User-defined inherited fields cannot be mixed here.');
-        }
-        if (asset_normalize_segment_id((int)($existingProfile['parent_segment_id'] ?? 0)) !== $parentSegmentId
-            || (int)($existingProfile['parent_category_id'] ?? 0) !== $parentCategoryId
-        ) {
-            throw new RuntimeException('This segment already points to another parent segment/category. All inherited user-defined fields here must come from the same parent table.');
-        }
-    }
-
-    foreach (asset_common_user_defined_bindings_by_parent_field((int)$parentField['id']) as $binding) {
-        if ((int)($binding['child_segment_id'] ?? 0) === $segmentId) {
-            throw new RuntimeException('This parent field is already declared as an inherited user-defined field in the current segment.');
-        }
-    }
-
-    $payload = asset_build_user_defined_common_field_payload($segmentId, $parentSegmentId, (int)$parentField['id'], $rowPolicy, $sortOrder);
-    create_asset_field($payload);
-}
-
-function delete_user_defined_common_field_declaration(int $childFieldId, ?int $segmentId = null): bool
-{
-    $field = get_asset_field($childFieldId, $segmentId);
-    if (!$field) {
-        return false;
-    }
-    $binding = asset_common_user_defined_binding_by_child_field((int)$field['id']);
-    if (!$binding) {
-        throw new RuntimeException('This field is not an inherited user-defined common field.');
-    }
-    if (asset_common_user_defined_binding_has_dependent_data((int)$field['id'])) {
-        throw new RuntimeException('This inherited user-defined field cannot be removed because dependent child data already exists.');
-    }
-    return delete_asset_field((int)$field['id'], $segmentId);
 }
 
 function asset_common_delete_profile_binding_by_child_field(int $childFieldId, ?int $actingUserId = null): int
@@ -2179,11 +1738,6 @@ function asset_upsert_common_profile_binding(int $childFieldId, array $payload):
     $oldProfileId = (int)($existingBinding['profile_id'] ?? 0);
     $enabled = !empty($payload['is_common_row_field']);
     if (!$enabled) {
-        if ((string)($existingBinding['definition_mode'] ?? '') === asset_common_definition_mode_user_defined()
-            && asset_common_user_defined_binding_has_dependent_data($childFieldId)
-        ) {
-            throw new RuntimeException('This inherited user-defined field cannot be detached because dependent child data already exists.');
-        }
         if ($conditionalSecondary) {
             asset_common_delete_profile_binding_by_child_field((int)$conditionalSecondary['id'], (int)($payload['acting_user_id'] ?? 0));
         }
@@ -2272,37 +1826,6 @@ function asset_sync_common_profiles_after_binding_change(array $bindingChange, ?
     }
     if ($newProfileId > 0) {
         asset_sync_common_rows_for_profile_across_offices($newProfileId, $actingUserId);
-    }
-}
-
-function asset_sync_user_defined_child_fields_from_parent(int $parentFieldId, ?int $segmentId = null): void
-{
-    $parentField = get_asset_field($parentFieldId, $segmentId);
-    if (!$parentField || asset_is_conditional_secondary($parentField)) {
-        return;
-    }
-    $parentSegmentId = (int)($parentField['segment_id'] ?? 0);
-    $parentIsConditional = asset_is_conditional_primary($parentField);
-    foreach (asset_common_user_defined_bindings_by_parent_field($parentFieldId) as $binding) {
-        $childSegmentId = (int)($binding['child_segment_id'] ?? 0);
-        $childFieldId = (int)($binding['child_field_id'] ?? 0);
-        if ($childSegmentId <= 0 || $childFieldId <= 0) {
-            continue;
-        }
-        $childField = get_asset_field($childFieldId, $childSegmentId);
-        if (!$childField) {
-            continue;
-        }
-        $payload = asset_build_user_defined_common_field_payload(
-            $childSegmentId,
-            $parentSegmentId,
-            $parentFieldId,
-            (string)($binding['row_policy'] ?? asset_common_row_policy_fixed()),
-            (int)($binding['sort_order'] ?? 0)
-        );
-        $payload['segment_id'] = $childSegmentId;
-        $payload['sort_order'] = (int)($binding['sort_order'] ?? 0);
-        update_asset_field($childFieldId, $payload);
     }
 }
 
@@ -4459,7 +3982,12 @@ function get_asset_management_fields(bool $includeInactive = false, ?int $segmen
 
 function get_asset_conditional_child_field(int $parentFieldId, bool $includeInactive = true, ?int $segmentId = null): ?array
 {
+    static $cache = [];
     $normalizedSegmentId = asset_normalize_segment_id($segmentId);
+    $cacheKey = $parentFieldId . ':' . ($includeInactive ? '1' : '0') . ':' . $normalizedSegmentId;
+    if (array_key_exists($cacheKey, $cache)) {
+        return $cache[$cacheKey];
+    }
     $sql = 'SELECT * FROM asset_fields WHERE secondary_of_field_id = ? AND segment_id = ? AND deleted_at IS NULL';
     $params = [$parentFieldId, $normalizedSegmentId];
     if (!$includeInactive) {
@@ -4470,13 +3998,16 @@ function get_asset_conditional_child_field(int $parentFieldId, bool $includeInac
     $stmt->execute($params);
     $row = $stmt->fetch();
     if ($row) {
-        return $row;
+        $cache[$cacheKey] = $row;
+        return $cache[$cacheKey];
     }
     foreach (get_asset_fields($includeInactive, $normalizedSegmentId) as $field) {
         if ((int)($field['secondary_of_field_id'] ?? 0) === $parentFieldId) {
-            return $field;
+            $cache[$cacheKey] = $field;
+            return $cache[$cacheKey];
         }
     }
+    $cache[$cacheKey] = null;
     return null;
 }
 
@@ -7259,41 +6790,6 @@ function asset_slug(string $value): string
     return trim((string)$value, '_');
 }
 
-function asset_next_available_field_key(string $base, int $segmentId, array $reservedKeys = []): string
-{
-    $base = asset_slug($base);
-    if ($base === '') {
-        $base = 'field';
-    }
-    $reservedLookup = [];
-    foreach ($reservedKeys as $reservedKey) {
-        $reservedLookup[strtolower(trim((string)$reservedKey))] = true;
-    }
-    $candidate = $base;
-    $suffix = 2;
-    while (isset($reservedLookup[strtolower($candidate)]) || get_asset_field_by_key($candidate, $segmentId)) {
-        $candidate = $base . '_' . $suffix;
-        $suffix++;
-    }
-    return $candidate;
-}
-
-function asset_field_options_payload(int $fieldId): array
-{
-    $payload = [];
-    foreach (get_asset_field_options($fieldId, true) as $option) {
-        $value = trim((string)($option['option_value'] ?? ''));
-        if ($value === '') {
-            continue;
-        }
-        $payload[] = [
-            'value' => $value,
-            'label' => trim((string)($option['option_label'] ?? $value)) ?: $value,
-        ];
-    }
-    return $payload;
-}
-
 function asset_board_perf_enabled(): bool
 {
     static $enabled = null;
@@ -7543,6 +7039,11 @@ function get_asset_field_by_key(string $fieldKey, ?int $segmentId = null): ?arra
 
 function get_asset_field_options(int $fieldId, bool $includeInactive = false): array
 {
+    static $cache = [];
+    $cacheKey = $fieldId . ':' . ($includeInactive ? '1' : '0');
+    if (array_key_exists($cacheKey, $cache)) {
+        return $cache[$cacheKey];
+    }
     $sql = 'SELECT * FROM asset_field_options WHERE field_id = ?';
     if (!$includeInactive) {
         $sql .= ' AND active_status = 1';
@@ -7550,7 +7051,8 @@ function get_asset_field_options(int $fieldId, bool $includeInactive = false): a
     $sql .= ' ORDER BY sort_order ASC, id ASC';
     $stmt = db()->prepare($sql);
     $stmt->execute([$fieldId]);
-    return $stmt->fetchAll();
+    $cache[$cacheKey] = $stmt->fetchAll();
+    return $cache[$cacheKey];
 }
 
 function get_asset_field_file_rule(int $fieldId): array
@@ -7734,17 +7236,12 @@ function update_asset_field(int $id, array $payload): void
     if (!$existing) {
         throw new RuntimeException('Field not found.');
     }
-    $targetDataType = (string)($payload['data_type'] ?? '');
     $childField = get_asset_conditional_child_field($id, true, $segmentId);
     $bindingChange = ['old_profile_id' => 0, 'new_profile_id' => 0];
     $createdTutorialFiles = [];
-    $removedSecondaryFieldId = 0;
     db()->beginTransaction();
     try {
-        if ($targetDataType === 'conditional') {
-            if (!$childField) {
-                $childField = asset_create_conditional_secondary_field_for_update($id, $segmentId, $payload, $createdTutorialFiles);
-            }
+        if (($payload['data_type'] ?? '') === 'conditional') {
             $stmt = db()->prepare('UPDATE asset_fields SET label = ?, data_type = ?, field_information = ?, video_tutorial_url = ?, fill_color = ?, number_format_rule = NULL, text_max_length = NULL, conditional_map_json = ?, mandatory_scope = ?, is_required = ?, is_displayed = ?, is_import_enabled = ?, is_unique = 0, is_filter_enabled = ?, filter_scope = ?, is_common_download_field = ?, is_download_level1 = ?, is_download_filter = ?, is_download_sort = ?, is_download_zip_file_selectable = 0, is_download_token = ?, sort_order = ?, updated_at = NOW() WHERE id = ?');
             $stmt->execute([
                 $payload['label'],
@@ -7798,11 +7295,6 @@ function update_asset_field(int $id, array $payload): void
             asset_assign_field_tutorial_video($id, $payload['tutorial_video_upload'] ?? null, (string)($payload['hosted_tutorial_video_filename'] ?? ''), !empty($payload['remove_hosted_tutorial_video']), $createdTutorialFiles);
             asset_assign_field_tutorial_video((int)$childField['id'], $payload['secondary_tutorial_video_upload'] ?? null, (string)($payload['secondary_hosted_tutorial_video_filename'] ?? ''), !empty($payload['remove_secondary_hosted_tutorial_video']), $createdTutorialFiles);
         } else {
-            if ($childField) {
-                $removedSecondaryFieldId = (int)$childField['id'];
-                asset_delete_conditional_secondary_field_for_update($removedSecondaryFieldId, $segmentId, (int)(current_user()['id'] ?? 0));
-                $childField = null;
-            }
             $stmt = db()->prepare('UPDATE asset_fields SET label = ?, data_type = ?, field_information = ?, video_tutorial_url = ?, fill_color = ?, number_format_rule = ?, text_max_length = ?, conditional_map_json = NULL, mandatory_scope = ?, is_required = ?, is_displayed = ?, is_import_enabled = ?, is_unique = ?, is_filter_enabled = ?, filter_scope = ?, is_common_download_field = ?, is_download_level1 = ?, is_download_filter = ?, is_download_sort = ?, is_download_zip_file_selectable = ?, is_download_token = ?, sort_order = ?, updated_at = NOW() WHERE id = ?');
             $stmt->execute([
                 $payload['label'],
@@ -7855,10 +7347,6 @@ function update_asset_field(int $id, array $payload): void
     if ($childField) {
         asset_filter_index_refresh_field((int)$childField['id'], $segmentId);
     }
-    if ($removedSecondaryFieldId > 0) {
-        asset_filter_index_clear_for_fields($segmentId, [$removedSecondaryFieldId]);
-    }
-    asset_sync_user_defined_child_fields_from_parent($id, $segmentId);
 }
 
 function replace_asset_field_options(int $fieldId, array $options): void
@@ -7874,53 +7362,6 @@ function replace_asset_field_options(int $fieldId, array $options): void
         $stmt = db()->prepare('INSERT INTO asset_field_options (field_id, option_value, option_label, sort_order, active_status, created_at) VALUES (?, ?, ?, ?, 1, NOW())');
         $stmt->execute([$fieldId, $value, $label, ($idx + 1) * 10]);
     }
-}
-
-function asset_create_conditional_secondary_field_for_update(int $primaryFieldId, int $segmentId, array $payload, array &$createdTutorialFiles): array
-{
-    $childStmt = db()->prepare('INSERT INTO asset_fields (segment_id, field_key, label, data_type, field_information, video_tutorial_url, fill_color, number_format_rule, text_max_length, secondary_of_field_id, conditional_map_json, mandatory_scope, is_required, is_displayed, is_import_enabled, is_unique, is_filter_enabled, filter_scope, is_common_download_field, is_download_level1, is_download_filter, is_download_sort, is_download_zip_file_selectable, is_download_token, active_status, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, NULL, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, NOW())');
-    $childStmt->execute([
-        $segmentId,
-        $payload['secondary_field_key'],
-        $payload['secondary_label'],
-        'dropdown',
-        $payload['secondary_field_information'] ?: null,
-        $payload['secondary_video_tutorial_url'] ?: null,
-        $payload['secondary_fill_color'] ?: null,
-        $primaryFieldId,
-        $payload['mandatory_scope'],
-        $payload['is_required'],
-        $payload['is_displayed'],
-        $payload['is_import_enabled'],
-        $payload['is_filter_enabled'],
-        $payload['filter_scope'],
-        $payload['is_common_download_field'],
-        0,
-        $payload['is_download_filter'],
-        $payload['is_download_sort'],
-        0,
-        $payload['is_download_token'],
-        ((int)($payload['sort_order'] ?? 0)) + 1,
-    ]);
-    $childId = (int)db()->lastInsertId();
-    replace_asset_field_options($childId, $payload['secondary_options'] ?? []);
-    asset_assign_field_tutorial_video($childId, $payload['secondary_tutorial_video_upload'] ?? null, (string)($payload['secondary_hosted_tutorial_video_filename'] ?? ''), !empty($payload['remove_secondary_hosted_tutorial_video']), $createdTutorialFiles);
-    return get_asset_field($childId, $segmentId) ?? [];
-}
-
-function asset_delete_conditional_secondary_field_for_update(int $secondaryFieldId, int $segmentId, ?int $actingUserId = null): void
-{
-    if ($secondaryFieldId <= 0) {
-        return;
-    }
-    asset_common_delete_profile_binding_by_child_field($secondaryFieldId, $actingUserId);
-    db()->prepare('DELETE FROM asset_common_admin_row_values WHERE child_field_id = ?')->execute([$secondaryFieldId]);
-    db()->prepare('DELETE FROM asset_values WHERE field_id = ?')->execute([$secondaryFieldId]);
-    db()->prepare('DELETE FROM asset_file_values WHERE field_id = ?')->execute([$secondaryFieldId]);
-    db()->prepare('DELETE FROM asset_field_options WHERE field_id = ?')->execute([$secondaryFieldId]);
-    delete_asset_field_file_rule($secondaryFieldId);
-    asset_filter_index_clear_for_fields($segmentId, [$secondaryFieldId]);
-    db()->prepare('DELETE FROM asset_fields WHERE id = ? AND segment_id = ?')->execute([$secondaryFieldId, $segmentId]);
 }
 
 function set_asset_field_status(int $id, int $status, ?int $segmentId = null): void
@@ -7952,16 +7393,6 @@ function delete_asset_field(int $id, ?int $segmentId = null): bool
     $child = get_asset_conditional_child_field($id, true, $segmentId);
     if ($child) {
         $linkedFieldIds[] = (int)$child['id'];
-    }
-    foreach ($linkedFieldIds as $fieldId) {
-        if (asset_common_user_defined_bindings_by_parent_field($fieldId) !== []) {
-            throw new RuntimeException(
-                asset_common_user_defined_parent_dependency_message(
-                    $fieldId,
-                    'This field cannot be deleted because inherited user-defined child fields depend on it.'
-                )
-            );
-        }
     }
     $stmt = db()->prepare('SELECT COUNT(*) FROM asset_values WHERE field_id = ?');
     foreach ($linkedFieldIds as $fieldId) {
@@ -8090,15 +7521,6 @@ function validate_asset_field_definition(array $input, array $fileInput = [], ?i
         || ((string)$existingField['data_type'] !== 'conditional' && $dataType === 'conditional')
     )) {
         $errors[] = 'Changing to or from conditional type is not supported. Create a new field instead.';
-    }
-    if ($existingField
-        && (string)($existingField['data_type'] ?? '') !== $dataType
-        && asset_common_user_defined_parent_has_addable_manual_child_data((int)$existingField['id'])
-    ) {
-        $errors[] = asset_common_user_defined_parent_dependency_message(
-            (int)$existingField['id'],
-            'This field type cannot be changed because addable child data already exists for inherited user-defined fields.'
-        );
     }
     $sortOrder = (int)($input['sort_order'] ?? 0);
     if ($sortOrder <= 0) {
@@ -8348,12 +7770,6 @@ function validate_asset_field_definition(array $input, array $fileInput = [], ?i
                     $errors[] = 'The selected parent conditional field has no secondary field.';
                 }
             }
-        }
-    }
-    if ($existingField && $commonRowConfigPresent && $isCommonRowField !== 1) {
-        $existingUserBinding = asset_common_user_defined_binding_by_child_field((int)$existingField['id']);
-        if ($existingUserBinding && asset_common_user_defined_binding_has_dependent_data((int)$existingField['id'])) {
-            $errors[] = 'This inherited user-defined field cannot be detached because dependent child data already exists.';
         }
     }
 
