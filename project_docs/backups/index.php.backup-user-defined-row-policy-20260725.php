@@ -523,50 +523,6 @@ if ($action === 'create_user_defined_common_field_declaration') {
     $adminRedirect();
 }
 
-if ($action === 'save_user_defined_common_segment_mode') {
-    if (!can_manage_superadmin_scope()) {
-        http_response_code(403);
-        exit('Not allowed.');
-    }
-    try {
-        $segmentId = input_int('segment_id');
-        $mode = strtolower(trim(input_str('user_defined_common_segment_mode', 'none')));
-        $existingProfile = null;
-        foreach (get_asset_common_profiles_for_segment($segmentId, true) as $candidateProfile) {
-            if ((string)($candidateProfile['definition_mode'] ?? '') === asset_common_definition_mode_user_defined()) {
-                $existingProfile = $candidateProfile;
-                break;
-            }
-        }
-        if ($existingProfile) {
-            if ($mode === 'none') {
-                throw new RuntimeException('Remove the declared inherited user-defined fields first before returning this segment to None mode.');
-            }
-            $rowPolicy = asset_normalize_common_row_policy($mode);
-            db()->prepare('UPDATE asset_common_profiles SET row_policy = ?, updated_at = NOW() WHERE id = ?')->execute([
-                $rowPolicy,
-                (int)$existingProfile['id'],
-            ]);
-            asset_sync_common_rows_for_profile_across_offices((int)$existingProfile['id'], (int)(current_user()['id'] ?? 0));
-            flash('success', 'User-defined common row policy updated.');
-        } else {
-            if (!isset($_SESSION['user_defined_common_row_policy_draft']) || !is_array($_SESSION['user_defined_common_row_policy_draft'])) {
-                $_SESSION['user_defined_common_row_policy_draft'] = [];
-            }
-            if ($mode === 'none') {
-                unset($_SESSION['user_defined_common_row_policy_draft'][$segmentId]);
-                flash('success', 'User-defined common mode cleared. This segment remains in normal mode until you declare inherited fields.');
-            } else {
-                $_SESSION['user_defined_common_row_policy_draft'][$segmentId] = asset_normalize_common_row_policy($mode);
-                flash('success', 'User-defined common mode saved. The first inherited field declaration will use this row policy.');
-            }
-        }
-    } catch (Throwable $e) {
-        flash('error', $e->getMessage());
-    }
-    $adminRedirect();
-}
-
 if ($action === 'delete_user_defined_common_field_declaration') {
     if (!can_manage_superadmin_scope()) {
         http_response_code(403);

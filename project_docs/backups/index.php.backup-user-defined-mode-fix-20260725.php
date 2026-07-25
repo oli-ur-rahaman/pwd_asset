@@ -530,7 +530,7 @@ if ($action === 'save_user_defined_common_segment_mode') {
     }
     try {
         $segmentId = input_int('segment_id');
-        $mode = strtolower(trim(input_str('user_defined_common_segment_mode', 'none')));
+        $mode = strtolower(trim(request_str('user_defined_common_segment_mode', 'none')));
         $existingProfile = null;
         foreach (get_asset_common_profiles_for_segment($segmentId, true) as $candidateProfile) {
             if ((string)($candidateProfile['definition_mode'] ?? '') === asset_common_definition_mode_user_defined()) {

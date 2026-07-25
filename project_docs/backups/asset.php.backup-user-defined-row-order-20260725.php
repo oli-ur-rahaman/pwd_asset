@@ -3608,22 +3608,6 @@ function asset_apply_superadmin_common_default_order(array $rows): array
             }
         }
 
-        $leftUserDefinedGenerated = $leftProfileId > 0
-            && (int)($left['is_user_added_row'] ?? 1) === 0
-            && (string)($left['common_source_type'] ?? '') === asset_common_source_type_user_defined();
-        $rightUserDefinedGenerated = $rightProfileId > 0
-            && (int)($right['is_user_added_row'] ?? 1) === 0
-            && (string)($right['common_source_type'] ?? '') === asset_common_source_type_user_defined();
-        if ($leftUserDefinedGenerated || $rightUserDefinedGenerated) {
-            if ($leftUserDefinedGenerated !== $rightUserDefinedGenerated) {
-                return $leftUserDefinedGenerated ? -1 : 1;
-            }
-            $compare = ((int)($right['common_source_asset_id'] ?? 0)) <=> ((int)($left['common_source_asset_id'] ?? 0));
-            if ($compare !== 0) {
-                return $compare;
-            }
-        }
-
         $categoryCompare = ((int)($left['category_sort_order'] ?? 0)) <=> ((int)($right['category_sort_order'] ?? 0));
         if ($categoryCompare !== 0) {
             return $categoryCompare;

@@ -1860,7 +1860,6 @@ function create_user_defined_common_field_declaration(int $segmentId, int $paren
 {
     $segmentId = asset_normalize_segment_id($segmentId);
     $parentSegmentId = asset_normalize_segment_id($parentSegmentId);
-    $requestedRowPolicy = strtolower(trim($rowPolicy));
     if ($segmentId <= 0) {
         throw new RuntimeException('Child segment is required.');
     }
@@ -1889,7 +1888,6 @@ function create_user_defined_common_field_declaration(int $segmentId, int $paren
     $existingProfile = $existingProfiles[0] ?? null;
     $parentCategoryId = asset_segment_common_profile_category_id($parentSegmentId);
     if ($existingProfile) {
-        $rowPolicy = (string)($existingProfile['row_policy'] ?? asset_common_row_policy_fixed());
         if ((string)($existingProfile['definition_mode'] ?? '') !== asset_common_definition_mode_user_defined()) {
             throw new RuntimeException('This segment already uses superadmin-defined common rows. User-defined inherited fields cannot be mixed here.');
         }
@@ -1898,11 +1896,6 @@ function create_user_defined_common_field_declaration(int $segmentId, int $paren
         ) {
             throw new RuntimeException('This segment already points to another parent segment/category. All inherited user-defined fields here must come from the same parent table.');
         }
-    } else {
-        if ($requestedRowPolicy === '' || $requestedRowPolicy === 'none') {
-            throw new RuntimeException('Choose Row Policy as Fixed or Addable before declaring inherited user-defined common fields.');
-        }
-        $rowPolicy = asset_normalize_common_row_policy($requestedRowPolicy);
     }
 
     foreach (asset_common_user_defined_bindings_by_parent_field((int)$parentField['id']) as $binding) {
@@ -3603,22 +3596,6 @@ function asset_apply_superadmin_common_default_order(array $rows): array
             $leftOrder = (int)($leftOrderMap[(string)($left['common_row_key'] ?? '')] ?? PHP_INT_MAX);
             $rightOrder = (int)($rightOrderMap[(string)($right['common_row_key'] ?? '')] ?? PHP_INT_MAX);
             $compare = $leftOrder <=> $rightOrder;
-            if ($compare !== 0) {
-                return $compare;
-            }
-        }
-
-        $leftUserDefinedGenerated = $leftProfileId > 0
-            && (int)($left['is_user_added_row'] ?? 1) === 0
-            && (string)($left['common_source_type'] ?? '') === asset_common_source_type_user_defined();
-        $rightUserDefinedGenerated = $rightProfileId > 0
-            && (int)($right['is_user_added_row'] ?? 1) === 0
-            && (string)($right['common_source_type'] ?? '') === asset_common_source_type_user_defined();
-        if ($leftUserDefinedGenerated || $rightUserDefinedGenerated) {
-            if ($leftUserDefinedGenerated !== $rightUserDefinedGenerated) {
-                return $leftUserDefinedGenerated ? -1 : 1;
-            }
-            $compare = ((int)($right['common_source_asset_id'] ?? 0)) <=> ((int)($left['common_source_asset_id'] ?? 0));
             if ($compare !== 0) {
                 return $compare;
             }
@@ -7881,11 +7858,7 @@ function update_asset_field(int $id, array $payload): void
     if ($removedSecondaryFieldId > 0) {
         asset_filter_index_clear_for_fields($segmentId, [$removedSecondaryFieldId]);
     }
-    if (!empty($payload['common_parent_field_id'])) {
-        asset_sync_user_defined_child_fields_from_parent((int)$payload['common_parent_field_id'], (int)($payload['common_parent_segment_id'] ?? 0));
-    } else {
-        asset_sync_user_defined_child_fields_from_parent($id, $segmentId);
-    }
+    asset_sync_user_defined_child_fields_from_parent($id, $segmentId);
 }
 
 function replace_asset_field_options(int $fieldId, array $options): void

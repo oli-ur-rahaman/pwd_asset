@@ -30,7 +30,6 @@ $commonProfilesByCategory = asset_common_profiles_by_category_map($activeSegment
 $commonBindingsByFieldId = get_asset_common_profile_field_bindings_for_segment($activeSegmentId);
 $commonParentFieldCandidatesBySegment = asset_common_parent_field_candidates_by_segment(true);
 $commonScopeOptions = asset_common_scope_options();
-$userDefinedCommonModeNone = 'none';
 $trackableFilterFields = array_values(array_filter($fields, static function (array $field): bool {
     return (int)($field['active_status'] ?? 0) === 1
         && !asset_is_conditional_secondary($field)
@@ -55,7 +54,6 @@ foreach ($commonParentFieldCandidatesBySegment as $parentSegmentId => $parentFie
     }
 }
 $userDefinedCommonDeclarations = [];
-$usedUserDefinedParentFieldIds = [];
 foreach ($fields as $field) {
     $binding = $commonBindingsByFieldId[(int)($field['id'] ?? 0)] ?? null;
     if (!$binding || (string)($binding['definition_mode'] ?? '') !== asset_common_definition_mode_user_defined()) {
@@ -82,7 +80,6 @@ foreach ($fields as $field) {
         'parent_segment' => $parentSegment,
         'parent_category' => $parentCategory,
     ];
-    $usedUserDefinedParentFieldIds[(int)($binding['parent_field_id'] ?? 0)] = true;
 }
 usort($userDefinedCommonDeclarations, static function (array $left, array $right): int {
     $leftOrder = (int)($left['binding']['sort_order'] ?? 0);
@@ -92,21 +89,6 @@ usort($userDefinedCommonDeclarations, static function (array $left, array $right
     }
     return strcasecmp((string)($left['child_field']['label'] ?? ''), (string)($right['child_field']['label'] ?? ''));
 });
-$existingUserDefinedCommonProfile = null;
-foreach (get_asset_common_profiles_for_segment($activeSegmentId, true) as $candidateProfile) {
-    if ((string)($candidateProfile['definition_mode'] ?? '') === asset_common_definition_mode_user_defined()) {
-        $existingUserDefinedCommonProfile = $candidateProfile;
-        break;
-    }
-}
-$userDefinedCommonModeDrafts = $_SESSION['user_defined_common_row_policy_draft'] ?? [];
-$userDefinedCommonModeSelection = $existingUserDefinedCommonProfile
-    ? (string)($existingUserDefinedCommonProfile['row_policy'] ?? asset_common_row_policy_fixed())
-    : trim((string)($userDefinedCommonModeDrafts[$activeSegmentId] ?? $userDefinedCommonModeNone));
-if (!in_array($userDefinedCommonModeSelection, array_merge([$userDefinedCommonModeNone], array_keys($commonRowPolicyOptions)), true)) {
-    $userDefinedCommonModeSelection = $userDefinedCommonModeNone;
-}
-$userDefinedDeclarationBlockedByMode = !$existingUserDefinedCommonProfile && $userDefinedCommonModeSelection === $userDefinedCommonModeNone;
 
 if (!function_exists('render_common_admin_row_input')) {
     function render_common_admin_row_input(string $formId, array $fieldMeta, int $childFieldId, string $value): string
@@ -388,28 +370,10 @@ if (!function_exists('render_common_admin_row_input')) {
     <?php if (!$commonRowsSupported): ?>
         <p class="hint">This segment cannot use common fields because it currently has more than one category.</p>
     <?php else: ?>
-        <form method="post" action="index.php" class="inline-form" style="margin:12px 0 18px;">
-            <?= csrf_input(); ?>
-            <input type="hidden" name="action" value="save_user_defined_common_segment_mode">
-            <input type="hidden" name="segment_id" value="<?= e((string)$activeSegmentId); ?>">
-            <label>Row Policy
-                <select name="user_defined_common_segment_mode">
-                    <option value="<?= e($userDefinedCommonModeNone); ?>" <?= $userDefinedCommonModeSelection === $userDefinedCommonModeNone ? 'selected' : ''; ?>>None</option>
-                    <?php foreach ($commonRowPolicyOptions as $policyValue => $policyLabel): ?>
-                        <option value="<?= e((string)$policyValue); ?>" <?= $userDefinedCommonModeSelection === (string)$policyValue ? 'selected' : ''; ?>><?= e((string)$policyLabel); ?></option>
-                    <?php endforeach; ?>
-                </select>
-            </label>
-            <button type="submit">Save Mode</button>
-            <?php if (!$existingUserDefinedCommonProfile): ?>
-                <span class="hint">This mode will be used when you declare the first inherited field in this segment.</span>
-            <?php endif; ?>
-        </form>
         <form method="post" action="index.php" class="grid compact-grid" data-user-common-declare>
             <?= csrf_input(); ?>
             <input type="hidden" name="action" value="create_user_defined_common_field_declaration">
             <input type="hidden" name="segment_id" value="<?= e((string)$activeSegmentId); ?>">
-            <input type="hidden" name="user_common_row_policy" value="<?= e((string)$userDefinedCommonModeSelection); ?>">
             <label>Parent Segment
                 <select name="user_common_parent_segment_id" data-user-common-parent-segment required>
                     <option value="">Select segment</option>
@@ -427,11 +391,17 @@ if (!function_exists('render_common_admin_row_input')) {
                     <?php foreach ($commonParentFieldCandidatesBySegment as $parentSegmentId => $parentFields): ?>
                         <?php if ((int)$parentSegmentId === $activeSegmentId): continue; endif; ?>
                         <?php foreach ($parentFields as $parentField): ?>
-                            <?php $isAlreadyUsedParentField = isset($usedUserDefinedParentFieldIds[(int)$parentField['id']]); ?>
-                            <option value="<?= e((string)$parentField['id']); ?>" data-parent-segment="<?= e((string)$parentSegmentId); ?>" <?= $isAlreadyUsedParentField ? 'disabled' : ''; ?>>
-                                <?= e((string)$parentField['label']); ?> (<?= e((string)$parentField['data_type']); ?>)<?= $isAlreadyUsedParentField ? ' - already used in this child segment' : ''; ?>
+                            <option value="<?= e((string)$parentField['id']); ?>" data-parent-segment="<?= e((string)$parentSegmentId); ?>">
+                                <?= e((string)$parentField['label']); ?> (<?= e((string)$parentField['data_type']); ?>)
                             </option>
                         <?php endforeach; ?>
+                    <?php endforeach; ?>
+                </select>
+            </label>
+            <label>Row Policy
+                <select name="user_common_row_policy" required>
+                    <?php foreach ($commonRowPolicyOptions as $policyValue => $policyLabel): ?>
+                        <option value="<?= e((string)$policyValue); ?>" <?= (string)$policyValue === asset_common_row_policy_fixed() ? 'selected' : ''; ?>><?= e((string)$policyLabel); ?></option>
                     <?php endforeach; ?>
                 </select>
             </label>
@@ -439,18 +409,15 @@ if (!function_exists('render_common_admin_row_input')) {
                 <input type="number" name="user_common_sort_order" min="1" step="1" value="<?= e((string)(count($userDefinedCommonDeclarations) + 1)); ?>" required>
             </label>
             <div class="toolbar-row">
-                <button type="submit" <?= $userDefinedDeclarationBlockedByMode ? 'disabled' : ''; ?>>Declare Field</button>
+                <button type="submit">Declare Field</button>
             </div>
         </form>
-        <?php if ($userDefinedDeclarationBlockedByMode): ?>
-            <p class="hint">Choose `Fixed` or `Addable` in Row Policy before declaring inherited `user_defined` common fields.</p>
-        <?php endif; ?>
     <?php endif; ?>
     <?php if ($userDefinedCommonDeclarations !== []): ?>
         <div class="table-wrap">
             <table>
                 <thead>
-                    <tr><th>Sequence</th><th>Parent Segment</th><th>Parent Category</th><th>Parent Field</th><th>Inherited Field</th><th>Type</th><th>Action</th></tr>
+                    <tr><th>Sequence</th><th>Parent Segment</th><th>Parent Category</th><th>Parent Field</th><th>Inherited Field</th><th>Type</th><th>Row Policy</th><th>Action</th></tr>
                 </thead>
                 <tbody>
                     <?php foreach ($userDefinedCommonDeclarations as $declaration): ?>
@@ -468,6 +435,7 @@ if (!function_exists('render_common_admin_row_input')) {
                             <td><?= e((string)($parentField['label'] ?? 'Unknown')); ?></td>
                             <td><?= e((string)($childField['label'] ?? '')); ?></td>
                             <td><?= e((string)($childField['data_type'] ?? '')); ?></td>
+                            <td><?= e((string)($commonRowPolicyOptions[(string)($binding['row_policy'] ?? '')] ?? ($binding['row_policy'] ?? ''))); ?></td>
                             <td>
                                 <form method="post" action="index.php" class="inline-form">
                                     <?= csrf_input(); ?>

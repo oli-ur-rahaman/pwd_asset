@@ -55,7 +55,6 @@ foreach ($commonParentFieldCandidatesBySegment as $parentSegmentId => $parentFie
     }
 }
 $userDefinedCommonDeclarations = [];
-$usedUserDefinedParentFieldIds = [];
 foreach ($fields as $field) {
     $binding = $commonBindingsByFieldId[(int)($field['id'] ?? 0)] ?? null;
     if (!$binding || (string)($binding['definition_mode'] ?? '') !== asset_common_definition_mode_user_defined()) {
@@ -82,7 +81,6 @@ foreach ($fields as $field) {
         'parent_segment' => $parentSegment,
         'parent_category' => $parentCategory,
     ];
-    $usedUserDefinedParentFieldIds[(int)($binding['parent_field_id'] ?? 0)] = true;
 }
 usort($userDefinedCommonDeclarations, static function (array $left, array $right): int {
     $leftOrder = (int)($left['binding']['sort_order'] ?? 0);
@@ -427,9 +425,8 @@ if (!function_exists('render_common_admin_row_input')) {
                     <?php foreach ($commonParentFieldCandidatesBySegment as $parentSegmentId => $parentFields): ?>
                         <?php if ((int)$parentSegmentId === $activeSegmentId): continue; endif; ?>
                         <?php foreach ($parentFields as $parentField): ?>
-                            <?php $isAlreadyUsedParentField = isset($usedUserDefinedParentFieldIds[(int)$parentField['id']]); ?>
-                            <option value="<?= e((string)$parentField['id']); ?>" data-parent-segment="<?= e((string)$parentSegmentId); ?>" <?= $isAlreadyUsedParentField ? 'disabled' : ''; ?>>
-                                <?= e((string)$parentField['label']); ?> (<?= e((string)$parentField['data_type']); ?>)<?= $isAlreadyUsedParentField ? ' - already used in this child segment' : ''; ?>
+                            <option value="<?= e((string)$parentField['id']); ?>" data-parent-segment="<?= e((string)$parentSegmentId); ?>">
+                                <?= e((string)$parentField['label']); ?> (<?= e((string)$parentField['data_type']); ?>)
                             </option>
                         <?php endforeach; ?>
                     <?php endforeach; ?>

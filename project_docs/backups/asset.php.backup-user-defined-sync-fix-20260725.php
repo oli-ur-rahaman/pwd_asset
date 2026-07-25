@@ -3608,22 +3608,6 @@ function asset_apply_superadmin_common_default_order(array $rows): array
             }
         }
 
-        $leftUserDefinedGenerated = $leftProfileId > 0
-            && (int)($left['is_user_added_row'] ?? 1) === 0
-            && (string)($left['common_source_type'] ?? '') === asset_common_source_type_user_defined();
-        $rightUserDefinedGenerated = $rightProfileId > 0
-            && (int)($right['is_user_added_row'] ?? 1) === 0
-            && (string)($right['common_source_type'] ?? '') === asset_common_source_type_user_defined();
-        if ($leftUserDefinedGenerated || $rightUserDefinedGenerated) {
-            if ($leftUserDefinedGenerated !== $rightUserDefinedGenerated) {
-                return $leftUserDefinedGenerated ? -1 : 1;
-            }
-            $compare = ((int)($right['common_source_asset_id'] ?? 0)) <=> ((int)($left['common_source_asset_id'] ?? 0));
-            if ($compare !== 0) {
-                return $compare;
-            }
-        }
-
         $categoryCompare = ((int)($left['category_sort_order'] ?? 0)) <=> ((int)($right['category_sort_order'] ?? 0));
         if ($categoryCompare !== 0) {
             return $categoryCompare;
@@ -7881,11 +7865,7 @@ function update_asset_field(int $id, array $payload): void
     if ($removedSecondaryFieldId > 0) {
         asset_filter_index_clear_for_fields($segmentId, [$removedSecondaryFieldId]);
     }
-    if (!empty($payload['common_parent_field_id'])) {
-        asset_sync_user_defined_child_fields_from_parent((int)$payload['common_parent_field_id'], (int)($payload['common_parent_segment_id'] ?? 0));
-    } else {
-        asset_sync_user_defined_child_fields_from_parent($id, $segmentId);
-    }
+    asset_sync_user_defined_child_fields_from_parent($id, $segmentId);
 }
 
 function replace_asset_field_options(int $fieldId, array $options): void
