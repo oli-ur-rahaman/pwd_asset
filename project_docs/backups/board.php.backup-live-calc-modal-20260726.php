@@ -1374,24 +1374,11 @@ if (is_superadmin()) {
                     <?php $value = (string)($editValues[$fieldKey] ?? ''); ?>
                     <?php $textMaxLength = (int)($field['text_max_length'] ?? 0); ?>
                     <?php if ($isLockedCommonField): ?>
-                        <input
-                            type="hidden"
-                            name="fields[<?= e($fieldKey); ?>]"
-                            value="<?= e($value); ?>"
-                            data-field-key="<?= e($fieldKey); ?>"
-                            data-field-type="<?= e((string)$field['data_type']); ?>">
+                        <input type="hidden" name="fields[<?= e($fieldKey); ?>]" value="<?= e($value); ?>">
                         <input type="text" value="<?= e($value); ?>" readonly>
                         <span class="hint">This value is controlled by the linked common row source.</span>
                     <?php elseif ($field['data_type'] === 'calculation'): ?>
-                        <input
-                            type="text"
-                            value="<?= e($value); ?>"
-                            readonly
-                            data-field-key="<?= e($field['field_key']); ?>"
-                            data-field-type="<?= e($field['data_type']); ?>"
-                            data-calculation-field="1"
-                            data-calculation-formula="<?= e((string)($field['calculation_formula'] ?? '')); ?>"
-                            data-calculation-result-type="<?= e((string)($field['calculation_result_type'] ?? 'number')); ?>">
+                        <input type="text" value="<?= e($value); ?>" readonly>
                         <span class="hint">This value is calculated automatically.</span>
                     <?php elseif ($field['data_type'] === 'file'): ?>
                         <?php
@@ -1424,22 +1411,9 @@ if (is_superadmin()) {
                             <?php if (!$showRemoveCheckbox && $fieldFiles): ?> Uploading a new file will automatically replace the existing file.<?php endif; ?>
                         </span>
                     <?php elseif ($field['data_type'] === 'date'): ?>
-                        <input
-                            type="date"
-                            name="fields[<?= e($field['field_key']); ?>]"
-                            value="<?= e($value); ?>"
-                            data-field-key="<?= e($field['field_key']); ?>"
-                            data-field-type="<?= e($field['data_type']); ?>"
-                            <?= asset_is_input_required($field) ? 'required' : ''; ?>>
+                        <input type="date" name="fields[<?= e($field['field_key']); ?>]" value="<?= e($value); ?>" <?= asset_is_input_required($field) ? 'required' : ''; ?>>
                     <?php elseif ($field['data_type'] === 'number'): ?>
-                        <input
-                            type="number"
-                            step="0.01"
-                            name="fields[<?= e($field['field_key']); ?>]"
-                            value="<?= e($value); ?>"
-                            data-field-key="<?= e($field['field_key']); ?>"
-                            data-field-type="<?= e($field['data_type']); ?>"
-                            <?= asset_is_input_required($field) ? 'required' : ''; ?>>
+                        <input type="number" step="0.01" name="fields[<?= e($field['field_key']); ?>]" value="<?= e($value); ?>" <?= asset_is_input_required($field) ? 'required' : ''; ?>>
                     <?php elseif ($field['data_type'] === 'bimh'): ?>
                         <?php
                             $estNameValue = (string)($editValues[$field['field_key'] . '__est_name'] ?? asset_bimh_est_name_for_id($value));
@@ -1493,33 +1467,16 @@ if (is_superadmin()) {
                             <?php endforeach; ?>
                         </select>
                     <?php elseif ($field['data_type'] === 'yes_no'): ?>
-                        <select
-                            name="fields[<?= e($field['field_key']); ?>]"
-                            data-field-key="<?= e($field['field_key']); ?>"
-                            data-field-type="<?= e($field['data_type']); ?>"
-                            <?= asset_is_input_required($field) ? 'required' : ''; ?>>
+                        <select name="fields[<?= e($field['field_key']); ?>]" <?= asset_is_input_required($field) ? 'required' : ''; ?>>
                             <option value="">Select</option>
                             <option value="Yes" <?= $value === 'Yes' ? 'selected' : ''; ?>>Yes</option>
                             <option value="No" <?= $value === 'No' ? 'selected' : ''; ?>>No</option>
                         </select>
                     <?php elseif ($field['field_key'] === 'remarks'): ?>
-                        <textarea
-                            name="fields[<?= e($field['field_key']); ?>]"
-                            rows="3"
-                            data-field-key="<?= e($field['field_key']); ?>"
-                            data-field-type="<?= e($field['data_type']); ?>"
-                            <?= $textMaxLength > 0 ? 'maxlength="' . e((string)$textMaxLength) . '" data-char-limit="' . e((string)$textMaxLength) . '"' : ''; ?>
-                        ><?= e($value); ?></textarea>
+                        <textarea name="fields[<?= e($field['field_key']); ?>]" rows="3" <?= $textMaxLength > 0 ? 'maxlength="' . e((string)$textMaxLength) . '" data-char-limit="' . e((string)$textMaxLength) . '"' : ''; ?>><?= e($value); ?></textarea>
                         <?php if ($textMaxLength > 0): ?><span class="hint char-count-hint" data-char-count-target></span><?php endif; ?>
                     <?php else: ?>
-                        <input
-                            type="text"
-                            name="fields[<?= e($field['field_key']); ?>]"
-                            value="<?= e($value); ?>"
-                            data-field-key="<?= e($field['field_key']); ?>"
-                            data-field-type="<?= e($field['data_type']); ?>"
-                            <?= asset_is_input_required($field) ? 'required' : ''; ?>
-                            <?= ($field['data_type'] === 'text' && $textMaxLength > 0) ? 'maxlength="' . e((string)$textMaxLength) . '" data-char-limit="' . e((string)$textMaxLength) . '"' : ''; ?>>
+                        <input type="text" name="fields[<?= e($field['field_key']); ?>]" value="<?= e($value); ?>" <?= asset_is_input_required($field) ? 'required' : ''; ?> <?= ($field['data_type'] === 'text' && $textMaxLength > 0) ? 'maxlength="' . e((string)$textMaxLength) . '" data-char-limit="' . e((string)$textMaxLength) . '"' : ''; ?>>
                         <?php if ((string)$field['data_type'] === 'text' && $textMaxLength > 0): ?><span class="hint char-count-hint" data-char-count-target></span><?php endif; ?>
                     <?php endif; ?>
                 </label>

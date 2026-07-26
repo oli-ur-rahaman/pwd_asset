@@ -3981,25 +3981,7 @@ function asset_common_upsert_generated_asset(array $profile, int $officeType, in
             $actorUserId
         );
     }
-    $segmentId = (int)($profile['segment_id'] ?? 0);
-    $fieldMap = asset_field_map_for_segment(true, $segmentId);
-    $mergedValues = [];
-    if ($beforeAsset) {
-        foreach ($fieldMap as $fieldKey => $fieldMeta) {
-            if ((string)($fieldMeta['data_type'] ?? '') === 'file') {
-                continue;
-            }
-            $mergedValues[$fieldKey] = asset_common_current_normalized_value($fieldMeta, $beforeAsset);
-        }
-    }
-    foreach ((array)($desiredRow['field_values'] ?? []) as $fieldKey => $normalizedValue) {
-        $mergedValues[(string)$fieldKey] = $normalizedValue;
-    }
-    if ($fieldMap !== []) {
-        $calcErrors = [];
-        $mergedValues = asset_apply_calculation_fields($fieldMap, $mergedValues, $calcErrors);
-    }
-    save_asset_values($assetId, $mergedValues);
+    save_asset_values($assetId, (array)($desiredRow['field_values'] ?? []));
     $afterAsset = get_asset($assetId, true);
     asset_filter_index_sync_asset_change($beforeAsset, $afterAsset);
     $afterSignature = asset_common_activity_signature($afterAsset);
@@ -9327,15 +9309,6 @@ function asset_calculation_excel_expression(string $formula, callable $resolver)
     if (preg_match('/\binword\s*\(/i', $expression)) {
         return '="error"';
     }
-    $referenceKeys = asset_extract_calculation_field_keys($expression);
-    $referenceCells = [];
-    foreach ($referenceKeys as $fieldKey) {
-        $resolved = (string)$resolver($fieldKey);
-        if ($resolved !== '') {
-            $referenceCells[] = $resolved;
-        }
-    }
-    $referenceCells = array_values(array_unique($referenceCells));
     $expression = preg_replace_callback('/\{([A-Za-z_][A-Za-z0-9_]*)\}/', static function (array $matches) use ($resolver): string {
         return (string)$resolver((string)$matches[1]);
     }, $expression);
@@ -9357,9 +9330,6 @@ function asset_calculation_excel_expression(string $formula, callable $resolver)
     ];
     foreach ($functionMap as $name => $replacement) {
         $expression = preg_replace('/\b' . preg_quote($name, '/') . '\s*\(/i', $replacement . '(', $expression);
-    }
-    if ($referenceCells !== []) {
-        $expression = 'IF(COUNTA(' . implode(',', $referenceCells) . ')=0,"",' . $expression . ')';
     }
     return '=' . $expression;
 }
@@ -9875,7 +9845,6 @@ function save_asset_values(int $assetId, array $fieldValues): void
             $normalized['value_option'],
         ]);
     }
-    asset_clear_asset_hydration_caches();
 }
 
 function get_asset(int $assetId, bool $includeDeleted = false): ?array
@@ -10833,68 +10802,17 @@ function asset_sort_value(array $asset, string $sortColumn): string
     };
 }
 
-function &asset_request_cache_bucket(string $bucket): array
-{
-    if (!isset($GLOBALS['asset_request_cache']) || !is_array($GLOBALS['asset_request_cache'])) {
-        $GLOBALS['asset_request_cache'] = [];
-    }
-    if (!isset($GLOBALS['asset_request_cache'][$bucket]) || !is_array($GLOBALS['asset_request_cache'][$bucket])) {
-        $GLOBALS['asset_request_cache'][$bucket] = [];
-    }
-    return $GLOBALS['asset_request_cache'][$bucket];
-}
-
-function asset_request_cache_get(string $bucket, string $key, bool &$found = null)
-{
-    $store = &asset_request_cache_bucket($bucket);
-    if (array_key_exists($key, $store)) {
-        $found = true;
-        return $store[$key];
-    }
-    $found = false;
-    return null;
-}
-
-function asset_request_cache_set(string $bucket, string $key, $value): void
-{
-    $store = &asset_request_cache_bucket($bucket);
-    $store[$key] = $value;
-}
-
-function asset_request_cache_clear(?string $bucket = null): void
-{
-    if ($bucket === null) {
-        $GLOBALS['asset_request_cache'] = [];
-        return;
-    }
-    $store = &asset_request_cache_bucket($bucket);
-    $store = [];
-}
-
-function asset_clear_asset_hydration_caches(): void
-{
-    foreach ([
-        'asset_values_for_assets',
-        'asset_number_totals_for_assets',
-        'asset_value_time_map_for_assets',
-        'asset_files_for_assets',
-        'asset_file_time_map_for_assets',
-    ] as $bucket) {
-        asset_request_cache_clear($bucket);
-    }
-}
-
 function get_asset_values_for_assets(array $assetIds): array
 {
     if (!$assetIds) {
         return [];
     }
+    static $cache = [];
     $normalizedAssetIds = array_values(array_unique(array_map('intval', $assetIds)));
     sort($normalizedAssetIds);
     $cacheKey = implode(',', $normalizedAssetIds);
-    $cached = asset_request_cache_get('asset_values_for_assets', $cacheKey, $found);
-    if ($found) {
-        return (array)$cached;
+    if (array_key_exists($cacheKey, $cache)) {
+        return $cache[$cacheKey];
     }
     $placeholders = implode(',', array_fill(0, count($normalizedAssetIds), '?'));
     $stmt = db()->prepare("SELECT v.*, f.field_key, f.data_type, f.calculation_result_type FROM asset_values v JOIN asset_fields f ON f.id = v.field_id WHERE v.asset_id IN ({$placeholders}) ORDER BY f.sort_order ASC, f.id ASC");
@@ -10917,8 +10835,8 @@ function get_asset_values_for_assets(array $assetIds): array
             $map[(int)$assetId][$fieldKey . '__est_name'] = $nameMap[$bimhId] ?? 'BIMH ID is not in the Database.';
         }
     }
-    asset_request_cache_set('asset_values_for_assets', $cacheKey, $map);
-    return $map;
+    $cache[$cacheKey] = $map;
+    return $cache[$cacheKey];
 }
 
 function get_asset_number_totals_for_assets(array $assetIds, array $fields): array
@@ -10947,10 +10865,10 @@ function get_asset_number_totals_for_assets(array $assetIds, array $fields): arr
     $normalizedFieldIds = array_values(array_unique(array_map('intval', $fieldIds)));
     sort($normalizedAssetIds);
     sort($normalizedFieldIds);
+    static $cache = [];
     $cacheKey = implode(',', $normalizedAssetIds) . '|' . implode(',', $normalizedFieldIds);
-    $cached = asset_request_cache_get('asset_number_totals_for_assets', $cacheKey, $found);
-    if ($found) {
-        return (array)$cached;
+    if (array_key_exists($cacheKey, $cache)) {
+        return $cache[$cacheKey];
     }
 
     $assetPlaceholders = implode(',', array_fill(0, count($normalizedAssetIds), '?'));
@@ -10978,8 +10896,8 @@ function get_asset_number_totals_for_assets(array $assetIds, array $fields): arr
         }
         $totals[$fieldKey] = asset_format_number_display((string)($row['total_value'] ?? ''));
     }
-    asset_request_cache_set('asset_number_totals_for_assets', $cacheKey, $totals);
-    return $totals;
+    $cache[$cacheKey] = $totals;
+    return $cache[$cacheKey];
 }
 
 function get_asset_value_time_map_for_assets(array $assetIds): array
@@ -10987,12 +10905,12 @@ function get_asset_value_time_map_for_assets(array $assetIds): array
     if (!$assetIds) {
         return [];
     }
+    static $cache = [];
     $normalizedAssetIds = array_values(array_unique(array_map('intval', $assetIds)));
     sort($normalizedAssetIds);
     $cacheKey = implode(',', $normalizedAssetIds);
-    $cached = asset_request_cache_get('asset_value_time_map_for_assets', $cacheKey, $found);
-    if ($found) {
-        return (array)$cached;
+    if (array_key_exists($cacheKey, $cache)) {
+        return $cache[$cacheKey];
     }
     $placeholders = implode(',', array_fill(0, count($normalizedAssetIds), '?'));
     $stmt = db()->prepare(
@@ -11010,8 +10928,8 @@ function get_asset_value_time_map_for_assets(array $assetIds): array
         }
         $map[(int)$row['asset_id']][(string)$row['field_key']] = $timestamp;
     }
-    asset_request_cache_set('asset_value_time_map_for_assets', $cacheKey, $map);
-    return $map;
+    $cache[$cacheKey] = $map;
+    return $cache[$cacheKey];
 }
 
 function get_asset_field_files(int $assetId, int $fieldId): array
@@ -11037,12 +10955,12 @@ function get_asset_files_for_assets(array $assetIds): array
     if (!$assetIds) {
         return [];
     }
+    static $cache = [];
     $normalizedAssetIds = array_values(array_unique(array_map('intval', $assetIds)));
     sort($normalizedAssetIds);
     $cacheKey = implode(',', $normalizedAssetIds);
-    $cached = asset_request_cache_get('asset_files_for_assets', $cacheKey, $found);
-    if ($found) {
-        return (array)$cached;
+    if (array_key_exists($cacheKey, $cache)) {
+        return $cache[$cacheKey];
     }
     $placeholders = implode(',', array_fill(0, count($normalizedAssetIds), '?'));
     $stmt = db()->prepare("SELECT f.*, af.field_key FROM asset_file_values f JOIN asset_fields af ON af.id = f.field_id WHERE f.asset_id IN ({$placeholders}) ORDER BY af.sort_order ASC, f.id ASC");
@@ -11051,8 +10969,8 @@ function get_asset_files_for_assets(array $assetIds): array
     foreach ($stmt->fetchAll() as $row) {
         $map[(int)$row['asset_id']][(string)$row['field_key']][] = $row;
     }
-    asset_request_cache_set('asset_files_for_assets', $cacheKey, $map);
-    return $map;
+    $cache[$cacheKey] = $map;
+    return $cache[$cacheKey];
 }
 
 function get_asset_file_time_map_for_assets(array $assetIds): array
@@ -11060,12 +10978,12 @@ function get_asset_file_time_map_for_assets(array $assetIds): array
     if (!$assetIds) {
         return [];
     }
+    static $cache = [];
     $normalizedAssetIds = array_values(array_unique(array_map('intval', $assetIds)));
     sort($normalizedAssetIds);
     $cacheKey = implode(',', $normalizedAssetIds);
-    $cached = asset_request_cache_get('asset_file_time_map_for_assets', $cacheKey, $found);
-    if ($found) {
-        return (array)$cached;
+    if (array_key_exists($cacheKey, $cache)) {
+        return $cache[$cacheKey];
     }
     $placeholders = implode(',', array_fill(0, count($normalizedAssetIds), '?'));
     $stmt = db()->prepare(
@@ -11084,8 +11002,8 @@ function get_asset_file_time_map_for_assets(array $assetIds): array
         }
         $map[(int)$row['asset_id']][(string)$row['field_key']] = $timestamp;
     }
-    asset_request_cache_set('asset_file_time_map_for_assets', $cacheKey, $map);
-    return $map;
+    $cache[$cacheKey] = $map;
+    return $cache[$cacheKey];
 }
 
 function asset_row_field_timestamp(array $asset, string $fieldKey): ?int
@@ -11173,7 +11091,6 @@ function sync_asset_file_values(int $assetId, array $fileOperations, array &$cle
             ]);
         }
     }
-    asset_clear_asset_hydration_caches();
 }
 
 function finalize_asset_file_changes(array $cleanup, bool $committed): void

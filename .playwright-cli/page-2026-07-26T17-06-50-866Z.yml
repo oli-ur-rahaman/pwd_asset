@@ -1,0 +1,129 @@
+- generic [active] [ref=f1e1]:
+  - navigation [ref=f1e2]:
+    - generic [ref=f1e3]: Survey Soft
+    - generic [ref=f1e4]:
+      - link "Information" [ref=f1e5] [cursor=pointer]:
+        - /url: index.php?page=board
+      - link "Audit" [ref=f1e6] [cursor=pointer]:
+        - /url: index.php?page=audit
+      - link "Office Orders" [ref=f1e7] [cursor=pointer]:
+        - /url: index.php?page=office_orders
+      - link "Declarations" [ref=f1e8] [cursor=pointer]:
+        - /url: index.php?page=declarations
+      - link "Management" [ref=f1e9] [cursor=pointer]:
+        - /url: index.php?page=admin
+      - link "Common Fields" [ref=f1e10] [cursor=pointer]:
+        - /url: index.php?page=common_fields
+      - link "Download Manager" [ref=f1e11] [cursor=pointer]:
+        - /url: index.php?page=download_manager
+      - link "Comparison" [ref=f1e12] [cursor=pointer]:
+        - /url: index.php?page=comparison
+      - link "Offices" [ref=f1e13] [cursor=pointer]:
+        - /url: index.php?page=offices
+      - link "User Permissions" [ref=f1e14] [cursor=pointer]:
+        - /url: index.php?page=user_permissions
+      - link "Interface" [ref=f1e15] [cursor=pointer]:
+        - /url: index.php?page=interface
+      - link "Profile" [ref=f1e16] [cursor=pointer]:
+        - /url: index.php?page=profile
+      - button "Tutorial" [ref=f1e17] [cursor=pointer]
+      - button "Logout" [ref=f1e19] [cursor=pointer]
+  - main [ref=f1e20]:
+    - generic [ref=f1e87]:
+      - heading "Survey Soft" [level=2] [ref=f1e88]
+      - paragraph [ref=f1e89]: "Office: Chief Engineer Office | User: superadmin@pwd.gov.bd"
+    - generic [ref=f1e91]:
+      - link "parent_test" [ref=f1e92] [cursor=pointer]:
+        - /url: index.php?page=board&segment_id=18
+      - link "child_add_test" [ref=f1e93] [cursor=pointer]:
+        - /url: index.php?page=board&segment_id=20
+    - generic [ref=f1e94]:
+      - generic [ref=f1e95]:
+        - link "Excel Template" [ref=f1e96] [cursor=pointer]:
+          - /url: asset_template.php?segment_id=18
+        - button "Download Data" [disabled] [ref=f1e97]
+      - paragraph [ref=f1e98]: Set Level 1 fields in Download Manager before using downloads.
+    - generic [ref=f1e100]:
+      - generic [ref=f1e101]:
+        - heading "parent_test" [level=2] [ref=f1e102]
+        - generic [ref=f1e103]:
+          - generic [ref=f1e104]: 4 row(s)
+          - link "Refresh" [ref=f1e105] [cursor=pointer]:
+            - /url: index.php?page=board&office_view_scope=my_office&segment_id=18
+          - button "Columns" [ref=f1e106] [cursor=pointer]
+          - button "Time Filter" [ref=f1e107] [cursor=pointer]
+      - table [ref=f1e109]:
+        - rowgroup [ref=f1e110]:
+          - row [ref=f1e111]:
+            - columnheader [ref=f1e112]:
+              - link "SL No" [ref=f1e113] [cursor=pointer]:
+                - /url: index.php?page=board&office_view_scope=my_office&segment_id=18&sort_col=__sl&sort_dir=asc
+            - columnheader [ref=f1e114]:
+              - link "Asset Number" [ref=f1e115] [cursor=pointer]:
+                - /url: index.php?page=board&office_view_scope=my_office&segment_id=18&sort_col=asset_number&sort_dir=asc
+            - columnheader [ref=f1e116]:
+              - link "Office" [ref=f1e117] [cursor=pointer]:
+                - /url: index.php?page=board&office_view_scope=my_office&segment_id=18&sort_col=office_name&sort_dir=asc
+            - columnheader [ref=f1e118]:
+              - link "District *" [ref=f1e120] [cursor=pointer]:
+                - /url: index.php?page=board&office_view_scope=my_office&segment_id=18&sort_col=district&sort_dir=asc
+                - text: District
+                - generic [ref=f1e121]: "*"
+            - columnheader [ref=f1e122]:
+              - link "Upazilla *" [ref=f1e124] [cursor=pointer]:
+                - /url: index.php?page=board&office_view_scope=my_office&segment_id=18&sort_col=upazilla&sort_dir=asc
+                - text: Upazilla
+                - generic [ref=f1e125]: "*"
+            - columnheader [ref=f1e126]:
+              - link "ins name *" [ref=f1e128] [cursor=pointer]:
+                - /url: index.php?page=board&office_view_scope=my_office&segment_id=18&sort_col=ins_name&sort_dir=asc
+                - text: ins name
+                - generic [ref=f1e129]: "*"
+            - columnheader [ref=f1e130]:
+              - link "hosp bldg number *" [ref=f1e132] [cursor=pointer]:
+                - /url: index.php?page=board&office_view_scope=my_office&segment_id=18&sort_col=hosp_bldg_number&sort_dir=asc
+                - text: hosp bldg number
+                - generic [ref=f1e133]: "*"
+        - rowgroup [ref=f1e134]:
+          - row [ref=f1e135]:
+            - cell "1" [ref=f1e136]
+            - cell "AST-2026-008969" [ref=f1e137]
+            - cell "Division - Sylhet PWD Division" [ref=f1e138]
+            - cell "A" [ref=f1e139]
+            - cell "2" [ref=f1e140]
+            - cell "UHC_2" [ref=f1e141]
+            - cell "2" [ref=f1e142]
+          - row [ref=f1e143]:
+            - cell "2" [ref=f1e144]
+            - cell "AST-2026-008968" [ref=f1e145]
+            - cell "Division - Sylhet PWD Division" [ref=f1e146]
+            - cell "A" [ref=f1e147]
+            - cell "2" [ref=f1e148]
+            - cell "UHC_2" [ref=f1e149]
+            - cell "1" [ref=f1e150]
+          - row [ref=f1e151]:
+            - cell "3" [ref=f1e152]
+            - cell "AST-2026-008967" [ref=f1e153]
+            - cell "Division - Sylhet PWD Division" [ref=f1e154]
+            - cell "A" [ref=f1e155]
+            - cell "1" [ref=f1e156]
+            - cell "UHC_1" [ref=f1e157]
+            - cell "2" [ref=f1e158]
+          - row [ref=f1e159]:
+            - cell "4" [ref=f1e160]
+            - cell "AST-2026-008966" [ref=f1e161]
+            - cell "Division - Sylhet PWD Division" [ref=f1e162]
+            - cell "A" [ref=f1e163]
+            - cell "1" [ref=f1e164]
+            - cell "UHC_1" [ref=f1e165]
+            - cell "1" [ref=f1e166]
+        - rowgroup [ref=f1e167]:
+          - row [ref=f1e168]:
+            - cell "Total" [ref=f1e169]
+            - cell [ref=f1e170]
+            - cell [ref=f1e171]
+            - cell [ref=f1e172]
+            - cell [ref=f1e173]
+            - cell [ref=f1e174]
+            - cell "6" [ref=f1e175]
+    - iframe

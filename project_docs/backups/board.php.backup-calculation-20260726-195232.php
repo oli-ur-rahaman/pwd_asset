@@ -348,7 +348,7 @@ foreach ($categories as $category) {
 $importFieldDefs = [];
 $uniqueValueMap = asset_unique_existing_values_map($activeSegmentId);
 foreach ($fields as $field) {
-    if (!asset_field_is_import_template_visible($field)) {
+    if ((int)$field['is_import_enabled'] !== 1 || (int)$field['active_status'] !== 1) {
         continue;
     }
     $conditionalMap = asset_is_conditional_primary($field) ? asset_decode_conditional_map($field) : [];
@@ -356,7 +356,7 @@ foreach ($fields as $field) {
         'field_key' => (string)$field['field_key'],
         'label' => (string)($uiFieldLabels[$field['field_key']] ?? $field['label']),
         'data_type' => (string)$field['data_type'],
-        'required' => $field['data_type'] === 'calculation' ? false : asset_is_input_required($field),
+        'required' => asset_is_input_required($field),
         'is_unique' => (int)($field['is_unique'] ?? 0) === 1,
         'number_format_rule' => (string)($field['number_format_rule'] ?? ''),
         'text_max_length' => (int)($field['text_max_length'] ?? 0),
@@ -1374,25 +1374,9 @@ if (is_superadmin()) {
                     <?php $value = (string)($editValues[$fieldKey] ?? ''); ?>
                     <?php $textMaxLength = (int)($field['text_max_length'] ?? 0); ?>
                     <?php if ($isLockedCommonField): ?>
-                        <input
-                            type="hidden"
-                            name="fields[<?= e($fieldKey); ?>]"
-                            value="<?= e($value); ?>"
-                            data-field-key="<?= e($fieldKey); ?>"
-                            data-field-type="<?= e((string)$field['data_type']); ?>">
+                        <input type="hidden" name="fields[<?= e($fieldKey); ?>]" value="<?= e($value); ?>">
                         <input type="text" value="<?= e($value); ?>" readonly>
                         <span class="hint">This value is controlled by the linked common row source.</span>
-                    <?php elseif ($field['data_type'] === 'calculation'): ?>
-                        <input
-                            type="text"
-                            value="<?= e($value); ?>"
-                            readonly
-                            data-field-key="<?= e($field['field_key']); ?>"
-                            data-field-type="<?= e($field['data_type']); ?>"
-                            data-calculation-field="1"
-                            data-calculation-formula="<?= e((string)($field['calculation_formula'] ?? '')); ?>"
-                            data-calculation-result-type="<?= e((string)($field['calculation_result_type'] ?? 'number')); ?>">
-                        <span class="hint">This value is calculated automatically.</span>
                     <?php elseif ($field['data_type'] === 'file'): ?>
                         <?php
                             $fileRule = get_asset_field_file_rule((int)$field['id']);
@@ -1424,22 +1408,9 @@ if (is_superadmin()) {
                             <?php if (!$showRemoveCheckbox && $fieldFiles): ?> Uploading a new file will automatically replace the existing file.<?php endif; ?>
                         </span>
                     <?php elseif ($field['data_type'] === 'date'): ?>
-                        <input
-                            type="date"
-                            name="fields[<?= e($field['field_key']); ?>]"
-                            value="<?= e($value); ?>"
-                            data-field-key="<?= e($field['field_key']); ?>"
-                            data-field-type="<?= e($field['data_type']); ?>"
-                            <?= asset_is_input_required($field) ? 'required' : ''; ?>>
+                        <input type="date" name="fields[<?= e($field['field_key']); ?>]" value="<?= e($value); ?>" <?= asset_is_input_required($field) ? 'required' : ''; ?>>
                     <?php elseif ($field['data_type'] === 'number'): ?>
-                        <input
-                            type="number"
-                            step="0.01"
-                            name="fields[<?= e($field['field_key']); ?>]"
-                            value="<?= e($value); ?>"
-                            data-field-key="<?= e($field['field_key']); ?>"
-                            data-field-type="<?= e($field['data_type']); ?>"
-                            <?= asset_is_input_required($field) ? 'required' : ''; ?>>
+                        <input type="number" step="0.01" name="fields[<?= e($field['field_key']); ?>]" value="<?= e($value); ?>" <?= asset_is_input_required($field) ? 'required' : ''; ?>>
                     <?php elseif ($field['data_type'] === 'bimh'): ?>
                         <?php
                             $estNameValue = (string)($editValues[$field['field_key'] . '__est_name'] ?? asset_bimh_est_name_for_id($value));
@@ -1493,33 +1464,16 @@ if (is_superadmin()) {
                             <?php endforeach; ?>
                         </select>
                     <?php elseif ($field['data_type'] === 'yes_no'): ?>
-                        <select
-                            name="fields[<?= e($field['field_key']); ?>]"
-                            data-field-key="<?= e($field['field_key']); ?>"
-                            data-field-type="<?= e($field['data_type']); ?>"
-                            <?= asset_is_input_required($field) ? 'required' : ''; ?>>
+                        <select name="fields[<?= e($field['field_key']); ?>]" <?= asset_is_input_required($field) ? 'required' : ''; ?>>
                             <option value="">Select</option>
                             <option value="Yes" <?= $value === 'Yes' ? 'selected' : ''; ?>>Yes</option>
                             <option value="No" <?= $value === 'No' ? 'selected' : ''; ?>>No</option>
                         </select>
                     <?php elseif ($field['field_key'] === 'remarks'): ?>
-                        <textarea
-                            name="fields[<?= e($field['field_key']); ?>]"
-                            rows="3"
-                            data-field-key="<?= e($field['field_key']); ?>"
-                            data-field-type="<?= e($field['data_type']); ?>"
-                            <?= $textMaxLength > 0 ? 'maxlength="' . e((string)$textMaxLength) . '" data-char-limit="' . e((string)$textMaxLength) . '"' : ''; ?>
-                        ><?= e($value); ?></textarea>
+                        <textarea name="fields[<?= e($field['field_key']); ?>]" rows="3" <?= $textMaxLength > 0 ? 'maxlength="' . e((string)$textMaxLength) . '" data-char-limit="' . e((string)$textMaxLength) . '"' : ''; ?>><?= e($value); ?></textarea>
                         <?php if ($textMaxLength > 0): ?><span class="hint char-count-hint" data-char-count-target></span><?php endif; ?>
                     <?php else: ?>
-                        <input
-                            type="text"
-                            name="fields[<?= e($field['field_key']); ?>]"
-                            value="<?= e($value); ?>"
-                            data-field-key="<?= e($field['field_key']); ?>"
-                            data-field-type="<?= e($field['data_type']); ?>"
-                            <?= asset_is_input_required($field) ? 'required' : ''; ?>
-                            <?= ($field['data_type'] === 'text' && $textMaxLength > 0) ? 'maxlength="' . e((string)$textMaxLength) . '" data-char-limit="' . e((string)$textMaxLength) . '"' : ''; ?>>
+                        <input type="text" name="fields[<?= e($field['field_key']); ?>]" value="<?= e($value); ?>" <?= asset_is_input_required($field) ? 'required' : ''; ?> <?= ($field['data_type'] === 'text' && $textMaxLength > 0) ? 'maxlength="' . e((string)$textMaxLength) . '" data-char-limit="' . e((string)$textMaxLength) . '"' : ''; ?>>
                         <?php if ((string)$field['data_type'] === 'text' && $textMaxLength > 0): ?><span class="hint char-count-hint" data-char-count-target></span><?php endif; ?>
                     <?php endif; ?>
                 </label>
@@ -1590,7 +1544,7 @@ if (is_superadmin()) {
                             <?php if ($categorySelectionEnabled): ?><th>Category</th><?php endif; ?>
                             <?php if ($subcategoryEnabled): ?><th>Sub-category</th><?php endif; ?>
                             <?php foreach ($fields as $field): ?>
-                                <?php if (asset_field_is_import_template_visible($field)): ?>
+                                <?php if ((int)$field['is_import_enabled'] === 1 && (int)$field['active_status'] === 1): ?>
                                     <th>
                                         <div class="field-head-row">
                                             <span><?= e((string)($uiFieldLabels[$field['field_key']] ?? $field['label'])); ?><?= $fieldMandatoryMarker($field); ?></span>
@@ -1632,7 +1586,7 @@ if (is_superadmin()) {
                                     </td>
                                 <?php endif; ?>
                                 <?php foreach ($fields as $field): ?>
-                                    <?php if (asset_field_is_import_template_visible($field)): ?>
+                                    <?php if ((int)$field['is_import_enabled'] === 1 && (int)$field['active_status'] === 1): ?>
                                         <?php $fieldError = $row['errors'][$field['field_key']] ?? null; ?>
                                         <td class="<?= $fieldError ? 'cell-error' : 'cell-valid'; ?>">
                                             <?php $fieldValue = (string)($row['fields'][$field['field_key']] ?? ''); ?>
@@ -1678,16 +1632,6 @@ if (is_superadmin()) {
                                                         <option value="<?= e((string)$option['option_value']); ?>" <?= asset_option_values_match($fieldValue, (string)$option['option_value']) ? 'selected' : ''; ?>><?= e((string)$option['option_label']); ?></option>
                                                     <?php endforeach; ?>
                                                 </select>
-                                            <?php elseif ($field['data_type'] === 'calculation'): ?>
-                                                <input
-                                                    type="text"
-                                                    class="review-input"
-                                                    data-review-role="field"
-                                                    data-field-key="<?= e($field['field_key']); ?>"
-                                                    data-field-type="<?= e($field['data_type']); ?>"
-                                                    readonly
-                                                    name="rows[<?= $rowIndex; ?>][fields][<?= e($field['field_key']); ?>]"
-                                                    value="<?= e($fieldValue); ?>">
                                             <?php elseif ($field['data_type'] === 'text'): ?>
                                                 <textarea
                                                     class="review-input review-textarea"

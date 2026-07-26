@@ -30,25 +30,6 @@ $commonProfilesByCategory = asset_common_profiles_by_category_map($activeSegment
 $commonBindingsByFieldId = get_asset_common_profile_field_bindings_for_segment($activeSegmentId);
 $commonParentFieldCandidatesBySegment = asset_common_parent_field_candidates_by_segment(true);
 $commonScopeOptions = asset_common_scope_options();
-$calculationResultTypeOptions = asset_calculation_result_type_options();
-$calculationFormulaFieldRefs = asset_calculation_formula_reference_summary($activeSegmentId);
-$calculationFormulaHelpLines = [
-    'Start formulas with = . Example: =sum({capacity},{reserve})',
-    'Use same-row field references inside curly braces. Example: {floor_area}',
-    'Only number, date, and calculation fields from this segment can be referenced directly.',
-    'Supported operators: +, -, *, /, %',
-    'Supported functions: sum, average, max, min, count, roundup, rounddown, if, iferror, sqrt, year, month, day, date, inword',
-    'Example 1: =sum({capacity},{number},{floor})',
-    'Example 2: =roundup(({built_area}/{land_area})*100,2)',
-    'Example 3: =if({total_seats}=0,0,({occupied_seats}/{total_seats})*100)',
-    'Example 4: =date(year({start_date}),12,31)',
-    'Example 5: =iferror({approved_amount}/{unit_count},0)',
-    'Text output example: =if({completion_percent}=100,"Completed","In Progress")',
-    'Date output example: =date(year({handover_date})+1,month({handover_date}),day({handover_date}))',
-    'If a referenced value is blank or invalid for the formula, the system shows error.',
-    'Cross-row and cross-segment references are not allowed.',
-    'Circular references are not allowed. Chained calculation fields are allowed only inside the same segment.',
-];
 $userDefinedCommonModeNone = 'none';
 $trackableFilterFields = array_values(array_filter($fields, static function (array $field): bool {
     return (int)($field['active_status'] ?? 0) === 1
@@ -694,44 +675,6 @@ if (!function_exists('render_common_admin_row_input')) {
                 <input type="text" name="number_format_rule" placeholder="8.2 or -*8.*2">
             </label>
         </div>
-        <div class="field-config-group" data-field-config="calculation">
-            <label>Calculation Result Type
-                <select name="calculation_result_type">
-                    <?php foreach ($calculationResultTypeOptions as $resultTypeValue => $resultTypeLabel): ?>
-                        <option value="<?= e((string)$resultTypeValue); ?>"><?= e((string)$resultTypeLabel); ?></option>
-                    <?php endforeach; ?>
-                </select>
-            </label>
-        </div>
-        <div class="field-config-group" data-field-config="calculation">
-            <label>
-                <span class="field-label-row">
-                    <span>Formula</span>
-                    <button
-                        type="button"
-                        class="field-help-button field-help-inline"
-                        data-calculation-formula-help
-                        data-help-title="Calculation Formula Guide"
-                        data-help-lines="<?= e(json_encode($calculationFormulaHelpLines, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)); ?>"
-                        title="Calculation formula guide"
-                        aria-label="Calculation formula guide"
-                    >i</button>
-                </span>
-                <textarea name="calculation_formula" rows="4" placeholder="=sum({capacity},{reserve})"></textarea>
-            </label>
-            <div class="hint">Usable functions: <code>sum</code>, <code>average</code>, <code>max</code>, <code>min</code>, <code>count</code>, <code>roundup</code>, <code>rounddown</code>, <code>if</code>, <code>iferror</code>, <code>sqrt</code>, <code>year</code>, <code>month</code>, <code>day</code>, <code>date</code>, <code>inword</code>.</div>
-            <div class="hint">Use same-row field references like <code>{field_key}</code>. Supported source fields are number, date, and calculation fields from this segment.</div>
-            <div class="hint">
-                Available references:
-                <?php if ($calculationFormulaFieldRefs): ?>
-                    <?php foreach ($calculationFormulaFieldRefs as $calcRefIndex => $calcRefLine): ?>
-                        <span><code><?= e((string)$calcRefLine); ?></code><?= $calcRefIndex < count($calculationFormulaFieldRefs) - 1 ? ',' : ''; ?></span>
-                    <?php endforeach; ?>
-                <?php else: ?>
-                    <span>No usable number/date/calculation fields are currently available in this segment.</span>
-                <?php endif; ?>
-            </div>
-        </div>
         <div class="field-config-group" data-field-config="text">
             <label>Text Max Characters
                 <input type="number" name="text_max_length" min="1" step="1" placeholder="Leave blank for no limit">
@@ -932,40 +875,6 @@ if (!function_exists('render_common_admin_row_input')) {
                                     <input form="<?= e($formId); ?>" class="inline-edit" type="text" name="number_format_rule" value="<?= e((string)($field['number_format_rule'] ?? '')); ?>" placeholder="8.2 or -*8.*2">
                                 </label>
                             </div>
-                            <div class="field-config-group" data-field-config="calculation">
-                                <label>Calculation Result Type
-                                    <select form="<?= e($formId); ?>" class="inline-edit" name="calculation_result_type">
-                                        <?php foreach ($calculationResultTypeOptions as $resultTypeValue => $resultTypeLabel): ?>
-                                            <option value="<?= e((string)$resultTypeValue); ?>" <?= asset_normalize_calculation_result_type((string)($field['calculation_result_type'] ?? 'number')) === (string)$resultTypeValue ? 'selected' : ''; ?>><?= e((string)$resultTypeLabel); ?></option>
-                                        <?php endforeach; ?>
-                                    </select>
-                                </label>
-                                <label>
-                                    <span class="field-label-row">
-                                        <span>Formula</span>
-                                        <button
-                                            type="button"
-                                            class="field-help-button field-help-inline"
-                                            data-calculation-formula-help
-                                            data-help-title="Calculation Formula Guide"
-                                            data-help-lines="<?= e(json_encode($calculationFormulaHelpLines, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)); ?>"
-                                            title="Calculation formula guide"
-                                            aria-label="Calculation formula guide"
-                                        >i</button>
-                                    </span>
-                                    <textarea form="<?= e($formId); ?>" class="inline-edit field-options-box" name="calculation_formula" rows="4" placeholder="=sum({capacity},{reserve})"><?= e((string)($field['calculation_formula'] ?? '')); ?></textarea>
-                                </label>
-                                <div class="hint">Supported source fields are number, date, and calculation fields from this segment.</div>
-                                <div class="hint">Available references:
-                                    <?php if ($calculationFormulaFieldRefs): ?>
-                                        <?php foreach ($calculationFormulaFieldRefs as $calcRefIndex => $calcRefLine): ?>
-                                            <span><code><?= e((string)$calcRefLine); ?></code><?= $calcRefIndex < count($calculationFormulaFieldRefs) - 1 ? ',' : ''; ?></span>
-                                        <?php endforeach; ?>
-                                    <?php else: ?>
-                                        <span>No usable number/date/calculation fields are currently available in this segment.</span>
-                                    <?php endif; ?>
-                                </div>
-                            </div>
                             <div class="field-config-group" data-field-config="text">
                                 <label>Text Max Characters
                                     <input form="<?= e($formId); ?>" class="inline-edit" type="number" name="text_max_length" min="1" step="1" value="<?= e((string)($field['text_max_length'] ?? '')); ?>" placeholder="Leave blank for no limit">
@@ -1118,21 +1027,6 @@ if (!function_exists('render_common_admin_row_input')) {
         </div>
         <div class="modal-actions">
             <button type="button" class="modal-close" data-close="number-rule-help-modal">Close</button>
-        </div>
-    </div>
-</div>
-
-<div class="modal-backdrop" id="calculation-formula-help-modal" aria-hidden="true">
-    <div class="modal-card field-help-modal-card" role="dialog" aria-modal="true" aria-labelledby="calculation-formula-help-title">
-        <div class="flash-modal-head">
-            <h3 id="calculation-formula-help-title">Calculation Formula Guide</h3>
-            <button type="button" class="welcome-modal-close modal-close" data-close="calculation-formula-help-modal" aria-label="Close">×</button>
-        </div>
-        <div class="field-help-content">
-            <div id="calculation-formula-help-body"></div>
-        </div>
-        <div class="modal-actions">
-            <button type="button" class="modal-close" data-close="calculation-formula-help-modal">Close</button>
         </div>
     </div>
 </div>

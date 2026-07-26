@@ -112,6 +112,9 @@ if (!function_exists('render_common_admin_row_input')) {
             $html .= '</div>';
             return $html;
         }
+        if ($dataType === 'calculation') {
+            return '<input form="' . e($formId) . '" class="' . e($class) . '" type="text" name="' . e($fieldName) . '" value="' . e($value) . '" readonly>';
+        }
         $inputType = $dataType === 'date' ? 'date' : 'text';
         return '<input form="' . e($formId) . '" class="' . e($class) . '" type="' . e($inputType) . '" name="' . e($fieldName) . '" value="' . e($value) . '">';
     }

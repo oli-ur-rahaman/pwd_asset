@@ -1,0 +1,217 @@
+- generic [active] [ref=f5e1]:
+  - navigation [ref=f5e2]:
+    - generic [ref=f5e3]: Survey Soft
+    - generic [ref=f5e4]:
+      - link "Information" [ref=f5e5] [cursor=pointer]:
+        - /url: index.php?page=board
+      - link "Audit" [ref=f5e6] [cursor=pointer]:
+        - /url: index.php?page=audit
+      - link "Office Orders" [ref=f5e7] [cursor=pointer]:
+        - /url: index.php?page=office_orders
+      - link "Declarations" [ref=f5e8] [cursor=pointer]:
+        - /url: index.php?page=declarations
+      - link "Management" [ref=f5e9] [cursor=pointer]:
+        - /url: index.php?page=admin
+      - link "Common Fields" [ref=f5e10] [cursor=pointer]:
+        - /url: index.php?page=common_fields
+      - link "Download Manager" [ref=f5e11] [cursor=pointer]:
+        - /url: index.php?page=download_manager
+      - link "Comparison" [ref=f5e12] [cursor=pointer]:
+        - /url: index.php?page=comparison
+      - link "Offices" [ref=f5e13] [cursor=pointer]:
+        - /url: index.php?page=offices
+      - link "User Permissions" [ref=f5e14] [cursor=pointer]:
+        - /url: index.php?page=user_permissions
+      - link "Interface" [ref=f5e15] [cursor=pointer]:
+        - /url: index.php?page=interface
+      - link "Profile" [ref=f5e16] [cursor=pointer]:
+        - /url: index.php?page=profile
+      - button "Tutorial" [ref=f5e17] [cursor=pointer]
+      - button "Logout" [ref=f5e19] [cursor=pointer]
+  - main [ref=f5e20]:
+    - generic [ref=f5e23]:
+      - heading "Survey Soft" [level=2] [ref=f5e24]
+      - paragraph [ref=f5e25]: "Office: Chief Engineer Office | User: superadmin@pwd.gov.bd"
+    - generic [ref=f5e27]:
+      - link "parent_test" [ref=f5e28] [cursor=pointer]:
+        - /url: index.php?page=board&segment_id=18
+      - link "child_add_test" [ref=f5e29] [cursor=pointer]:
+        - /url: index.php?page=board&segment_id=20
+    - generic [ref=f5e30]:
+      - generic [ref=f5e31]:
+        - link "Excel Template" [ref=f5e32] [cursor=pointer]:
+          - /url: asset_template.php?segment_id=20
+        - button "Download Data" [disabled] [ref=f5e33]
+      - paragraph [ref=f5e34]: Set Level 1 fields in Download Manager before using downloads.
+    - generic [ref=f5e36]:
+      - generic [ref=f5e37]:
+        - heading "child_test_add" [level=2] [ref=f5e38]
+        - generic [ref=f5e39]:
+          - generic [ref=f5e40]: 8 row(s)
+          - link "Refresh" [ref=f5e41] [cursor=pointer]:
+            - /url: index.php?page=board&segment_id=20&office_view_scope=my_office
+          - button "Columns" [ref=f5e42] [cursor=pointer]
+          - button "Time Filter" [ref=f5e43] [cursor=pointer]
+      - table [ref=f5e45]:
+        - rowgroup [ref=f5e46]:
+          - row [ref=f5e47]:
+            - columnheader [ref=f5e48]:
+              - link "SL No" [ref=f5e49] [cursor=pointer]:
+                - /url: index.php?page=board&segment_id=20&office_view_scope=my_office&sort_col=__sl&sort_dir=asc
+            - columnheader [ref=f5e50]:
+              - link "Asset Number" [ref=f5e51] [cursor=pointer]:
+                - /url: index.php?page=board&segment_id=20&office_view_scope=my_office&sort_col=asset_number&sort_dir=asc
+            - columnheader [ref=f5e52]:
+              - link "Office" [ref=f5e53] [cursor=pointer]:
+                - /url: index.php?page=board&segment_id=20&office_view_scope=my_office&sort_col=office_name&sort_dir=asc
+            - columnheader [ref=f5e54]:
+              - link "District *" [ref=f5e56] [cursor=pointer]:
+                - /url: index.php?page=board&segment_id=20&office_view_scope=my_office&sort_col=district&sort_dir=asc
+                - text: District
+                - generic [ref=f5e57]: "*"
+            - columnheader [ref=f5e58]:
+              - link "Upazilla *" [ref=f5e60] [cursor=pointer]:
+                - /url: index.php?page=board&segment_id=20&office_view_scope=my_office&sort_col=upazilla&sort_dir=asc
+                - text: Upazilla
+                - generic [ref=f5e61]: "*"
+            - columnheader [ref=f5e62]:
+              - link "ins name *" [ref=f5e64] [cursor=pointer]:
+                - /url: index.php?page=board&segment_id=20&office_view_scope=my_office&sort_col=ins_name&sort_dir=asc
+                - text: ins name
+                - generic [ref=f5e65]: "*"
+            - columnheader [ref=f5e66]:
+              - link "hosp bldg number *" [ref=f5e68] [cursor=pointer]:
+                - /url: index.php?page=board&segment_id=20&office_view_scope=my_office&sort_col=hosp_bldg_number&sort_dir=asc
+                - text: hosp bldg number
+                - generic [ref=f5e69]: "*"
+            - columnheader [ref=f5e70]:
+              - link "capacity (ton" [ref=f5e72] [cursor=pointer]:
+                - /url: index.php?page=board&segment_id=20&office_view_scope=my_office&sort_col=capacity_ton_day&sort_dir=asc
+            - columnheader [ref=f5e73]:
+              - link "construction data" [ref=f5e75] [cursor=pointer]:
+                - /url: index.php?page=board&segment_id=20&office_view_scope=my_office&sort_col=construction_data&sort_dir=asc
+            - columnheader [ref=f5e76]:
+              - link "calc" [ref=f5e78] [cursor=pointer]:
+                - /url: index.php?page=board&segment_id=20&office_view_scope=my_office&sort_col=calc&sort_dir=asc
+            - columnheader [ref=f5e79]:
+              - link "condition" [ref=f5e81] [cursor=pointer]:
+                - /url: index.php?page=board&segment_id=20&office_view_scope=my_office&sort_col=condition&sort_dir=asc
+            - columnheader [ref=f5e82]:
+              - link "images" [ref=f5e84] [cursor=pointer]:
+                - /url: index.php?page=board&segment_id=20&office_view_scope=my_office&sort_col=images&sort_dir=asc
+        - rowgroup [ref=f5e85]:
+          - row [ref=f5e86]:
+            - cell "1" [ref=f5e87]
+            - cell "AST-2026-008973" [ref=f5e88]
+            - cell "Division - Sylhet PWD Division" [ref=f5e89]
+            - cell "A" [ref=f5e90]
+            - cell "2" [ref=f5e91]
+            - cell "UHC_2" [ref=f5e92]
+            - cell "2" [ref=f5e93]
+            - cell "1300" [ref=f5e94]
+            - cell "2026-01-06" [ref=f5e95]
+            - cell "1700" [ref=f5e96]
+            - cell "good" [ref=f5e97]
+            - cell [ref=f5e98]:
+              - link "IMG" [ref=f5e100] [cursor=pointer]:
+                - /url: index.php?page=asset_file&id=3981
+          - row [ref=f5e102]:
+            - cell "2" [ref=f5e103]
+            - cell "AST-2026-008972" [ref=f5e104]
+            - cell "Division - Sylhet PWD Division" [ref=f5e105]
+            - cell "A" [ref=f5e106]
+            - cell "2" [ref=f5e107]
+            - cell "UHC_2" [ref=f5e108]
+            - cell "1" [ref=f5e109]
+            - cell "1400" [ref=f5e110]
+            - cell "2026-01-07" [ref=f5e111]
+            - cell "1600" [ref=f5e112]
+            - cell "fair" [ref=f5e113]
+            - cell [ref=f5e114]:
+              - link "IMG" [ref=f5e116] [cursor=pointer]:
+                - /url: index.php?page=asset_file&id=3982
+          - row [ref=f5e118]:
+            - cell "3" [ref=f5e119]
+            - cell "AST-2026-008971" [ref=f5e120]
+            - cell "Division - Sylhet PWD Division" [ref=f5e121]
+            - cell "A" [ref=f5e122]
+            - cell "1" [ref=f5e123]
+            - cell "UHC_1" [ref=f5e124]
+            - cell "2" [ref=f5e125]
+            - cell "1500" [ref=f5e126]
+            - cell "2026-01-08" [ref=f5e127]
+            - cell "1900" [ref=f5e128]
+            - cell "poor" [ref=f5e129]
+            - cell [ref=f5e130]:
+              - link "IMG" [ref=f5e132] [cursor=pointer]:
+                - /url: index.php?page=asset_file&id=3983
+          - row [ref=f5e134]:
+            - cell "4" [ref=f5e135]
+            - cell "AST-2026-008970" [ref=f5e136]
+            - cell "Division - Sylhet PWD Division" [ref=f5e137]
+            - cell "A" [ref=f5e138]
+            - cell "1" [ref=f5e139]
+            - cell "UHC_1" [ref=f5e140]
+            - cell "1" [ref=f5e141]
+            - cell "1000" [ref=f5e142]
+            - cell "2026-01-09" [ref=f5e143]
+            - cell "1200" [ref=f5e144]
+            - cell "good" [ref=f5e145]
+            - cell [ref=f5e146]:
+              - link "IMG" [ref=f5e148] [cursor=pointer]:
+                - /url: index.php?page=asset_file&id=3984
+          - row [ref=f5e150]:
+            - cell "5" [ref=f5e151]
+            - cell "AST-2026-008978" [ref=f5e152]
+            - cell "Division - Sylhet PWD Division" [ref=f5e153]
+            - cell "B" [ref=f5e154]
+            - cell "ii" [ref=f5e155]
+            - cell "UHC_test_calc" [ref=f5e156]
+            - cell "5" [ref=f5e157]
+            - cell "1000" [ref=f5e158]
+            - cell "2026-07-15" [ref=f5e159]
+            - cell "2000" [ref=f5e160]
+            - cell "good" [ref=f5e161]
+            - cell "No file" [ref=f5e162]
+          - row [ref=f5e163]:
+            - cell "6" [ref=f5e164]
+            - cell "AST-2026-008977" [ref=f5e165]
+            - cell "Division - Sylhet PWD Division" [ref=f5e166]
+            - cell "B" [ref=f5e167]
+            - cell "ii" [ref=f5e168]
+            - cell "UHC_test" [ref=f5e169]
+            - cell "1" [ref=f5e170]
+            - cell "1500" [ref=f5e171]
+            - cell "2026-07-07" [ref=f5e172]
+            - cell "1700" [ref=f5e173]
+            - cell "good" [ref=f5e174]
+            - cell [ref=f5e175]:
+              - link "IMG" [ref=f5e177] [cursor=pointer]:
+                - /url: index.php?page=asset_file&id=3985
+          - row [ref=f5e179]:
+            - cell "7" [ref=f5e180]
+            - cell "AST-2026-008975" [ref=f5e181]
+            - cell "Division - Sylhet PWD Division" [ref=f5e182]
+            - cell "B" [ref=f5e183]
+            - cell "ii" [ref=f5e184]
+            - cell "UHC_7" [ref=f5e185]
+            - cell "1" [ref=f5e186]
+            - cell "1800" [ref=f5e187]
+            - cell "2026-01-11" [ref=f5e188]
+            - cell "2000" [ref=f5e189]
+            - cell "poor" [ref=f5e190]
+            - cell "No file" [ref=f5e191]
+          - row [ref=f5e192]:
+            - cell "8" [ref=f5e193]
+            - cell "AST-2026-008974" [ref=f5e194]
+            - cell "Division - Sylhet PWD Division" [ref=f5e195]
+            - cell "B" [ref=f5e196]
+            - cell "ii" [ref=f5e197]
+            - cell "UHC_6" [ref=f5e198]
+            - cell "1" [ref=f5e199]
+            - cell "1700" [ref=f5e200]
+            - cell "2026-01-10" [ref=f5e201]
+            - cell "1900" [ref=f5e202]
+            - cell "fair" [ref=f5e203]
+            - cell "No file" [ref=f5e204]
+    - iframe

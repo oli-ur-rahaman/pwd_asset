@@ -61,8 +61,6 @@ function ensure_asset_schema(): void
             field_key VARCHAR(100) NOT NULL,
             label VARCHAR(255) NOT NULL,
             data_type VARCHAR(20) NOT NULL,
-            calculation_formula LONGTEXT DEFAULT NULL,
-            calculation_result_type VARCHAR(20) DEFAULT NULL,
             mandatory_scope TINYINT NOT NULL DEFAULT 0,
             field_information LONGTEXT DEFAULT NULL,
             video_tutorial_url VARCHAR(1000) DEFAULT NULL,
@@ -516,8 +514,6 @@ function ensure_asset_schema(): void
     asset_ensure_column('asset_fields', 'fill_color', 'VARCHAR(20) DEFAULT NULL');
     asset_ensure_column('asset_fields', 'number_format_rule', 'VARCHAR(30) DEFAULT NULL');
     asset_ensure_column('asset_fields', 'text_max_length', 'INT DEFAULT NULL');
-    asset_ensure_column('asset_fields', 'calculation_formula', 'LONGTEXT DEFAULT NULL');
-    asset_ensure_column('asset_fields', 'calculation_result_type', 'VARCHAR(20) DEFAULT NULL');
     asset_ensure_column('info', 'hosted_tutorial_video_path', 'VARCHAR(255) DEFAULT NULL');
     asset_ensure_column('info', 'hosted_tutorial_video_original_name', 'VARCHAR(255) DEFAULT NULL');
     asset_ensure_column('info', 'hosted_tutorial_video_size', 'BIGINT DEFAULT NULL');
@@ -1136,220 +1132,7 @@ function asset_seed_default_fields(): void
 
 function asset_supported_data_types(): array
 {
-    return ['text', 'number', 'date', 'dropdown', 'yes_no', 'file', 'conditional', 'bimh', 'calculation'];
-}
-
-function asset_calculation_result_type_options(): array
-{
-    return [
-        'number' => 'number',
-        'date' => 'date',
-        'text' => 'text',
-    ];
-}
-
-function asset_normalize_calculation_result_type(?string $value): string
-{
-    $value = strtolower(trim((string)$value));
-    return array_key_exists($value, asset_calculation_result_type_options()) ? $value : 'number';
-}
-
-function asset_field_is_import_template_visible(array $field): bool
-{
-    return (int)($field['active_status'] ?? 0) === 1
-        && ((int)($field['is_import_enabled'] ?? 0) === 1 || asset_is_calculation_field($field));
-}
-
-function asset_calculation_supported_function_names(): array
-{
-    return [
-        'sum',
-        'average',
-        'max',
-        'min',
-        'count',
-        'roundup',
-        'rounddown',
-        'if',
-        'iferror',
-        'sqrt',
-        'year',
-        'month',
-        'day',
-        'date',
-        'inword',
-    ];
-}
-
-function asset_is_calculation_field(array $field): bool
-{
-    return (string)($field['data_type'] ?? '') === 'calculation';
-}
-
-function asset_field_supports_calculation_reference(array $field): bool
-{
-    $type = (string)($field['data_type'] ?? '');
-    return in_array($type, ['number', 'date', 'calculation'], true) && !asset_is_conditional_secondary($field);
-}
-
-function asset_calculation_reference_candidates(?int $segmentId = null, bool $includeInactive = false, ?int $excludeFieldId = null): array
-{
-    $segmentId = asset_normalize_segment_id($segmentId);
-    $candidates = [];
-    foreach (get_asset_fields($includeInactive, $segmentId) as $field) {
-        $fieldId = (int)($field['id'] ?? 0);
-        if ($excludeFieldId !== null && $fieldId === $excludeFieldId) {
-            continue;
-        }
-        if (!asset_field_supports_calculation_reference($field)) {
-            continue;
-        }
-        $candidates[] = $field;
-    }
-    return $candidates;
-}
-
-function asset_extract_calculation_field_keys(string $formula): array
-{
-    preg_match_all('/\{([A-Za-z_][A-Za-z0-9_]*)\}/', $formula, $matches);
-    $keys = array_map(static fn(string $key): string => trim($key), $matches[1] ?? []);
-    return array_values(array_unique(array_filter($keys, static fn(string $key): bool => $key !== '')));
-}
-
-function asset_calculation_formula_field_token_list(?int $segmentId = null, ?int $excludeFieldId = null): array
-{
-    $tokens = [];
-    foreach (asset_calculation_reference_candidates($segmentId, true, $excludeFieldId) as $field) {
-        $tokens[] = [
-            'field_key' => (string)($field['field_key'] ?? ''),
-            'label' => (string)($field['label'] ?? ''),
-            'data_type' => (string)($field['data_type'] ?? ''),
-        ];
-    }
-    usort($tokens, static function (array $left, array $right): int {
-        return strcasecmp((string)$left['label'], (string)$right['label']);
-    });
-    return $tokens;
-}
-
-function asset_calculation_formula_reference_summary(?int $segmentId = null, ?int $excludeFieldId = null): array
-{
-    $lines = [];
-    foreach (asset_calculation_formula_field_token_list($segmentId, $excludeFieldId) as $token) {
-        $lines[] = '{' . (string)$token['field_key'] . '} - ' . (string)$token['label'] . ' (' . (string)$token['data_type'] . ')';
-    }
-    return $lines;
-}
-
-function asset_validate_calculation_formula_definition(string $formula, ?int $segmentId = null, ?int $fieldId = null): array
-{
-    $errors = [];
-    $formula = trim($formula);
-    if ($formula === '') {
-        $errors[] = 'Calculation formula is required.';
-        return $errors;
-    }
-
-    if ($formula[0] === '=') {
-        $formula = ltrim(substr($formula, 1));
-    }
-
-    if ($formula === '') {
-        $errors[] = 'Calculation formula is required.';
-        return $errors;
-    }
-
-    if (preg_match('/[^A-Za-z0-9_\{\}\+\-\*\/\%\(\)\,\.\s"\'<>=!]/', $formula)) {
-        $errors[] = 'Calculation formula contains unsupported characters.';
-        return $errors;
-    }
-
-    $availableByKey = [];
-    foreach (asset_calculation_reference_candidates($segmentId, true, $fieldId) as $candidate) {
-        $availableByKey[(string)($candidate['field_key'] ?? '')] = $candidate;
-    }
-
-    foreach (asset_extract_calculation_field_keys($formula) as $fieldKey) {
-        if (!isset($availableByKey[$fieldKey])) {
-            $errors[] = 'Calculation formula references an unsupported or unknown field: {' . $fieldKey . '}.';
-        }
-    }
-
-    $bareExpression = preg_replace('/\{[A-Za-z_][A-Za-z0-9_]*\}/', ' ', $formula);
-    $bareExpression = preg_replace('/"[^"]*"|\'[^\']*\'/', ' ', (string)$bareExpression);
-    preg_match_all('/\b([A-Za-z_][A-Za-z0-9_]*)\b/', (string)$bareExpression, $fnMatches);
-    $allowedFunctions = array_fill_keys(asset_calculation_supported_function_names(), true);
-    foreach ($fnMatches[1] ?? [] as $token) {
-        $tokenKey = strtolower((string)$token);
-        if (!isset($allowedFunctions[$tokenKey])) {
-            $errors[] = 'Calculation formula uses an unsupported function or token: ' . $token . '.';
-        }
-    }
-
-    return array_values(array_unique($errors));
-}
-
-function asset_calculation_dependency_graph(?int $segmentId = null, ?int $targetFieldId = null, ?string $targetFormula = null): array
-{
-    $segmentId = asset_normalize_segment_id($segmentId);
-    $graph = [];
-    foreach (get_asset_fields(true, $segmentId) as $field) {
-        if (!asset_is_calculation_field($field) || asset_is_conditional_secondary($field)) {
-            continue;
-        }
-        $fieldId = (int)($field['id'] ?? 0);
-        $formula = $targetFieldId !== null && $fieldId === $targetFieldId
-            ? (string)$targetFormula
-            : (string)($field['calculation_formula'] ?? '');
-        $dependencies = [];
-        foreach (asset_extract_calculation_field_keys($formula) as $fieldKey) {
-            $dependencyField = get_asset_field_by_key($fieldKey, $segmentId);
-            if ($dependencyField && asset_is_calculation_field($dependencyField)) {
-                $dependencies[] = (int)($dependencyField['id'] ?? 0);
-            }
-        }
-        $graph[$fieldId] = array_values(array_unique(array_filter($dependencies, static fn(int $id): bool => $id > 0)));
-    }
-    if ($targetFieldId !== null && !isset($graph[$targetFieldId])) {
-        $dependencies = [];
-        foreach (asset_extract_calculation_field_keys((string)$targetFormula) as $fieldKey) {
-            $dependencyField = get_asset_field_by_key($fieldKey, $segmentId);
-            if ($dependencyField && asset_is_calculation_field($dependencyField)) {
-                $dependencies[] = (int)($dependencyField['id'] ?? 0);
-            }
-        }
-        $graph[$targetFieldId] = array_values(array_unique(array_filter($dependencies, static fn(int $id): bool => $id > 0)));
-    }
-    return $graph;
-}
-
-function asset_calculation_graph_has_cycle(array $graph): bool
-{
-    $visiting = [];
-    $visited = [];
-    $walk = static function (int $node) use (&$walk, $graph, &$visiting, &$visited): bool {
-        if (isset($visiting[$node])) {
-            return true;
-        }
-        if (isset($visited[$node])) {
-            return false;
-        }
-        $visiting[$node] = true;
-        foreach (($graph[$node] ?? []) as $next) {
-            if ($walk((int)$next)) {
-                return true;
-            }
-        }
-        unset($visiting[$node]);
-        $visited[$node] = true;
-        return false;
-    };
-    foreach (array_keys($graph) as $node) {
-        if ($walk((int)$node)) {
-            return true;
-        }
-    }
-    return false;
+    return ['text', 'number', 'date', 'dropdown', 'yes_no', 'file', 'conditional', 'bimh'];
 }
 
 function asset_common_definition_mode_user_defined(): string
@@ -1421,7 +1204,7 @@ function asset_common_source_type_superadmin_defined(): string
 
 function asset_common_supported_field_data_types(): array
 {
-    return ['text', 'number', 'date', 'dropdown', 'yes_no', 'conditional', 'bimh', 'calculation'];
+    return ['text', 'number', 'date', 'dropdown', 'yes_no', 'conditional', 'bimh'];
 }
 
 function asset_common_row_config_input_present(array $input): bool
@@ -3014,32 +2797,18 @@ function save_asset_common_admin_row(int $profileId, array $input, ?int $rowId =
         $segmentFieldMapByKey[(string)$fieldRow['field_key']] = $fieldRow;
     }
     $values = [];
-    $normalizedByKey = [];
     foreach ($profileFields as $profileField) {
         $childFieldId = (int)($profileField['child_field_id'] ?? 0);
         if ($childFieldId <= 0 || !isset($segmentFieldMapById[$childFieldId])) {
             continue;
         }
         $fieldMeta = $segmentFieldMapById[$childFieldId];
-        if (asset_is_calculation_field($fieldMeta)) {
-            continue;
-        }
         $errors = [];
         $normalized = normalize_asset_field_value($fieldMeta, $input['values'][$childFieldId] ?? null, $segmentFieldMapByKey, $errors);
         if ($errors !== []) {
             throw new RuntimeException(implode(' ', array_values($errors)));
         }
-        $normalizedByKey[(string)$fieldMeta['field_key']] = $normalized;
         $values[$childFieldId] = (string)($normalized['display'] ?? '');
-    }
-    $calculatedValues = asset_common_calculated_display_values($segmentFieldMapByKey, $normalizedByKey);
-    foreach ($profileFields as $profileField) {
-        $childFieldId = (int)($profileField['child_field_id'] ?? 0);
-        $fieldMeta = $segmentFieldMapById[$childFieldId] ?? null;
-        if (!$fieldMeta || !asset_is_calculation_field($fieldMeta)) {
-            continue;
-        }
-        $values[$childFieldId] = (string)($calculatedValues['display'][(string)$fieldMeta['field_key']] ?? 'error');
     }
     $pairErrors = asset_common_validate_conditional_pair_values($values, $segmentFieldMapById);
     if ($pairErrors !== []) {
@@ -3169,19 +2938,15 @@ function asset_common_admin_template_column_definitions(int $profileId): array
         $column = [
             'key' => 'field_' . $childFieldId,
             'field_id' => $childFieldId,
-            'field_key' => (string)($field['field_key'] ?? ''),
             'label' => (string)($profileField['child_field_label'] ?? 'Field'),
             'instruction_label' => asset_label_for_submission_message($field),
             'data_type' => $type,
             'validation_kind' => $validationKind,
-            'required_input' => asset_is_calculation_field($field) ? false : true,
+            'required_input' => true,
             'required_final' => false,
-            'non_editable' => asset_is_calculation_field($field),
             'options' => $options,
             'number_format_rule' => (string)($field['number_format_rule'] ?? ''),
             'text_max_length' => (int)($field['text_max_length'] ?? 0),
-            'calculation_formula' => (string)($field['calculation_formula'] ?? ''),
-            'calculation_result_type' => (string)($field['calculation_result_type'] ?? ''),
         ];
         if ($validationKind === 'conditional_primary') {
             $column['conditional_map'] = asset_decode_conditional_map($field);
@@ -3340,30 +3105,6 @@ function build_asset_common_admin_template_workbook(int $profileId): \PhpOffice\
         $rowNumber++;
     }
 
-    $commonCalcColumnByFieldKey = [];
-    foreach ($inputColumns as $column) {
-        if ((string)($column['data_type'] ?? '') !== 'calculation') {
-            continue;
-        }
-        $commonCalcColumnByFieldKey[(string)($column['field_key'] ?? '')] = (string)$column['key'];
-    }
-    for ($row = $startRow; $row <= $endRow; $row++) {
-        foreach ($inputColumns as $column) {
-            if ((string)($column['data_type'] ?? '') !== 'calculation') {
-                continue;
-            }
-            $formulaCell = $columnLetters[(string)$column['key']] . $row;
-            $excelFormula = asset_calculation_excel_expression(
-                (string)($column['calculation_formula'] ?? ''),
-                static function (string $fieldKey) use ($columnLetters, $commonCalcColumnByFieldKey, $row): string {
-                    $columnKey = $commonCalcColumnByFieldKey[$fieldKey] ?? $fieldKey;
-                    return isset($columnLetters[$columnKey]) ? ($columnLetters[$columnKey] . $row) : '""';
-                }
-            );
-            $sheet->setCellValue($formulaCell, $excelFormula);
-        }
-    }
-
     $requiredRefs = [];
     foreach ($inputColumns as $column) {
         if (empty($column['required_input']) && empty($column['required_final'])) {
@@ -3426,7 +3167,7 @@ function build_asset_common_admin_template_workbook(int $profileId): \PhpOffice\
 
     foreach ($inputColumns as $column) {
         $colLetter = $columnLetters[$column['key']];
-        if (empty($column['non_editable']) && $firstEditableRow <= $endRow) {
+        if ($firstEditableRow <= $endRow) {
             $sheet->getStyle($colLetter . $firstEditableRow . ':' . $colLetter . $endRow)
                 ->getProtection()
                 ->setLocked(\PhpOffice\PhpSpreadsheet\Style\Protection::PROTECTION_UNPROTECTED);
@@ -3580,32 +3321,18 @@ function import_asset_common_admin_rows_from_template(int $profileId, array $fil
         }
         $scope = asset_common_parse_scope_token((string)$scopeOptions[$scopeLabel]);
         $values = [];
-        $normalizedByKey = [];
         foreach ($profileFields as $offset => $profileField) {
             $childFieldId = (int)($profileField['child_field_id'] ?? 0);
             if ($childFieldId <= 0 || !isset($fieldMetaById[$childFieldId])) {
                 continue;
             }
             $fieldMeta = $fieldMetaById[$childFieldId];
-            if (asset_is_calculation_field($fieldMeta)) {
-                continue;
-            }
             $errors = [];
             $normalized = normalize_asset_field_value($fieldMeta, $row[$offset + 2] ?? null, $fieldMapByKey, $errors);
             if ($errors) {
                 throw new RuntimeException('Row ' . ($index + 1) . ': ' . implode(' ', array_values($errors)));
             }
-            $normalizedByKey[(string)$fieldMeta['field_key']] = $normalized;
             $values[$childFieldId] = (string)($normalized['display'] ?? '');
-        }
-        $calculatedValues = asset_common_calculated_display_values($fieldMapByKey, $normalizedByKey);
-        foreach ($profileFields as $profileField) {
-            $childFieldId = (int)($profileField['child_field_id'] ?? 0);
-            $fieldMeta = $fieldMetaById[$childFieldId] ?? null;
-            if (!$fieldMeta || !asset_is_calculation_field($fieldMeta)) {
-                continue;
-            }
-            $values[$childFieldId] = (string)($calculatedValues['display'][(string)$fieldMeta['field_key']] ?? 'error');
         }
         $pairErrors = asset_common_validate_conditional_pair_values($values, $fieldMetaById);
         if ($pairErrors !== []) {
@@ -3716,7 +3443,6 @@ function asset_common_build_user_defined_rows(array $profile, array $bindings, a
             );
             $fieldValues[(string)$childField['field_key']] = $normalized;
         }
-        $fieldValues = asset_common_calculated_display_values($fieldMapByKey, $fieldValues)['normalized'];
         $desiredRows[] = [
             'row_key' => asset_common_generated_row_key_for_source_asset((int)$sourceAsset['id']),
             'source_type' => asset_common_source_type_user_defined(),
@@ -3754,7 +3480,6 @@ function asset_common_build_superadmin_defined_rows(array $profile, array $bindi
             );
             $fieldValues[(string)$childField['field_key']] = $normalized;
         }
-        $fieldValues = asset_common_calculated_display_values($fieldMapByKey, $fieldValues)['normalized'];
         $desiredRows[] = [
             'row_key' => (string)$adminRow['stable_row_key'],
             'source_type' => asset_common_source_type_superadmin_defined(),
@@ -3981,25 +3706,7 @@ function asset_common_upsert_generated_asset(array $profile, int $officeType, in
             $actorUserId
         );
     }
-    $segmentId = (int)($profile['segment_id'] ?? 0);
-    $fieldMap = asset_field_map_for_segment(true, $segmentId);
-    $mergedValues = [];
-    if ($beforeAsset) {
-        foreach ($fieldMap as $fieldKey => $fieldMeta) {
-            if ((string)($fieldMeta['data_type'] ?? '') === 'file') {
-                continue;
-            }
-            $mergedValues[$fieldKey] = asset_common_current_normalized_value($fieldMeta, $beforeAsset);
-        }
-    }
-    foreach ((array)($desiredRow['field_values'] ?? []) as $fieldKey => $normalizedValue) {
-        $mergedValues[(string)$fieldKey] = $normalizedValue;
-    }
-    if ($fieldMap !== []) {
-        $calcErrors = [];
-        $mergedValues = asset_apply_calculation_fields($fieldMap, $mergedValues, $calcErrors);
-    }
-    save_asset_values($assetId, $mergedValues);
+    save_asset_values($assetId, (array)($desiredRow['field_values'] ?? []));
     $afterAsset = get_asset($assetId, true);
     asset_filter_index_sync_asset_change($beforeAsset, $afterAsset);
     $afterSignature = asset_common_activity_signature($afterAsset);
@@ -7125,16 +6832,6 @@ function asset_format_normalized_value_for_log(array $field, ?array $normalized)
     if ($normalized === null) {
         return '';
     }
-    if (asset_is_calculation_field($field)) {
-        if ((string)($normalized['value_text'] ?? '') === 'error') {
-            return 'error';
-        }
-        return match (asset_normalize_calculation_result_type((string)($field['calculation_result_type'] ?? 'number'))) {
-            'number' => asset_format_number_display($normalized['value_number'] !== null ? (string)$normalized['value_number'] : null),
-            'date' => (string)($normalized['value_date'] ?? ''),
-            default => (string)($normalized['value_text'] ?? ''),
-        };
-    }
     return match ((string)$field['data_type']) {
         'number' => asset_format_number_display($normalized['value_number'] !== null ? (string)$normalized['value_number'] : null),
         'date' => (string)($normalized['value_date'] ?? ''),
@@ -8009,14 +7706,12 @@ function create_asset_field(array $payload): void
             asset_assign_field_tutorial_video($fieldId, $payload['tutorial_video_upload'] ?? null, (string)($payload['hosted_tutorial_video_filename'] ?? ''), !empty($payload['remove_hosted_tutorial_video']), $createdTutorialFiles);
             asset_assign_field_tutorial_video($childId, $payload['secondary_tutorial_video_upload'] ?? null, (string)($payload['secondary_hosted_tutorial_video_filename'] ?? ''), !empty($payload['remove_secondary_hosted_tutorial_video']), $createdTutorialFiles);
         } else {
-            $stmt = db()->prepare('INSERT INTO asset_fields (segment_id, field_key, label, data_type, calculation_formula, calculation_result_type, field_information, video_tutorial_url, fill_color, number_format_rule, text_max_length, secondary_of_field_id, conditional_map_json, mandatory_scope, is_required, is_displayed, is_import_enabled, is_unique, is_filter_enabled, filter_scope, is_common_download_field, is_download_level1, is_download_filter, is_download_sort, is_download_zip_file_selectable, is_download_token, active_status, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, NOW())');
+            $stmt = db()->prepare('INSERT INTO asset_fields (segment_id, field_key, label, data_type, field_information, video_tutorial_url, fill_color, number_format_rule, text_max_length, secondary_of_field_id, conditional_map_json, mandatory_scope, is_required, is_displayed, is_import_enabled, is_unique, is_filter_enabled, filter_scope, is_common_download_field, is_download_level1, is_download_filter, is_download_sort, is_download_zip_file_selectable, is_download_token, active_status, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, NOW())');
             $stmt->execute([
                 $segmentId,
                 $payload['field_key'],
                 $payload['label'],
                 $payload['data_type'],
-                $payload['calculation_formula'] ?: null,
-                $payload['calculation_result_type'] ?: null,
                 $payload['field_information'] ?: null,
                 $payload['video_tutorial_url'] ?: null,
                 $payload['fill_color'] ?: null,
@@ -8062,9 +7757,6 @@ function create_asset_field(array $payload): void
     }
     if ($childId > 0) {
         asset_filter_index_refresh_field($childId, $segmentId);
-    }
-    if (($payload['data_type'] ?? '') === 'calculation') {
-        asset_recalculate_calculation_fields_for_segment($segmentId);
     }
 }
 
@@ -8144,12 +7836,10 @@ function update_asset_field(int $id, array $payload): void
                 asset_delete_conditional_secondary_field_for_update($removedSecondaryFieldId, $segmentId, (int)(current_user()['id'] ?? 0));
                 $childField = null;
             }
-            $stmt = db()->prepare('UPDATE asset_fields SET label = ?, data_type = ?, calculation_formula = ?, calculation_result_type = ?, field_information = ?, video_tutorial_url = ?, fill_color = ?, number_format_rule = ?, text_max_length = ?, conditional_map_json = NULL, mandatory_scope = ?, is_required = ?, is_displayed = ?, is_import_enabled = ?, is_unique = ?, is_filter_enabled = ?, filter_scope = ?, is_common_download_field = ?, is_download_level1 = ?, is_download_filter = ?, is_download_sort = ?, is_download_zip_file_selectable = ?, is_download_token = ?, sort_order = ?, updated_at = NOW() WHERE id = ?');
+            $stmt = db()->prepare('UPDATE asset_fields SET label = ?, data_type = ?, field_information = ?, video_tutorial_url = ?, fill_color = ?, number_format_rule = ?, text_max_length = ?, conditional_map_json = NULL, mandatory_scope = ?, is_required = ?, is_displayed = ?, is_import_enabled = ?, is_unique = ?, is_filter_enabled = ?, filter_scope = ?, is_common_download_field = ?, is_download_level1 = ?, is_download_filter = ?, is_download_sort = ?, is_download_zip_file_selectable = ?, is_download_token = ?, sort_order = ?, updated_at = NOW() WHERE id = ?');
             $stmt->execute([
                 $payload['label'],
                 $payload['data_type'],
-                $payload['calculation_formula'] ?: null,
-                $payload['calculation_result_type'] ?: null,
                 $payload['field_information'] ?: null,
                 $payload['video_tutorial_url'] ?: null,
                 $payload['fill_color'] ?: null,
@@ -8205,9 +7895,6 @@ function update_asset_field(int $id, array $payload): void
         asset_sync_user_defined_child_fields_from_parent((int)$payload['common_parent_field_id'], (int)($payload['common_parent_segment_id'] ?? 0));
     } else {
         asset_sync_user_defined_child_fields_from_parent($id, $segmentId);
-    }
-    if (($existing['data_type'] ?? '') === 'calculation' || ($payload['data_type'] ?? '') === 'calculation') {
-        asset_recalculate_calculation_fields_for_segment($segmentId);
     }
 }
 
@@ -8483,22 +8170,6 @@ function validate_asset_field_definition(array $input, array $fileInput = [], ?i
         $numberFormatRule = '';
     }
 
-    $calculationFormula = trim((string)($input['calculation_formula'] ?? ''));
-    $calculationResultType = $dataType === 'calculation'
-        ? asset_normalize_calculation_result_type((string)($input['calculation_result_type'] ?? ''))
-        : '';
-    if ($dataType === 'calculation') {
-        $errors = array_merge($errors, asset_validate_calculation_formula_definition($calculationFormula, $segmentId, $fieldId));
-        if ($fieldId !== null || $existingField) {
-            $graphFieldId = $fieldId ?? (int)($existingField['id'] ?? 0);
-            if ($graphFieldId > 0 && asset_calculation_graph_has_cycle(asset_calculation_dependency_graph($segmentId, $graphFieldId, $calculationFormula))) {
-                $errors[] = 'Calculation formula creates a circular dependency.';
-            }
-        }
-    } else {
-        $calculationFormula = '';
-    }
-
     $textMaxLength = null;
     if ($dataType === 'text') {
         $textMaxLengthRaw = trim((string)($input['text_max_length'] ?? ''));
@@ -8635,7 +8306,7 @@ function validate_asset_field_definition(array $input, array $fileInput = [], ?i
 
     if ($commonRowConfigPresent && $isCommonRowField === 1) {
         if (!in_array($dataType, asset_common_supported_field_data_types(), true)) {
-            $errors[] = 'Common row fields currently support text, number, date, dropdown, yes-no, conditional, BIMH, and calculation only.';
+            $errors[] = 'Common row fields currently support text, number, date, dropdown, yes-no, conditional, and BIMH only.';
         }
 
         $segmentCategories = get_asset_categories(true, $segmentId);
@@ -8737,13 +8408,11 @@ function validate_asset_field_definition(array $input, array $fileInput = [], ?i
             'hosted_tutorial_video_filename' => $hostedTutorialVideoFilename,
             'remove_hosted_tutorial_video' => $removeHostedTutorialVideo,
             'number_format_rule' => $numberFormatRule,
-            'calculation_formula' => $calculationFormula,
-            'calculation_result_type' => $calculationResultType,
             'text_max_length' => $textMaxLength,
             'mandatory_scope' => asset_normalize_mandatory_scope($input['mandatory_scope'] ?? asset_mandatory_scope_optional()),
             'is_required' => asset_normalize_mandatory_scope($input['mandatory_scope'] ?? asset_mandatory_scope_optional()) === asset_mandatory_scope_input() ? 1 : 0,
             'is_displayed' => !empty($input['is_displayed']) ? 1 : 0,
-            'is_import_enabled' => in_array($dataType, ['file'], true) ? 0 : (($dataType === 'calculation') ? 1 : (!empty($input['is_import_enabled']) ? 1 : 0)),
+            'is_import_enabled' => in_array($dataType, ['file'], true) ? 0 : (!empty($input['is_import_enabled']) ? 1 : 0),
             'is_unique' => in_array($dataType, ['file', 'conditional'], true) ? 0 : (!empty($input['is_unique']) ? 1 : 0),
             'is_filter_enabled' => $filterScope === asset_filter_scope_none() ? 0 : 1,
             'filter_scope' => $filterScope,
@@ -8818,19 +8487,14 @@ function validate_asset_payload(array $input, ?int $assetId = null, array $fileB
             $fileOperations[$fieldKey] = validate_asset_file_field_value($field, $assetId, $input, $fileBag, $errors);
             continue;
         }
-        if ((string)($field['data_type'] ?? '') === 'calculation') {
-            $values[$fieldKey] = [
-                'value_text' => null,
-                'value_number' => null,
-                'value_date' => null,
-                'value_bool' => null,
-                'value_option' => null,
-                'display' => '',
-            ];
-            continue;
-        }
         $raw = $input['fields'][$fieldKey] ?? null;
         $values[$fieldKey] = normalize_asset_field_value($field, $raw, $fieldMap, $errors);
+    }
+    foreach ($fieldMap as $fieldKey => $field) {
+        if ((int)($field['is_unique'] ?? 0) !== 1 || isset($errors[$fieldKey]) || $field['data_type'] === 'file') {
+            continue;
+        }
+        validate_asset_unique_value($field, $values[$fieldKey] ?? [], $assetId, $errors);
     }
     foreach ($fieldMap as $fieldKey => $field) {
         $parentId = (int)($field['secondary_of_field_id'] ?? 0);
@@ -8871,13 +8535,6 @@ function validate_asset_payload(array $input, ?int $assetId = null, array $fileB
             }
             $values[$fieldKey] = asset_common_current_normalized_value($fieldMap[$fieldKey], $existingAsset);
         }
-    }
-    $values = asset_apply_calculation_fields($fieldMap, $values, $errors);
-    foreach ($fieldMap as $fieldKey => $field) {
-        if ((int)($field['is_unique'] ?? 0) !== 1 || isset($errors[$fieldKey]) || $field['data_type'] === 'file') {
-            continue;
-        }
-        validate_asset_unique_value($field, $values[$fieldKey] ?? [], $assetId, $errors);
     }
 
     return [
@@ -8989,10 +8646,6 @@ function normalize_asset_field_value(array $field, mixed $raw, array $fieldMap, 
         return $normalized;
     }
 
-    if ($type === 'calculation') {
-        return $normalized;
-    }
-
     if ($type === 'text') {
         $maxLength = asset_text_max_length($field);
         if ($maxLength !== null && mb_strlen((string)$value) > $maxLength) {
@@ -9058,499 +8711,6 @@ function normalize_asset_field_value(array $field, mixed $raw, array $fieldMap, 
     return $normalized;
 }
 
-function asset_calculation_dependency_order(array $fieldMap): array
-{
-    $calcFields = [];
-    $graph = [];
-    foreach ($fieldMap as $fieldKey => $field) {
-        if (!asset_is_calculation_field($field)) {
-            continue;
-        }
-        $calcFields[$fieldKey] = $field;
-        $graph[$fieldKey] = [];
-    }
-    foreach ($calcFields as $fieldKey => $field) {
-        foreach (asset_extract_calculation_field_keys((string)($field['calculation_formula'] ?? '')) as $dependencyKey) {
-            if (isset($calcFields[$dependencyKey])) {
-                $graph[$fieldKey][] = $dependencyKey;
-            }
-        }
-    }
-
-    $ordered = [];
-    $visiting = [];
-    $visited = [];
-    $visit = static function (string $fieldKey) use (&$visit, &$ordered, &$visiting, &$visited, $graph): void {
-        if (isset($visited[$fieldKey]) || isset($visiting[$fieldKey])) {
-            return;
-        }
-        $visiting[$fieldKey] = true;
-        foreach ($graph[$fieldKey] ?? [] as $dependencyKey) {
-            $visit((string)$dependencyKey);
-        }
-        unset($visiting[$fieldKey]);
-        $visited[$fieldKey] = true;
-        $ordered[] = $fieldKey;
-    };
-    foreach (array_keys($calcFields) as $fieldKey) {
-        $visit((string)$fieldKey);
-    }
-    return $ordered;
-}
-
-function asset_calculation_context_value(array $field, array $normalized): mixed
-{
-    if (($normalized['value_text'] ?? null) === 'error') {
-        return 'error';
-    }
-    $resultType = asset_is_calculation_field($field)
-        ? asset_normalize_calculation_result_type((string)($field['calculation_result_type'] ?? 'number'))
-        : (string)($field['data_type'] ?? 'text');
-    return match ($resultType) {
-        'number' => ($normalized['value_number'] ?? null) !== null ? (float)$normalized['value_number'] : null,
-        'date' => (string)($normalized['value_date'] ?? '') !== '' ? (string)$normalized['value_date'] : null,
-        'text' => (string)($normalized['value_text'] ?? '') !== '' ? (string)$normalized['value_text'] : null,
-        default => (string)($normalized['value_text'] ?? '') !== '' ? (string)$normalized['value_text'] : null,
-    };
-}
-
-function asset_calc_ctx(array $context, string $fieldKey): mixed
-{
-    return $context[$fieldKey] ?? null;
-}
-
-function asset_calc_fn_sum(...$args): float
-{
-    $total = 0.0;
-    foreach ($args as $arg) {
-        if ($arg === null || $arg === '') {
-            continue;
-        }
-        $total += (float)$arg;
-    }
-    return $total;
-}
-
-function asset_calc_fn_average(...$args): float
-{
-    $values = array_values(array_filter($args, static fn($arg): bool => $arg !== null && $arg !== ''));
-    if ($values === []) {
-        return 0.0;
-    }
-    return asset_calc_fn_sum(...$values) / count($values);
-}
-
-function asset_calc_fn_max(...$args): float
-{
-    $values = array_values(array_map('floatval', array_filter($args, static fn($arg): bool => $arg !== null && $arg !== '')));
-    return $values === [] ? 0.0 : max($values);
-}
-
-function asset_calc_fn_min(...$args): float
-{
-    $values = array_values(array_map('floatval', array_filter($args, static fn($arg): bool => $arg !== null && $arg !== '')));
-    return $values === [] ? 0.0 : min($values);
-}
-
-function asset_calc_fn_count(...$args): int
-{
-    return count(array_filter($args, static fn($arg): bool => $arg !== null && $arg !== ''));
-}
-
-function asset_calc_fn_roundup(mixed $value, mixed $digits = 0): float
-{
-    $value = (float)$value;
-    $digits = (int)$digits;
-    $factor = 10 ** max(0, $digits);
-    return $value >= 0
-        ? ceil($value * $factor) / $factor
-        : floor($value * $factor) / $factor;
-}
-
-function asset_calc_fn_rounddown(mixed $value, mixed $digits = 0): float
-{
-    $value = (float)$value;
-    $digits = (int)$digits;
-    $factor = 10 ** max(0, $digits);
-    return $value >= 0
-        ? floor($value * $factor) / $factor
-        : ceil($value * $factor) / $factor;
-}
-
-function asset_calc_fn_if(mixed $condition, mixed $trueValue, mixed $falseValue): mixed
-{
-    return $condition ? $trueValue : $falseValue;
-}
-
-function asset_calc_fn_iferror(mixed $value, mixed $fallback): mixed
-{
-    if ($value === 'error' || $value === null || $value === '') {
-        return $fallback;
-    }
-    return $value;
-}
-
-function asset_calc_fn_sqrt(mixed $value): float
-{
-    $value = (float)$value;
-    if ($value < 0) {
-        throw new RuntimeException('Cannot take square root of a negative value.');
-    }
-    return sqrt($value);
-}
-
-function asset_calc_parse_date_value(mixed $value): string
-{
-    $value = trim((string)$value);
-    if ($value === '') {
-        throw new RuntimeException('Date value is empty.');
-    }
-    $timestamp = strtotime($value);
-    if ($timestamp === false) {
-        throw new RuntimeException('Invalid date value.');
-    }
-    return date('Y-m-d', $timestamp);
-}
-
-function asset_calc_fn_year(mixed $value): int
-{
-    return (int)date('Y', strtotime(asset_calc_parse_date_value($value)));
-}
-
-function asset_calc_fn_month(mixed $value): int
-{
-    return (int)date('n', strtotime(asset_calc_parse_date_value($value)));
-}
-
-function asset_calc_fn_day(mixed $value): int
-{
-    return (int)date('j', strtotime(asset_calc_parse_date_value($value)));
-}
-
-function asset_calc_fn_date(mixed $year, mixed $month, mixed $day): string
-{
-    $year = (int)$year;
-    $month = (int)$month;
-    $day = (int)$day;
-    if (!checkdate($month, $day, $year)) {
-        throw new RuntimeException('Invalid date parts.');
-    }
-    return sprintf('%04d-%02d-%02d', $year, $month, $day);
-}
-
-function asset_calc_integer_to_words(int $number): string
-{
-    $ones = [
-        0 => 'zero', 1 => 'one', 2 => 'two', 3 => 'three', 4 => 'four', 5 => 'five', 6 => 'six', 7 => 'seven', 8 => 'eight', 9 => 'nine',
-        10 => 'ten', 11 => 'eleven', 12 => 'twelve', 13 => 'thirteen', 14 => 'fourteen', 15 => 'fifteen', 16 => 'sixteen', 17 => 'seventeen', 18 => 'eighteen', 19 => 'nineteen',
-    ];
-    $tens = [2 => 'twenty', 3 => 'thirty', 4 => 'forty', 5 => 'fifty', 6 => 'sixty', 7 => 'seventy', 8 => 'eighty', 9 => 'ninety'];
-    if ($number < 20) {
-        return $ones[$number];
-    }
-    if ($number < 100) {
-        $ten = intdiv($number, 10);
-        $rest = $number % 10;
-        return $tens[$ten] . ($rest > 0 ? ' ' . $ones[$rest] : '');
-    }
-    if ($number < 1000) {
-        $hundred = intdiv($number, 100);
-        $rest = $number % 100;
-        return $ones[$hundred] . ' hundred' . ($rest > 0 ? ' ' . asset_calc_integer_to_words($rest) : '');
-    }
-    foreach ([1000000000 => 'billion', 1000000 => 'million', 1000 => 'thousand'] as $divider => $label) {
-        if ($number >= $divider) {
-            $major = intdiv($number, $divider);
-            $rest = $number % $divider;
-            return asset_calc_integer_to_words($major) . ' ' . $label . ($rest > 0 ? ' ' . asset_calc_integer_to_words($rest) : '');
-        }
-    }
-    return (string)$number;
-}
-
-function asset_calc_fn_inword(mixed $value): string
-{
-    $numeric = (float)$value;
-    $negative = $numeric < 0;
-    $numeric = abs($numeric);
-    $whole = (int)floor($numeric);
-    $decimalPart = (int)round(($numeric - $whole) * 100);
-    $words = asset_calc_integer_to_words($whole);
-    if ($decimalPart > 0) {
-        $words .= ' point ' . asset_calc_integer_to_words($decimalPart);
-    }
-    return $negative ? 'minus ' . $words : $words;
-}
-
-function asset_calculation_php_expression(string $formula): string
-{
-    $expression = trim($formula);
-    if ($expression !== '' && $expression[0] === '=') {
-        $expression = ltrim(substr($expression, 1));
-    }
-    $expression = preg_replace_callback('/\{([A-Za-z_][A-Za-z0-9_]*)\}/', static function (array $matches): string {
-        return 'asset_calc_ctx($__ctx,' . var_export((string)$matches[1], true) . ')';
-    }, $expression);
-    $expression = preg_replace('/(?<![<>=!])=(?!=)/', '==', $expression);
-    $functionMap = [
-        'sum' => 'asset_calc_fn_sum',
-        'average' => 'asset_calc_fn_average',
-        'max' => 'asset_calc_fn_max',
-        'min' => 'asset_calc_fn_min',
-        'count' => 'asset_calc_fn_count',
-        'roundup' => 'asset_calc_fn_roundup',
-        'rounddown' => 'asset_calc_fn_rounddown',
-        'if' => 'asset_calc_fn_if',
-        'iferror' => 'asset_calc_fn_iferror',
-        'sqrt' => 'asset_calc_fn_sqrt',
-        'year' => 'asset_calc_fn_year',
-        'month' => 'asset_calc_fn_month',
-        'day' => 'asset_calc_fn_day',
-        'date' => 'asset_calc_fn_date',
-        'inword' => 'asset_calc_fn_inword',
-    ];
-    foreach ($functionMap as $name => $replacement) {
-        $expression = preg_replace('/\b' . preg_quote($name, '/') . '\s*\(/i', $replacement . '(', $expression);
-    }
-    return (string)$expression;
-}
-
-function asset_calculation_excel_expression(string $formula, callable $resolver): string
-{
-    $expression = trim($formula);
-    if ($expression === '') {
-        return '=';
-    }
-    if ($expression[0] === '=') {
-        $expression = substr($expression, 1);
-    }
-    if (preg_match('/\binword\s*\(/i', $expression)) {
-        return '="error"';
-    }
-    $referenceKeys = asset_extract_calculation_field_keys($expression);
-    $referenceCells = [];
-    foreach ($referenceKeys as $fieldKey) {
-        $resolved = (string)$resolver($fieldKey);
-        if ($resolved !== '') {
-            $referenceCells[] = $resolved;
-        }
-    }
-    $referenceCells = array_values(array_unique($referenceCells));
-    $expression = preg_replace_callback('/\{([A-Za-z_][A-Za-z0-9_]*)\}/', static function (array $matches) use ($resolver): string {
-        return (string)$resolver((string)$matches[1]);
-    }, $expression);
-    $functionMap = [
-        'sum' => 'SUM',
-        'average' => 'AVERAGE',
-        'max' => 'MAX',
-        'min' => 'MIN',
-        'count' => 'COUNTA',
-        'roundup' => 'ROUNDUP',
-        'rounddown' => 'ROUNDDOWN',
-        'if' => 'IF',
-        'iferror' => 'IFERROR',
-        'sqrt' => 'SQRT',
-        'year' => 'YEAR',
-        'month' => 'MONTH',
-        'day' => 'DAY',
-        'date' => 'DATE',
-    ];
-    foreach ($functionMap as $name => $replacement) {
-        $expression = preg_replace('/\b' . preg_quote($name, '/') . '\s*\(/i', $replacement . '(', $expression);
-    }
-    if ($referenceCells !== []) {
-        $expression = 'IF(COUNTA(' . implode(',', $referenceCells) . ')=0,"",' . $expression . ')';
-    }
-    return '=' . $expression;
-}
-
-function asset_evaluate_calculation_formula(array $field, array $fieldMap, array $normalizedValues): array
-{
-    $context = [];
-    foreach ($fieldMap as $fieldKey => $fieldMeta) {
-        $context[$fieldKey] = asset_calculation_context_value($fieldMeta, $normalizedValues[$fieldKey] ?? []);
-    }
-    foreach ($context as $value) {
-        if ($value === 'error') {
-            return [
-                'value_text' => 'error',
-                'value_number' => null,
-                'value_date' => null,
-                'value_bool' => null,
-                'value_option' => null,
-                'display' => 'error',
-            ];
-        }
-    }
-    $__ctx = $context;
-    try {
-        $expression = asset_calculation_php_expression((string)($field['calculation_formula'] ?? ''));
-        /** @var mixed $result */
-        $result = eval('return ' . $expression . ';');
-        $resultType = asset_normalize_calculation_result_type((string)($field['calculation_result_type'] ?? 'number'));
-        if ($result === 'error') {
-            throw new RuntimeException('Formula evaluation failed.');
-        }
-        $normalized = [
-            'value_text' => null,
-            'value_number' => null,
-            'value_date' => null,
-            'value_bool' => null,
-            'value_option' => null,
-            'display' => '',
-        ];
-        if ($resultType === 'number') {
-            $number = asset_normalize_number_string((string)$result);
-            if ($number === null) {
-                throw new RuntimeException('Formula result is not numeric.');
-            }
-            $normalized['value_number'] = $number;
-            $normalized['display'] = $number;
-            return $normalized;
-        }
-        if ($resultType === 'date') {
-            $normalized['value_date'] = asset_calc_parse_date_value($result);
-            $normalized['display'] = $normalized['value_date'];
-            return $normalized;
-        }
-        $normalized['value_text'] = (string)$result;
-        $normalized['display'] = (string)$result;
-        return $normalized;
-    } catch (Throwable $e) {
-        return [
-            'value_text' => 'error',
-            'value_number' => null,
-            'value_date' => null,
-            'value_bool' => null,
-            'value_option' => null,
-            'display' => 'error',
-        ];
-    }
-}
-
-function asset_apply_calculation_fields(array $fieldMap, array $values, array &$errors): array
-{
-    foreach (asset_calculation_dependency_order($fieldMap) as $fieldKey) {
-        $field = $fieldMap[$fieldKey] ?? null;
-        if (!$field || !asset_is_calculation_field($field)) {
-            continue;
-        }
-        $values[$fieldKey] = asset_evaluate_calculation_formula($field, $fieldMap, $values);
-        if (($values[$fieldKey]['value_text'] ?? null) === 'error') {
-            $errors[$fieldKey] = (($field['label'] ?? $fieldKey) . ' calculation failed.');
-        }
-    }
-    return $values;
-}
-
-function asset_load_asset_normalized_values(int $assetId, array $fieldMap): array
-{
-    $normalized = [];
-    $stmt = db()->prepare('
-        SELECT v.*, f.field_key, f.data_type, f.calculation_result_type
-        FROM asset_values v
-        JOIN asset_fields f ON f.id = v.field_id
-        WHERE v.asset_id = ?
-    ');
-    $stmt->execute([$assetId]);
-    foreach ($stmt->fetchAll() as $row) {
-        $fieldKey = (string)($row['field_key'] ?? '');
-        if ($fieldKey === '' || !isset($fieldMap[$fieldKey])) {
-            continue;
-        }
-        $field = $fieldMap[$fieldKey];
-        if (asset_is_calculation_field($field)) {
-            $normalized[$fieldKey] = [
-                'value_text' => $row['value_text'],
-                'value_number' => $row['value_number'],
-                'value_date' => $row['value_date'],
-                'value_bool' => $row['value_bool'],
-                'value_option' => $row['value_option'],
-                'display' => asset_display_value($row),
-            ];
-            continue;
-        }
-        $normalized[$fieldKey] = [
-            'value_text' => $row['value_text'],
-            'value_number' => $row['value_number'],
-            'value_date' => $row['value_date'],
-            'value_bool' => $row['value_bool'],
-            'value_option' => $row['value_option'],
-            'display' => asset_display_value($row),
-        ];
-    }
-    return $normalized;
-}
-
-function asset_recalculate_calculation_values_for_asset(int $assetId, array $fieldMap): void
-{
-    $hasCalculation = false;
-    foreach ($fieldMap as $field) {
-        if (asset_is_calculation_field($field)) {
-            $hasCalculation = true;
-            break;
-        }
-    }
-    if (!$hasCalculation) {
-        return;
-    }
-    $values = asset_load_asset_normalized_values($assetId, $fieldMap);
-    $errors = [];
-    $values = asset_apply_calculation_fields($fieldMap, $values, $errors);
-    $calcValues = [];
-    foreach ($fieldMap as $fieldKey => $field) {
-        if (!asset_is_calculation_field($field) || !isset($values[$fieldKey])) {
-            continue;
-        }
-        $calcValues[$fieldKey] = $values[$fieldKey];
-    }
-    if ($calcValues !== []) {
-        save_asset_values($assetId, $calcValues);
-    }
-}
-
-function asset_recalculate_calculation_fields_for_segment(int $segmentId): void
-{
-    $segmentId = asset_normalize_segment_id($segmentId);
-    if ($segmentId <= 0) {
-        return;
-    }
-    $fieldMap = asset_field_map_for_segment(true, $segmentId);
-    $hasCalculation = false;
-    foreach ($fieldMap as $field) {
-        if (asset_is_calculation_field($field)) {
-            $hasCalculation = true;
-            break;
-        }
-    }
-    if (!$hasCalculation) {
-        return;
-    }
-    $stmt = db()->prepare('SELECT id FROM assets WHERE segment_id = ? AND deleted_at IS NULL AND active_status = 1');
-    $stmt->execute([$segmentId]);
-    foreach ($stmt->fetchAll() as $row) {
-        $assetId = (int)($row['id'] ?? 0);
-        if ($assetId <= 0) {
-            continue;
-        }
-        asset_recalculate_calculation_values_for_asset($assetId, $fieldMap);
-    }
-}
-
-function asset_common_calculated_display_values(array $fieldMapByKey, array $normalizedByKey): array
-{
-    $errors = [];
-    $normalizedByKey = asset_apply_calculation_fields($fieldMapByKey, $normalizedByKey, $errors);
-    $displayValues = [];
-    foreach ($fieldMapByKey as $fieldKey => $fieldMeta) {
-        if (!isset($normalizedByKey[$fieldKey])) {
-            continue;
-        }
-        $displayValues[$fieldKey] = asset_format_normalized_value_for_log($fieldMeta, $normalizedByKey[$fieldKey]);
-    }
-    return ['normalized' => $normalizedByKey, 'display' => $displayValues, 'errors' => $errors];
-}
-
 function validate_asset_unique_value(array $field, array $normalized, ?int $assetId, array &$errors): void
 {
     $fieldId = (int)($field['id'] ?? 0);
@@ -9612,7 +8772,7 @@ function asset_unique_existing_values_map(?int $segmentId = null): array
     $map = [];
     $segmentId = asset_normalize_segment_id($segmentId);
     foreach (get_asset_fields(false, $segmentId) as $field) {
-        if ((int)($field['is_unique'] ?? 0) !== 1 || !asset_field_is_import_template_visible($field) || (string)($field['data_type'] ?? '') === 'file') {
+        if ((int)($field['is_unique'] ?? 0) !== 1 || (int)($field['is_import_enabled'] ?? 0) !== 1 || (string)($field['data_type'] ?? '') === 'file') {
             continue;
         }
         $column = match ((string)$field['data_type']) {
@@ -9875,7 +9035,6 @@ function save_asset_values(int $assetId, array $fieldValues): void
             $normalized['value_option'],
         ]);
     }
-    asset_clear_asset_hydration_caches();
 }
 
 function get_asset(int $assetId, bool $includeDeleted = false): ?array
@@ -9903,7 +9062,7 @@ function get_asset(int $assetId, bool $includeDeleted = false): ?array
 
 function get_asset_values(int $assetId): array
 {
-    $stmt = db()->prepare('SELECT v.*, f.field_key, f.label, f.data_type, f.calculation_result_type FROM asset_values v JOIN asset_fields f ON f.id = v.field_id WHERE v.asset_id = ? ORDER BY f.sort_order ASC, f.id ASC');
+    $stmt = db()->prepare('SELECT v.*, f.field_key, f.label, f.data_type FROM asset_values v JOIN asset_fields f ON f.id = v.field_id WHERE v.asset_id = ? ORDER BY f.sort_order ASC, f.id ASC');
     $stmt->execute([$assetId]);
     $rows = $stmt->fetchAll();
     $map = [];
@@ -9927,16 +9086,6 @@ function get_asset_values(int $assetId): array
 
 function asset_display_value(array $row): string
 {
-    if ((string)($row['data_type'] ?? '') === 'calculation') {
-        if ((string)($row['value_text'] ?? '') === 'error') {
-            return 'error';
-        }
-        return match (asset_normalize_calculation_result_type((string)($row['calculation_result_type'] ?? 'number'))) {
-            'number' => asset_format_number_display($row['value_number'] !== null ? (string)$row['value_number'] : null),
-            'date' => (string)($row['value_date'] ?? ''),
-            default => (string)($row['value_text'] ?? ''),
-        };
-    }
     return match ($row['data_type']) {
         'number' => asset_format_number_display($row['value_number'] !== null ? (string)$row['value_number'] : null),
         'date' => (string)($row['value_date'] ?? ''),
@@ -10833,71 +9982,20 @@ function asset_sort_value(array $asset, string $sortColumn): string
     };
 }
 
-function &asset_request_cache_bucket(string $bucket): array
-{
-    if (!isset($GLOBALS['asset_request_cache']) || !is_array($GLOBALS['asset_request_cache'])) {
-        $GLOBALS['asset_request_cache'] = [];
-    }
-    if (!isset($GLOBALS['asset_request_cache'][$bucket]) || !is_array($GLOBALS['asset_request_cache'][$bucket])) {
-        $GLOBALS['asset_request_cache'][$bucket] = [];
-    }
-    return $GLOBALS['asset_request_cache'][$bucket];
-}
-
-function asset_request_cache_get(string $bucket, string $key, bool &$found = null)
-{
-    $store = &asset_request_cache_bucket($bucket);
-    if (array_key_exists($key, $store)) {
-        $found = true;
-        return $store[$key];
-    }
-    $found = false;
-    return null;
-}
-
-function asset_request_cache_set(string $bucket, string $key, $value): void
-{
-    $store = &asset_request_cache_bucket($bucket);
-    $store[$key] = $value;
-}
-
-function asset_request_cache_clear(?string $bucket = null): void
-{
-    if ($bucket === null) {
-        $GLOBALS['asset_request_cache'] = [];
-        return;
-    }
-    $store = &asset_request_cache_bucket($bucket);
-    $store = [];
-}
-
-function asset_clear_asset_hydration_caches(): void
-{
-    foreach ([
-        'asset_values_for_assets',
-        'asset_number_totals_for_assets',
-        'asset_value_time_map_for_assets',
-        'asset_files_for_assets',
-        'asset_file_time_map_for_assets',
-    ] as $bucket) {
-        asset_request_cache_clear($bucket);
-    }
-}
-
 function get_asset_values_for_assets(array $assetIds): array
 {
     if (!$assetIds) {
         return [];
     }
+    static $cache = [];
     $normalizedAssetIds = array_values(array_unique(array_map('intval', $assetIds)));
     sort($normalizedAssetIds);
     $cacheKey = implode(',', $normalizedAssetIds);
-    $cached = asset_request_cache_get('asset_values_for_assets', $cacheKey, $found);
-    if ($found) {
-        return (array)$cached;
+    if (array_key_exists($cacheKey, $cache)) {
+        return $cache[$cacheKey];
     }
     $placeholders = implode(',', array_fill(0, count($normalizedAssetIds), '?'));
-    $stmt = db()->prepare("SELECT v.*, f.field_key, f.data_type, f.calculation_result_type FROM asset_values v JOIN asset_fields f ON f.id = v.field_id WHERE v.asset_id IN ({$placeholders}) ORDER BY f.sort_order ASC, f.id ASC");
+    $stmt = db()->prepare("SELECT v.*, f.field_key, f.data_type FROM asset_values v JOIN asset_fields f ON f.id = v.field_id WHERE v.asset_id IN ({$placeholders}) ORDER BY f.sort_order ASC, f.id ASC");
     $stmt->execute($normalizedAssetIds);
     $map = [];
     $bimhValues = [];
@@ -10917,8 +10015,8 @@ function get_asset_values_for_assets(array $assetIds): array
             $map[(int)$assetId][$fieldKey . '__est_name'] = $nameMap[$bimhId] ?? 'BIMH ID is not in the Database.';
         }
     }
-    asset_request_cache_set('asset_values_for_assets', $cacheKey, $map);
-    return $map;
+    $cache[$cacheKey] = $map;
+    return $cache[$cacheKey];
 }
 
 function get_asset_number_totals_for_assets(array $assetIds, array $fields): array
@@ -10947,10 +10045,10 @@ function get_asset_number_totals_for_assets(array $assetIds, array $fields): arr
     $normalizedFieldIds = array_values(array_unique(array_map('intval', $fieldIds)));
     sort($normalizedAssetIds);
     sort($normalizedFieldIds);
+    static $cache = [];
     $cacheKey = implode(',', $normalizedAssetIds) . '|' . implode(',', $normalizedFieldIds);
-    $cached = asset_request_cache_get('asset_number_totals_for_assets', $cacheKey, $found);
-    if ($found) {
-        return (array)$cached;
+    if (array_key_exists($cacheKey, $cache)) {
+        return $cache[$cacheKey];
     }
 
     $assetPlaceholders = implode(',', array_fill(0, count($normalizedAssetIds), '?'));
@@ -10978,8 +10076,8 @@ function get_asset_number_totals_for_assets(array $assetIds, array $fields): arr
         }
         $totals[$fieldKey] = asset_format_number_display((string)($row['total_value'] ?? ''));
     }
-    asset_request_cache_set('asset_number_totals_for_assets', $cacheKey, $totals);
-    return $totals;
+    $cache[$cacheKey] = $totals;
+    return $cache[$cacheKey];
 }
 
 function get_asset_value_time_map_for_assets(array $assetIds): array
@@ -10987,12 +10085,12 @@ function get_asset_value_time_map_for_assets(array $assetIds): array
     if (!$assetIds) {
         return [];
     }
+    static $cache = [];
     $normalizedAssetIds = array_values(array_unique(array_map('intval', $assetIds)));
     sort($normalizedAssetIds);
     $cacheKey = implode(',', $normalizedAssetIds);
-    $cached = asset_request_cache_get('asset_value_time_map_for_assets', $cacheKey, $found);
-    if ($found) {
-        return (array)$cached;
+    if (array_key_exists($cacheKey, $cache)) {
+        return $cache[$cacheKey];
     }
     $placeholders = implode(',', array_fill(0, count($normalizedAssetIds), '?'));
     $stmt = db()->prepare(
@@ -11010,8 +10108,8 @@ function get_asset_value_time_map_for_assets(array $assetIds): array
         }
         $map[(int)$row['asset_id']][(string)$row['field_key']] = $timestamp;
     }
-    asset_request_cache_set('asset_value_time_map_for_assets', $cacheKey, $map);
-    return $map;
+    $cache[$cacheKey] = $map;
+    return $cache[$cacheKey];
 }
 
 function get_asset_field_files(int $assetId, int $fieldId): array
@@ -11037,12 +10135,12 @@ function get_asset_files_for_assets(array $assetIds): array
     if (!$assetIds) {
         return [];
     }
+    static $cache = [];
     $normalizedAssetIds = array_values(array_unique(array_map('intval', $assetIds)));
     sort($normalizedAssetIds);
     $cacheKey = implode(',', $normalizedAssetIds);
-    $cached = asset_request_cache_get('asset_files_for_assets', $cacheKey, $found);
-    if ($found) {
-        return (array)$cached;
+    if (array_key_exists($cacheKey, $cache)) {
+        return $cache[$cacheKey];
     }
     $placeholders = implode(',', array_fill(0, count($normalizedAssetIds), '?'));
     $stmt = db()->prepare("SELECT f.*, af.field_key FROM asset_file_values f JOIN asset_fields af ON af.id = f.field_id WHERE f.asset_id IN ({$placeholders}) ORDER BY af.sort_order ASC, f.id ASC");
@@ -11051,8 +10149,8 @@ function get_asset_files_for_assets(array $assetIds): array
     foreach ($stmt->fetchAll() as $row) {
         $map[(int)$row['asset_id']][(string)$row['field_key']][] = $row;
     }
-    asset_request_cache_set('asset_files_for_assets', $cacheKey, $map);
-    return $map;
+    $cache[$cacheKey] = $map;
+    return $cache[$cacheKey];
 }
 
 function get_asset_file_time_map_for_assets(array $assetIds): array
@@ -11060,12 +10158,12 @@ function get_asset_file_time_map_for_assets(array $assetIds): array
     if (!$assetIds) {
         return [];
     }
+    static $cache = [];
     $normalizedAssetIds = array_values(array_unique(array_map('intval', $assetIds)));
     sort($normalizedAssetIds);
     $cacheKey = implode(',', $normalizedAssetIds);
-    $cached = asset_request_cache_get('asset_file_time_map_for_assets', $cacheKey, $found);
-    if ($found) {
-        return (array)$cached;
+    if (array_key_exists($cacheKey, $cache)) {
+        return $cache[$cacheKey];
     }
     $placeholders = implode(',', array_fill(0, count($normalizedAssetIds), '?'));
     $stmt = db()->prepare(
@@ -11084,8 +10182,8 @@ function get_asset_file_time_map_for_assets(array $assetIds): array
         }
         $map[(int)$row['asset_id']][(string)$row['field_key']] = $timestamp;
     }
-    asset_request_cache_set('asset_file_time_map_for_assets', $cacheKey, $map);
-    return $map;
+    $cache[$cacheKey] = $map;
+    return $cache[$cacheKey];
 }
 
 function asset_row_field_timestamp(array $asset, string $fieldKey): ?int
@@ -11173,7 +10271,6 @@ function sync_asset_file_values(int $assetId, array $fileOperations, array &$cle
             ]);
         }
     }
-    asset_clear_asset_hydration_caches();
 }
 
 function finalize_asset_file_changes(array $cleanup, bool $committed): void
@@ -11231,7 +10328,7 @@ function asset_export_active_fields(?int $segmentId = null): array
 {
     return array_values(array_filter(
         get_asset_fields(false, $segmentId),
-        static fn(array $field): bool => asset_field_is_import_template_visible($field)
+        static fn(array $field): bool => (int)$field['active_status'] === 1 && (int)$field['is_import_enabled'] === 1
     ));
 }
 
@@ -15940,7 +15037,7 @@ function asset_template_core_columns(?int $segmentId = null): array
         $columns[] = ['key' => 'subcategory', 'label' => 'Sub-category / Sub-category'];
     }
     foreach (get_asset_fields(false, $segmentId) as $field) {
-        if (!asset_field_is_import_template_visible($field)) {
+        if ((int)$field['is_import_enabled'] !== 1 || (int)$field['active_status'] !== 1) {
             continue;
         }
         $columns[] = ['key' => $field['field_key'], 'label' => $field['label']];
@@ -16312,7 +15409,7 @@ function asset_template_input_column_definitions(?int $segmentId = null): array
         $fieldById[(int)$field['id']] = $field;
     }
     foreach ($fields as $field) {
-        if (!asset_field_is_import_template_visible($field)) {
+        if ((int)$field['is_import_enabled'] !== 1 || (int)$field['active_status'] !== 1) {
             continue;
         }
         $parentId = (int)($field['secondary_of_field_id'] ?? 0);
@@ -16321,16 +15418,14 @@ function asset_template_input_column_definitions(?int $segmentId = null): array
             'key' => (string)$field['field_key'],
             'label' => (string)$field['label'],
             'data_type' => $dataType,
-            'required_input' => asset_is_calculation_field($field) ? false : asset_is_input_required($field),
-            'required_final' => asset_is_calculation_field($field) ? false : asset_is_final_submission_required($field),
-            'non_editable' => asset_is_calculation_field($field),
+            'required_input' => asset_is_input_required($field),
+            'required_final' => asset_is_final_submission_required($field),
+            'non_editable' => false,
             'instruction_label' => asset_label_for_submission_message($field),
             'number_format_rule' => (string)($field['number_format_rule'] ?? ''),
             'text_max_length' => (int)($field['text_max_length'] ?? 0),
             'validation_kind' => $dataType,
             'field_id' => (int)$field['id'],
-            'calculation_formula' => (string)($field['calculation_formula'] ?? ''),
-            'calculation_result_type' => (string)($field['calculation_result_type'] ?? ''),
         ];
         if ($dataType === 'yes_no') {
             $definition['options'] = ['Yes', 'No'];
@@ -16650,22 +15745,6 @@ function build_asset_template_autogen_workbook(?int $segmentId = null): \PhpOffi
         }
     }
 
-    for ($row = $startRow; $row <= $endRow; $row++) {
-        foreach ($inputColumns as $column) {
-            if ((string)($column['data_type'] ?? '') !== 'calculation') {
-                continue;
-            }
-            $formulaCell = $columnLetters[(string)$column['key']] . $row;
-            $excelFormula = asset_calculation_excel_expression(
-                (string)($column['calculation_formula'] ?? ''),
-                static function (string $fieldKey) use ($columnLetters, $row): string {
-                    return isset($columnLetters[$fieldKey]) ? ($columnLetters[$fieldKey] . $row) : '""';
-                }
-            );
-            $dataSheet->setCellValue($formulaCell, $excelFormula);
-        }
-    }
-
     $requiredRefs = [];
     foreach ($inputColumns as $column) {
         if (!$column['required_input'] && !$column['required_final']) {
@@ -16724,7 +15803,7 @@ function build_asset_template_autogen_workbook(?int $segmentId = null): \PhpOffi
 
     foreach ($inputColumns as $column) {
         $colLetter = $columnLetters[$column['key']];
-        if (!$fixedCommonRowsOnly && empty($column['non_editable'])) {
+        if (!$fixedCommonRowsOnly) {
             $dataSheet->getStyle($colLetter . $startRow . ':' . $colLetter . $endRow)
                 ->getProtection()
                 ->setLocked(\PhpOffice\PhpSpreadsheet\Style\Protection::PROTECTION_UNPROTECTED);
@@ -16880,7 +15959,7 @@ function asset_template_headers(?int $segmentId = null): array
         'subcategory' => 'Sub-category / ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âª-ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¶ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¿',
     ];
     foreach (get_asset_fields(false, $segmentId) as $field) {
-        if (!asset_field_is_import_template_visible($field)) {
+        if ((int)$field['is_import_enabled'] !== 1) {
             continue;
         }
         $headers[$field['field_key']] = $field['label'];
@@ -16956,7 +16035,7 @@ function asset_template_prefill_rows(?int $segmentId = null, ?array $user = null
             $values['subcategory'] = (string)($asset['subcategory_name'] ?? '');
         }
         foreach (get_asset_fields(false, $segmentId) as $field) {
-            if (!asset_field_is_import_template_visible($field)) {
+            if ((int)$field['is_import_enabled'] !== 1 || (int)$field['active_status'] !== 1) {
                 continue;
             }
             $fieldKey = (string)$field['field_key'];
@@ -17333,7 +16412,7 @@ function validate_import_review_row(array $row, ?int $segmentId = null): array
         $payload['subcategory'] = trim((string)($row['subcategory'] ?? ''));
     }
     foreach (get_asset_fields(false, $segmentId) as $field) {
-        if (!asset_field_is_import_template_visible($field)) {
+        if ((int)$field['is_import_enabled'] !== 1 || (int)$field['active_status'] !== 1) {
             continue;
         }
         $payload[$field['field_key']] = trim((string)($row['fields'][$field['field_key']] ?? ''));
@@ -17373,7 +16452,7 @@ function stage_asset_import_row(array $input, int $rowNumber, ?int $segmentId = 
 
     $fieldInputs = [];
     foreach (get_asset_fields(false, $segmentId) as $field) {
-        if (!asset_field_is_import_template_visible($field)) {
+        if ((int)$field['is_import_enabled'] !== 1) {
             continue;
         }
         $fieldInputs[$field['field_key']] = $input[$field['field_key']] ?? '';
@@ -17385,15 +16464,6 @@ function stage_asset_import_row(array $input, int $rowNumber, ?int $segmentId = 
         'subcategory_id' => $subcategoryId,
         'fields' => $fieldInputs,
     ], $targetAsset ? (int)($targetAsset['id'] ?? 0) : null, [], true);
-
-    $fieldMetaMap = asset_field_map_for_segment(false, $segmentId);
-    foreach ($fieldInputs as $fieldKey => $fieldValue) {
-        $fieldMeta = $fieldMetaMap[$fieldKey] ?? null;
-        if (!$fieldMeta || !asset_is_calculation_field($fieldMeta)) {
-            continue;
-        }
-        $fieldInputs[$fieldKey] = asset_format_normalized_value_for_log($fieldMeta, $validated['payload']['field_values'][$fieldKey] ?? null);
-    }
 
     return [
         'row_number' => $rowNumber,
