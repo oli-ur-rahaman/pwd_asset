@@ -830,15 +830,6 @@ textarea { resize: vertical; }
   z-index: 1;
   min-width: 132px;
 }
-.asset-total-row td {
-  background: #334155;
-  color: #e2e8f0;
-  font-weight: 600;
-}
-.asset-total-row:hover td {
-  background: var(--theme-primary-soft-2);
-  color: #0f172a;
-}
 .table-load-more-button[disabled] {
   opacity: 0.72;
   cursor: wait;

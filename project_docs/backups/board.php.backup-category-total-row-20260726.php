@@ -1049,28 +1049,6 @@ if (is_superadmin()) {
                         }
                     }
                 }
-                $categoryTotalRowEnabled = asset_category_total_row_enabled((int)$category['id'], $activeSegmentId);
-                $visibleNumberFields = array_values(array_filter($fields, static function (array $field) use ($visibleColumnKeys): bool {
-                    return (int)($field['active_status'] ?? 0) === 1
-                        && (int)($field['is_displayed'] ?? 0) === 1
-                        && !empty($visibleColumnKeys[(string)($field['field_key'] ?? '')])
-                        && (string)($field['data_type'] ?? '') === 'number';
-                }));
-                $totalLabelFieldKey = '';
-                foreach ($fields as $field) {
-                    $fieldKey = (string)($field['field_key'] ?? '');
-                    if ((int)($field['active_status'] ?? 0) !== 1 || (int)($field['is_displayed'] ?? 0) !== 1 || empty($visibleColumnKeys[$fieldKey])) {
-                        continue;
-                    }
-                    if ((string)($field['data_type'] ?? '') === 'number') {
-                        continue;
-                    }
-                    $totalLabelFieldKey = $fieldKey;
-                    break;
-                }
-                $categoryNumberTotals = $categoryTotalRowEnabled && $visibleNumberFields !== []
-                    ? get_asset_number_totals_for_assets(array_map(static fn(array $asset): int => (int)$asset['id'], $group['assets']), $visibleNumberFields)
-                    : [];
             ?>
             <section class="card operational-budget-card">
                 <div class="card-head">
@@ -1159,31 +1137,6 @@ if (is_superadmin()) {
                                 $assets = $group['assets'];
                             ?>
                         </tbody>
-                        <?php if ($categoryTotalRowEnabled && $visibleNumberFields !== []): ?>
-                            <tfoot>
-                                <tr class="asset-total-row">
-                                    <?php if (!is_superadmin() && $canModifyAssets && !$isUnderMeView): ?><td>Total</td><?php else: ?><td>Total</td><?php endif; ?>
-                                    <?php if ($showAssetNumber && !empty($visibleColumnKeys['asset_number'])): ?><td></td><?php endif; ?>
-                                    <?php if ((is_superadmin() || $isUnderMeView) && !empty($visibleColumnKeys['office_name'])): ?><td></td><?php endif; ?>
-                                    <?php if ($subcategoryEnabled && !empty($visibleColumnKeys['subcategory_name'])): ?><td></td><?php endif; ?>
-                                    <?php if (!empty($visibleColumnKeys['data_provider'])): ?><td></td><?php endif; ?>
-                                    <?php foreach ($fields as $field): ?>
-                                        <?php if ((int)$field['is_displayed'] === 1 && (int)$field['active_status'] === 1 && !empty($visibleColumnKeys[$field['field_key']])): ?>
-                                            <?php $fieldKey = (string)$field['field_key']; ?>
-                                            <?php if ((string)($field['data_type'] ?? '') === 'number'): ?>
-                                                <td><?= e((string)($categoryNumberTotals[$fieldKey] ?? '0')); ?></td>
-                                            <?php else: ?>
-                                                <td></td>
-                                            <?php endif; ?>
-                                            <?php if ((string)($field['data_type'] ?? '') === 'bimh' && !empty($visibleColumnKeys[$field['field_key'] . '__est_name'])): ?>
-                                                <td></td>
-                                            <?php endif; ?>
-                                        <?php endif; ?>
-                                    <?php endforeach; ?>
-                                    <?php if ($showActionColumn): ?><td></td><?php endif; ?>
-                                </tr>
-                            </tfoot>
-                        <?php endif; ?>
                     </table>
                 </div>
                 <?php if (!$assetComparisonTableOnly && $paginationHasMore): ?>

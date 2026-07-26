@@ -497,19 +497,13 @@ if (!function_exists('render_common_admin_row_input')) {
     <div class="table-wrap">
         <table>
             <thead>
-                <tr><th>Name</th><th>Total Row</th><th>Status</th><th>Action</th></tr>
+                <tr><th>Name</th><th>Status</th><th>Action</th></tr>
             </thead>
             <tbody>
                 <?php foreach ($categories as $category): ?>
                     <?php $formId = 'category-' . (int)$category['id']; $isActive = (int)$category['active_status'] === 1; ?>
                     <tr>
                         <td><input form="<?= e($formId); ?>" class="inline-edit" type="text" name="name" value="<?= e($category['name']); ?>" required></td>
-                        <td>
-                            <label class="inline-check">
-                                <input form="<?= e($formId); ?>" type="checkbox" name="show_total_row" value="1" <?= (int)($category['show_total_row'] ?? 0) === 1 ? 'checked' : ''; ?>>
-                                <span>Visible</span>
-                            </label>
-                        </td>
                         <td><span class="<?= $isActive ? 'status-active' : 'status-inactive'; ?>"><?= $isActive ? 'Active' : 'Disabled'; ?></span></td>
                         <td>
                             <div class="action-row">

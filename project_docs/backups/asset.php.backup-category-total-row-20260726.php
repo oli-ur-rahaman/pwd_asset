@@ -526,7 +526,6 @@ function ensure_asset_schema(): void
     asset_ensure_column('asset_fields', 'is_download_zip_file_selectable', 'TINYINT NOT NULL DEFAULT 0');
     asset_ensure_column('asset_fields', 'is_download_token', 'TINYINT NOT NULL DEFAULT 0');
     asset_ensure_column('asset_fields', 'is_common_row_field', 'TINYINT NOT NULL DEFAULT 0');
-    asset_ensure_column('asset_categories', 'show_total_row', 'TINYINT NOT NULL DEFAULT 0');
     asset_ensure_column('asset_categories', 'segment_id', 'INT DEFAULT NULL');
     asset_ensure_column('asset_subcategories', 'segment_id', 'INT DEFAULT NULL');
     asset_ensure_column('asset_fields', 'segment_id', 'INT DEFAULT NULL');
@@ -7420,20 +7419,11 @@ function create_asset_category(string $name, ?int $segmentId = null): void
     $stmt->execute([$segmentId, $name, next_sort_order_for_filters('asset_categories', ['segment_id' => $segmentId])]);
 }
 
-function asset_category_total_row_enabled(int $categoryId, ?int $segmentId = null): bool
-{
-    $category = get_asset_category($categoryId, $segmentId);
-    if (!$category) {
-        return false;
-    }
-    return (int)($category['show_total_row'] ?? 0) === 1;
-}
-
-function update_asset_category(int $id, string $name, ?int $segmentId = null, bool $showTotalRow = false): void
+function update_asset_category(int $id, string $name, ?int $segmentId = null): void
 {
     asset_assert_segment_match(get_asset_category($id, $segmentId), $segmentId, 'Category');
-    $stmt = db()->prepare('UPDATE asset_categories SET name = ?, show_total_row = ?, updated_at = NOW() WHERE id = ? AND segment_id = ?');
-    $stmt->execute([$name, $showTotalRow ? 1 : 0, $id, asset_normalize_segment_id($segmentId)]);
+    $stmt = db()->prepare('UPDATE asset_categories SET name = ?, updated_at = NOW() WHERE id = ? AND segment_id = ?');
+    $stmt->execute([$name, $id, asset_normalize_segment_id($segmentId)]);
 }
 
 function set_asset_category_status(int $id, int $status, ?int $segmentId = null): void
@@ -10016,67 +10006,6 @@ function get_asset_values_for_assets(array $assetIds): array
         }
     }
     $cache[$cacheKey] = $map;
-    return $cache[$cacheKey];
-}
-
-function get_asset_number_totals_for_assets(array $assetIds, array $fields): array
-{
-    if ($assetIds === [] || $fields === []) {
-        return [];
-    }
-    $fieldIds = [];
-    $fieldMetaById = [];
-    foreach ($fields as $field) {
-        if ((string)($field['data_type'] ?? '') !== 'number') {
-            continue;
-        }
-        $fieldId = (int)($field['id'] ?? 0);
-        if ($fieldId <= 0) {
-            continue;
-        }
-        $fieldIds[] = $fieldId;
-        $fieldMetaById[$fieldId] = $field;
-    }
-    if ($fieldIds === []) {
-        return [];
-    }
-
-    $normalizedAssetIds = array_values(array_unique(array_map('intval', $assetIds)));
-    $normalizedFieldIds = array_values(array_unique(array_map('intval', $fieldIds)));
-    sort($normalizedAssetIds);
-    sort($normalizedFieldIds);
-    static $cache = [];
-    $cacheKey = implode(',', $normalizedAssetIds) . '|' . implode(',', $normalizedFieldIds);
-    if (array_key_exists($cacheKey, $cache)) {
-        return $cache[$cacheKey];
-    }
-
-    $assetPlaceholders = implode(',', array_fill(0, count($normalizedAssetIds), '?'));
-    $fieldPlaceholders = implode(',', array_fill(0, count($normalizedFieldIds), '?'));
-    $stmt = db()->prepare(
-        "SELECT v.field_id, SUM(COALESCE(v.value_number, 0)) AS total_value
-         FROM asset_values v
-         WHERE v.asset_id IN ({$assetPlaceholders})
-           AND v.field_id IN ({$fieldPlaceholders})
-           AND v.value_number IS NOT NULL
-         GROUP BY v.field_id"
-    );
-    $stmt->execute(array_merge($normalizedAssetIds, $normalizedFieldIds));
-
-    $totals = [];
-    foreach ($stmt->fetchAll() as $row) {
-        $fieldId = (int)($row['field_id'] ?? 0);
-        $field = $fieldMetaById[$fieldId] ?? null;
-        if (!$field) {
-            continue;
-        }
-        $fieldKey = (string)($field['field_key'] ?? '');
-        if ($fieldKey === '') {
-            continue;
-        }
-        $totals[$fieldKey] = asset_format_number_display((string)($row['total_value'] ?? ''));
-    }
-    $cache[$cacheKey] = $totals;
     return $cache[$cacheKey];
 }
 

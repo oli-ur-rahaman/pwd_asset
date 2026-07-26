@@ -240,7 +240,7 @@ if ($action === 'update_asset_category') {
         flash('error', 'Category update failed.');
     } else {
         try {
-            update_asset_category($id, $name, $segmentId, isset($_POST['show_total_row']));
+            update_asset_category($id, $name, $segmentId);
             flash('success', 'Category updated.');
         } catch (Throwable $e) {
             flash('error', $e->getMessage());
